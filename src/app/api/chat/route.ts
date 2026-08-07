@@ -1,0 +1,1591 @@
+import { streamText, jsonSchema } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
+import { db } from "@/db";
+import {
+  tasks,
+  transactions,
+  calendarEvents,
+  notes,
+  folders,
+  assets,
+  skills,
+  projects,
+  applications,
+  watchlist,
+  systemSettings,
+} from "@/db/schema";
+import { like, or, eq, desc } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
+import { analyzeMarketSentiment } from "@/app/finance/actions";
+import { searchTmdbMovies, getTrendingMovies } from "@/app/watchlist/actions";
+
+export const maxDuration = 30;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SYSTEM PROMPT
+// ─────────────────────────────────────────────────────────────────────────────
+const DEFAULT_MASTER_SYSTEM_PROMPT = `
+You are Personal OS AI Core — an executive AI agent embedded in the user's personal operating system.
+
+EXACT SYSTEM MODULE DOMAINS & TOOLS MAPPING:
+
+• Second Brain Vault & Folders (/vault)
+  → Tools: search_vault, create_note, move_note_to_folder, delete_note, list_folders, create_folder
+  → Folders & Nested Paths: You can create notes inside any folder or nested folder path (e.g. "Work/Projects/Frontend" or "Architecture").
+  → Folder Browsing: Use list_folders to browse existing folders and inspect notes structure.
+
+• Task Omni-Kanban & Projects (/tasks)
+  → Tools: list_tasks, create_task, update_task_status, move_task_to_project, delete_task, create_project
+  → Projects: Assign tasks to projects using projectName (e.g. "Personal OS v2").
+
+• Asset Vault / Bookmarks / Links / Resources (/inventory & /drive)
+  → Tools: search_assets, list_assets, log_asset, delete_asset
+
+• Skill Matrix / Learning (/skills)
+  → Tools: list_skills, search_skills, log_skill, delete_skill
+
+• App Launcher / Web Shortcuts (/apps)
+  → Tools: list_applications, register_application, delete_application
+
+• Finance Hub (/finance)
+  → Tools: list_transactions, log_transaction, delete_transaction
+
+• Master Calendar (/calendar)
+  → Tools: list_calendar_events, create_calendar_event, delete_calendar_event
+
+• TMDB Watchlist & Movie Intelligence (/watchlist)
+  → Tools: list_watchlist, delete_watchlist_item, search_tmdb_movies, get_trending_movies
+
+• Real-time External Intelligence (News, Stocks & Market Analysis)
+  → Tools: fetch_news_articles, get_stock_quote, analyze_market_sentiment
+  → Execution Constraint: Execute external API tools (news, stocks, sentiment, TMDB) ONLY when the user explicitly asks for real-time news, stock prices, market analysis, or movie info/recommendations.
+
+RULES:
+1. ALWAYS call the correct tool for the specific domain module.
+2. FOLDER & NESTED PATH RULE:
+   - When creating or moving notes, if the user specifies a folder or folder path (e.g. "Work/Projects/Frontend" or "Ideas"), pass folderPath to create_note or move_note_to_folder.
+   - Always state the exact target folder path in your output response (e.g. "✓ Created inside folder: Work/Projects/Frontend").
+   - When user asks to find or list notes in a specific folder (e.g. "carikan notes di folder Work"), call search_vault with folderPath parameter or call list_folders.
+   - STRICT ACCURACY RULE FOR FOLDERS: NEVER guess or assume which folder a note belongs to! Only report a note as belonging to a folder if its actual Folder path in the tool output matches that folder. If a note is in another folder (e.g. Architecture & Specs), state its real folder name!
+3. PAGE & ENTITY LINKING RULE:
+   - When referencing, creating, or editing any entity (note, task, skill, asset, file, event), format it as a clean Markdown link with search or ID parameters:
+     - Vault Note: [Note Title](/vault?noteId=ID) or [Note Title](/vault?search=NoteTitle)
+     - Task: [Task Title](/tasks?search=TaskTitle)
+     - Skill: [Skill Title](/skills?search=SkillTitle)
+     - Asset: [Asset Title](/inventory?search=AssetTitle)
+     - Local Drive File: [File Name](/drive?search=FileName)
+     - Calendar Event: [Event Title](/calendar?search=EventTitle)
+     - General App Pages: [Second Brain Vault](/vault), [Task Omni-Kanban](/tasks), [Master Calendar](/calendar), [Finance Hub](/finance), [Asset Vault](/inventory), [Skill Matrix](/skills), [Local Drive](/drive), [TMDB Watchlist](/watchlist), [System Settings](/settings), [Zen Timer](/zen), [Daily AI Briefing](/ai-briefing).
+   - APP LAUNCHER SPECIFIC RULE:
+     - For specific registered apps in App Launcher (e.g., TMDB, Google News, n8n, etc.), ALWAYS format them as direct external Markdown links using their target URL: "[App Name](https://target-app-url.com)".
+     - Clicking an App Launcher link MUST directly open the app's URL in a new tab! Do NOT use "/apps?search=..." for specific registered apps!
+   - IMAGE ATTACHMENT & PREVIEW RULE:
+     - When referencing or returning an image or photo attachment (from Local Drive, Asset Vault, or external web link), format it as "![Image Title](url)" or "[Image Title](url)" so that a visual image preview renders directly inside the chat bubble!
+     - Include the interactive navigation button right below the image so the user can open its target location ("/drive?search=...", "/inventory?search=...", or external URL).
+   - External links (http:// or https://) will directly open in a new tab.
+4. DELETION & REMOVAL CONFIRMATION RULE:
+   - When the user requests to delete or remove any item (task, note, calendar event, transaction, asset, skill, folder):
+   - If the user has NOT explicitly confirmed, ask for confirmation first detailing the item title and target path.
+   - Execute deletion ONLY when user confirms.
+5. Always answer concisely, politely, and clearly.
+`.trim();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Extract plain text from any AI SDK UIMessage format (parts[] or content string) */
+function getMessageText(m: any): string {
+  if (Array.isArray(m?.parts)) {
+    const texts: string[] = [];
+    for (const part of m.parts) {
+      if (part?.type === "text" && typeof part.text === "string") texts.push(part.text);
+      else if (typeof part?.text === "string") texts.push(part.text);
+      else if (typeof part === "string") texts.push(part);
+    }
+    const joined = texts.join("\n").trim();
+    if (joined) return joined;
+  }
+  if (typeof m?.content === "string" && m.content.trim()) return m.content.trim();
+  if (typeof m?.text === "string" && m.text.trim()) return m.text.trim();
+  return "";
+}
+
+/** Sanitize Drizzle query outputs (converts Date instances to ISO strings) */
+function sanitizeData(data: any): any {
+  if (!data) return data;
+  try {
+    return JSON.parse(JSON.stringify(data));
+  } catch (e) {
+    return data;
+  }
+}
+
+/** Build an AI SDK v7 tool object using inputSchema */
+function makeTool(opts: {
+  description: string;
+  inputSchema: ReturnType<typeof jsonSchema>;
+  execute: (args: any) => Promise<any>;
+}) {
+  return {
+    type: "function" as const,
+    description: opts.description,
+    inputSchema: opts.inputSchema,
+    execute: opts.execute,
+  };
+}
+
+function safePriority(val: any): "low" | "medium" | "high" {
+  const p = String(val || "medium").toLowerCase().trim();
+  return (["low", "medium", "high"].includes(p) ? p : "medium") as any;
+}
+
+/** Resolves or recursively creates a nested folder path e.g. "Work/Projects/Frontend" and returns the final folder id */
+async function resolveOrCreateFolderPath(folderPath: string): Promise<{ folderId: number; fullPath: string }> {
+  const cleanPath = folderPath.trim().replace(/^[\/\\]+|[\/\\]+$/g, "");
+  if (!cleanPath || cleanPath.toLowerCase() === "root" || cleanPath.toLowerCase() === "none" || cleanPath.toLowerCase() === "unassigned") {
+    return { folderId: 0, fullPath: "Unassigned / Root" };
+  }
+
+  const segments = cleanPath.split(/[\/\\]+/).map((s) => s.trim()).filter(Boolean);
+  let currentParentId: number | null = null;
+  const pathParts: string[] = [];
+
+  const allFolders = await db.select().from(folders);
+
+  for (const seg of segments) {
+    let existing = allFolders.find(
+      (f) => f.name.toLowerCase() === seg.toLowerCase() && (f.parentId === currentParentId || (!f.parentId && !currentParentId))
+    );
+
+    if (!existing) {
+      const res: any = await db.insert(folders).values({
+        name: seg,
+        parentId: currentParentId,
+      });
+      const newId = Number(res[0]?.insertId || res?.insertId || 0);
+      existing = { id: newId, name: seg, parentId: currentParentId, createdAt: new Date() };
+      allFolders.push(existing);
+    }
+
+    currentParentId = existing.id;
+    pathParts.push(existing.name);
+  }
+
+  return { folderId: currentParentId || 0, fullPath: pathParts.join("/") };
+}
+
+/** Builds full folder path string from a folderId */
+async function getFolderPathString(folderId: number | null): Promise<string> {
+  if (!folderId) return "Unassigned / Root";
+  const allFolders = await db.select().from(folders);
+  type FolderItem = typeof folders.$inferSelect;
+  const folderMap = new Map<number, FolderItem>(allFolders.map((f) => [f.id, f]));
+
+  const pathParts: string[] = [];
+  let currId: number | null = folderId;
+
+  while (currId && folderMap.has(currId)) {
+    const f: FolderItem = folderMap.get(currId)!;
+    pathParts.unshift(f.name);
+    currId = f.parentId;
+  }
+
+  return pathParts.length > 0 ? pathParts.join("/") : "Unassigned / Root";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE
+// ─────────────────────────────────────────────────────────────────────────────
+export async function POST(req: Request) {
+  const { messages } = await req.json();
+
+  const modelMessages = (messages || [])
+    .map((m: any) => ({
+      role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
+      content: getMessageText(m),
+    }))
+    .filter((m: { role: string; content: string }) => m.content.length > 0);
+
+  // Read settings from MySQL
+  let activeModel = "gpt-4o-mini";
+  let systemPrompt = DEFAULT_MASTER_SYSTEM_PROMPT;
+  let dbOpenaiKey = process.env.OPENAI_API_KEY;
+
+  try {
+    const dbSettings = await db.select().from(systemSettings);
+    for (const item of dbSettings) {
+      if (item.key === "active_model" && item.value) activeModel = item.value;
+      if (item.key === "system_prompt" && item.value) systemPrompt = item.value;
+      if (
+        item.key === "openai_key" &&
+        item.value?.trim() &&
+        !item.value.includes("your-openai-api-key")
+      ) {
+        dbOpenaiKey = item.value.trim();
+      }
+    }
+  } catch (e) {
+    console.warn("[CHAT] Using default settings:", e);
+  }
+
+  const customOpenAI = createOpenAI({ apiKey: dbOpenaiKey });
+
+  const result = (streamText as any)({
+    model: customOpenAI(activeModel as any),
+    system: systemPrompt,
+    messages: modelMessages,
+    stopWhen: ({ steps }: any) => steps.length >= 5,
+
+    tools: {
+      // ── TASKS ────────────────────────────────────────────────────────────
+      create_task: makeTool({
+        description: "Creates a new task in Omni-Kanban. Accepts optional projectName or category to assign task.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Exact task title verbatim from user" },
+            priority: { type: "string", enum: ["low", "medium", "high"], description: "Priority level" },
+            description: { type: "string", description: "Optional task description" },
+            projectName: { type: "string", description: "Optional project name to assign task to" },
+          },
+          required: ["title", "priority"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.title || "New Task").trim();
+            const priority = safePriority(args?.priority);
+            const projectNameArg = args?.projectName ? String(args.projectName).trim() : null;
+
+            let projectId: number | null = null;
+            let projectLabel = "Default Project";
+
+            if (projectNameArg) {
+              const existingProj = await db.select().from(projects).where(like(projects.name, `%${projectNameArg}%`)).limit(1);
+              if (existingProj.length) {
+                projectId = existingProj[0].id;
+                projectLabel = existingProj[0].name;
+              } else {
+                const [ins] = await db.insert(projects).values({ name: projectNameArg, status: "active" });
+                projectId = (ins as any).insertId;
+                projectLabel = projectNameArg;
+              }
+            }
+
+            await db.insert(tasks).values({ title, priority, status: "todo", description: args?.description || null, projectId });
+            revalidatePath("/tasks"); revalidatePath("/");
+            return {
+              success: true,
+              message: `✓ Task "${title}" [${priority.toUpperCase()}] created under project "${projectLabel}" in [Task Omni-Kanban](/tasks).`,
+              pageUrl: "/tasks",
+              data: sanitizeData({ title, priority, status: "todo", project: projectLabel }),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to create task: ${e.message}`, pageUrl: "/tasks" };
+          }
+        },
+      }),
+
+      move_task_to_project: makeTool({
+        description: "Assigns or moves a task to a project in Omni-Kanban.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Task title or partial title to move" },
+            projectName: { type: "string", description: "Target project name" },
+          },
+          required: ["title", "projectName"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.title || "").trim();
+            const projName = String(args?.projectName || "").trim();
+
+            const found = await db.select().from(tasks).where(like(tasks.title, `%${title}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No task matching "${title}" found to move.`, pageUrl: "/tasks" };
+
+            let projectId: number | null = null;
+            let projectLabel = "None";
+
+            if (projName && projName.toLowerCase() !== "none") {
+              const existingProj = await db.select().from(projects).where(like(projects.name, `%${projName}%`)).limit(1);
+              if (existingProj.length) {
+                projectId = existingProj[0].id;
+                projectLabel = existingProj[0].name;
+              } else {
+                const [ins] = await db.insert(projects).values({ name: projName, status: "active" });
+                projectId = (ins as any).insertId;
+                projectLabel = projName;
+              }
+            }
+
+            await db.update(tasks).set({ projectId }).where(eq(tasks.id, found[0].id));
+            revalidatePath("/tasks"); revalidatePath("/");
+            return {
+              success: true,
+              message: `✓ Task "${found[0].title}" moved to project "${projectLabel}" in [Task Omni-Kanban](/tasks).`,
+              pageUrl: "/tasks",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to move task: ${e.message}`, pageUrl: "/tasks" };
+          }
+        },
+      }),
+
+      list_tasks: makeTool({
+        description: "Lists tasks from Omni-Kanban. Use when user asks 'show tasks', 'what are my tasks', 'list todos', 'show todo list', 'show completed tasks', 'show done tasks'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            status: { type: "string", enum: ["todo", "in_progress", "completed", "done", "all"], description: "Filter by status" },
+          },
+          required: [],
+        }),
+        execute: async (args: any) => {
+          try {
+            let filterCondition = undefined;
+            if (args?.status && args.status !== "all") {
+              const s = String(args.status).toLowerCase().trim();
+              if (s === "completed" || s === "done" || s === "complete") {
+                filterCondition = or(eq(tasks.status, "done"), eq(tasks.status, "completed"));
+              } else if (s === "in_progress" || s === "doing" || s === "progress") {
+                filterCondition = or(eq(tasks.status, "in_progress"), eq(tasks.status, "doing"));
+              } else if (s === "todo" || s === "pending") {
+                filterCondition = eq(tasks.status, "todo");
+              }
+            }
+
+            const rows = filterCondition
+              ? await db.select().from(tasks).where(filterCondition).orderBy(desc(tasks.createdAt)).limit(20)
+              : await db.select().from(tasks).orderBy(desc(tasks.createdAt)).limit(20);
+
+            if (!rows.length) {
+              const statusLabel = args?.status ? `[${args.status.toUpperCase()}] ` : "";
+              return {
+                success: true,
+                message: `No ${statusLabel}tasks found in Omni-Kanban.`,
+                pageUrl: "/tasks",
+                count: 0,
+                data: [],
+              };
+            }
+
+            const list = rows.map((t) => `• [${t.priority?.toUpperCase()}] ${t.title} (status: ${t.status})`).join("\n");
+            return {
+              success: true,
+              message: `📋 Omni-Kanban Tasks (${rows.length}):\n\n${list}`,
+              pageUrl: "/tasks",
+              count: rows.length,
+              data: sanitizeData(rows),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to list tasks: ${e.message}`, pageUrl: "/tasks" };
+          }
+        },
+      }),
+
+      update_task_status: makeTool({
+        description: "Updates a task's status. Use when user says 'mark task as done', 'move task to in progress', 'complete task'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Partial or full task title to match" },
+            status: { type: "string", enum: ["todo", "in_progress", "completed", "done"], description: "New status" },
+          },
+          required: ["title", "status"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.title || "").trim();
+            let status = String(args?.status || "todo").toLowerCase().trim();
+            if (status === "completed") status = "done";
+
+            const found = await db.select().from(tasks).where(like(tasks.title, `%${title}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No task matching "${title}" found.`, pageUrl: "/tasks" };
+
+            await db.update(tasks).set({ status }).where(eq(tasks.id, found[0].id));
+            revalidatePath("/tasks"); revalidatePath("/");
+            return {
+              success: true,
+              message: `✓ Task "${found[0].title}" status updated to [${status.toUpperCase()}].`,
+              pageUrl: "/tasks",
+              data: sanitizeData({ id: found[0].id, title: found[0].title, status }),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to update task: ${e.message}`, pageUrl: "/tasks" };
+          }
+        },
+      }),
+
+      delete_task: makeTool({
+        description: "Deletes a task from Omni-Kanban after user confirmation. Use when user says 'delete task', 'remove task'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Task title or partial title to delete" },
+          },
+          required: ["title"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.title || "").trim();
+            const found = await db.select().from(tasks).where(like(tasks.title, `%${title}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No task matching "${title}" found to delete.`, pageUrl: "/tasks" };
+
+            await db.delete(tasks).where(eq(tasks.id, found[0].id));
+            revalidatePath("/tasks"); revalidatePath("/");
+            return {
+              success: true,
+              message: `🗑️ Task "${found[0].title}" deleted from [Task Omni-Kanban](/tasks).`,
+              pageUrl: "/tasks",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to delete task: ${e.message}`, pageUrl: "/tasks" };
+          }
+        },
+      }),
+
+      // ── FINANCE ──────────────────────────────────────────────────────────
+      log_transaction: makeTool({
+        description: "Logs an income or expense in Finance Hub. Use when user says 'log expense', 'add income', 'spent', 'earned', 'bought', 'received'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            type: { type: "string", enum: ["income", "expense"], description: "Transaction type" },
+            amount: { type: "number", description: "Amount in currency units" },
+            category: { type: "string", description: "Category e.g. Food, Transport, Salary, Freelance" },
+            description: { type: "string", description: "What the transaction was for" },
+          },
+          required: ["type", "amount"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const type = String(args?.type || "expense");
+            const amount = String(args?.amount || 0);
+            const category = String(args?.category || "General").trim();
+            const description = String(args?.description || "").trim();
+            await db.insert(transactions).values({ type, amount, category, description });
+            revalidatePath("/finance"); revalidatePath("/");
+            return {
+              success: true,
+              message: `✓ Logged ${type} of $${amount} under [${category}] in Finance Hub.`,
+              pageUrl: "/finance",
+              data: sanitizeData({ type, amount, category, description }),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to log transaction: ${e.message}`, pageUrl: "/finance" };
+          }
+        },
+      }),
+
+      list_transactions: makeTool({
+        description: "Shows recent transactions from Finance Hub. Use when user says 'show expenses', 'show my finances', 'recent transactions'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            type: { type: "string", enum: ["income", "expense", "all"], description: "Filter by type" },
+            limit: { type: "number", description: "Number of transactions to show (default 10)" },
+          },
+          required: [],
+        }),
+        execute: async (args: any) => {
+          try {
+            const filter = args?.type && args.type !== "all" ? args.type : null;
+            const limit = Math.min(Number(args?.limit || 10), 50);
+            const rows = filter
+              ? await db.select().from(transactions).where(eq(transactions.type, filter)).orderBy(desc(transactions.createdAt)).limit(limit)
+              : await db.select().from(transactions).orderBy(desc(transactions.createdAt)).limit(limit);
+
+            if (!rows.length) {
+              return {
+                success: true,
+                message: "No transactions found in Finance Hub.",
+                pageUrl: "/finance",
+                count: 0,
+                data: [],
+              };
+            }
+
+            const list = rows.map((t) => `• [${t.type.toUpperCase()}] $${t.amount} — ${t.category}: ${t.description || "—"}`).join("\n");
+            return {
+              success: true,
+              message: `💰 Finance Transactions (${rows.length}):\n\n${list}`,
+              pageUrl: "/finance",
+              count: rows.length,
+              data: sanitizeData(rows),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to list transactions: ${e.message}`, pageUrl: "/finance" };
+          }
+        },
+      }),
+
+      // ── CALENDAR ─────────────────────────────────────────────────────────
+      create_calendar_event: makeTool({
+        description: "Schedules an event in Master Calendar. Use when user says 'schedule', 'add event', 'remind me', 'put on calendar'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Event title" },
+            eventType: { type: "string", enum: ["task", "learning", "general"], description: "Event type" },
+            startTime: { type: "string", description: "ISO date-time string for start e.g. 2025-08-01T09:00:00" },
+            durationMinutes: { type: "number", description: "Duration in minutes (default 60)" },
+          },
+          required: ["title"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.title || "New Event").trim();
+            const eventType = String(args?.eventType || "general");
+            const start = args?.startTime ? new Date(args.startTime) : new Date();
+            const validStart = isNaN(start.getTime()) ? new Date() : start;
+            const durationMs = (Number(args?.durationMinutes) || 60) * 60 * 1000;
+            const end = new Date(validStart.getTime() + durationMs);
+            await db.insert(calendarEvents).values({ title, startTime: validStart, endTime: end, eventType });
+            revalidatePath("/calendar"); revalidatePath("/");
+            return {
+              success: true,
+              message: `✓ Event "${title}" scheduled for ${validStart.toLocaleString()} in Master Calendar.`,
+              pageUrl: "/calendar",
+              data: sanitizeData({ title, startTime: validStart, eventType }),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to schedule event: ${e.message}`, pageUrl: "/calendar" };
+          }
+        },
+      }),
+
+      list_calendar_events: makeTool({
+        description: "Lists upcoming calendar events. Use when user says 'show calendar', 'what is scheduled', 'upcoming events'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            limit: { type: "number", description: "Number of events to show (default 5)" },
+          },
+          required: [],
+        }),
+        execute: async (args: any) => {
+          try {
+            const limit = Math.min(Number(args?.limit || 5), 20);
+            const rows = await db.select().from(calendarEvents).orderBy(desc(calendarEvents.startTime)).limit(limit);
+
+            if (!rows.length) {
+              return {
+                success: true,
+                message: "No upcoming events found in Master Calendar.",
+                pageUrl: "/calendar",
+                count: 0,
+                data: [],
+              };
+            }
+
+            const list = rows.map((e) => `• [${e.eventType}] ${e.title} — ${new Date(e.startTime).toLocaleString()}`).join("\n");
+            return {
+              success: true,
+              message: `📅 Master Calendar Events (${rows.length}):\n\n${list}`,
+              pageUrl: "/calendar",
+              count: rows.length,
+              data: sanitizeData(rows),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to list events: ${e.message}`, pageUrl: "/calendar" };
+          }
+        },
+      }),
+
+      delete_calendar_event: makeTool({
+        description: "Deletes an event from Master Calendar after user confirmation. Use when user says 'delete event', 'remove event', 'cancel event'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Event title or partial title to delete" },
+          },
+          required: ["title"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.title || "").trim();
+            const found = await db.select().from(calendarEvents).where(like(calendarEvents.title, `%${title}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No event matching "${title}" found to delete.`, pageUrl: "/calendar" };
+
+            await db.delete(calendarEvents).where(eq(calendarEvents.id, found[0].id));
+            revalidatePath("/calendar"); revalidatePath("/");
+            return {
+              success: true,
+              message: `🗑️ Event "${found[0].title}" deleted from [Master Calendar](/calendar).`,
+              pageUrl: "/calendar",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to delete event: ${e.message}`, pageUrl: "/calendar" };
+          }
+        },
+      }),
+
+      // ── SECOND BRAIN / NOTES & FOLDERS ──────────────────────────────────
+      list_folders: makeTool({
+        description: "Lists all folders and nested folder structure in Second Brain Vault. Use when user asks 'show folders', 'list folders', 'browse folders', 'what folders do I have?'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {},
+          required: [],
+        }),
+        execute: async () => {
+          try {
+            const allFolders = await db.select().from(folders);
+            const allNotes = await db.select().from(notes);
+
+            if (!allFolders.length) {
+              return {
+                success: true,
+                message: "📁 Second Brain Vault currently has no folders created (all notes are unassigned/root).",
+                pageUrl: "/vault",
+                count: 0,
+                data: [],
+              };
+            }
+
+            const noteCounts = new Map<number, number>();
+            allNotes.forEach((n) => {
+              if (n.folderId) {
+                noteCounts.set(n.folderId, (noteCounts.get(n.folderId) || 0) + 1);
+              }
+            });
+
+            type FolderWithPath = typeof folders.$inferSelect & { fullPath: string };
+            const folderMap = new Map<number, FolderWithPath>(allFolders.map((f) => [f.id, { ...f, fullPath: "" }]));
+            
+            const buildPath = (id: number): string => {
+              const item = folderMap.get(id);
+              if (!item) return "";
+              if (!item.parentId) return item.name;
+              return `${buildPath(item.parentId)}/${item.name}`;
+            };
+
+            allFolders.forEach((f) => {
+              const item = folderMap.get(f.id);
+              if (item) item.fullPath = buildPath(f.id);
+            });
+
+            const sortedList = Array.from(folderMap.values()).sort((a, b) => a.fullPath.localeCompare(b.fullPath));
+            const listStr = sortedList
+              .map((f) => {
+                const folderNotes = allNotes.filter((n) => n.folderId === f.id);
+                const notesDetail =
+                  folderNotes.length > 0
+                    ? folderNotes.map((n) => `    - [${n.title}](/vault?noteId=${n.id})`).join("\n")
+                    : "    - (No notes in this folder)";
+                return `• 📁 **${f.fullPath}** (${folderNotes.length} notes):\n${notesDetail}`;
+              })
+              .join("\n\n");
+
+            return {
+              success: true,
+              message: `📁 Second Brain Vault Folders & Contents (${sortedList.length}):\n\n${listStr}`,
+              pageUrl: "/vault",
+              count: sortedList.length,
+              data: sanitizeData(sortedList),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to list folders: ${e.message}`, pageUrl: "/vault" };
+          }
+        },
+      }),
+
+      create_folder: makeTool({
+        description: "Creates a new folder or nested folder path e.g. 'Work/Projects/Frontend' in Second Brain Vault.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            folderPath: { type: "string", description: "Folder name or nested path string e.g. 'Work/Projects/Frontend'" },
+          },
+          required: ["folderPath"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const folderPathArg = String(args?.folderPath || "").trim();
+            const res = await resolveOrCreateFolderPath(folderPathArg);
+            revalidatePath("/vault"); revalidatePath("/");
+            return {
+              success: true,
+              message: `✓ Folder path "${res.fullPath}" confirmed & created in [Second Brain Vault](/vault).`,
+              pageUrl: "/vault",
+              data: sanitizeData({ folderPath: res.fullPath, folderId: res.folderId }),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to create folder: ${e.message}`, pageUrl: "/vault" };
+          }
+        },
+      }),
+
+      create_note: makeTool({
+        description: "Creates a new note in the Second Brain Vault. Accepts optional folderPath e.g. 'Work/Projects/Frontend' or 'Architecture'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Note title" },
+            content: { type: "string", description: "Note body content" },
+            category: { type: "string", enum: ["idea", "reference", "project", "journal", "learning"], description: "Note category" },
+            tags: { type: "string", description: "Comma-separated tags" },
+            folderPath: { type: "string", description: "Target folder name or nested path e.g. 'Work/Projects/Frontend' or 'Architecture'" },
+          },
+          required: ["title", "content"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.title || "Untitled").trim();
+            const content = String(args?.content || "").trim();
+            const category = String(args?.category || "idea");
+            const tags = String(args?.tags || "");
+            const folderPathArg = String(args?.folderPath || "").trim();
+
+            let targetFolderId: number | null = null;
+            let targetPathString = "Unassigned / Root";
+
+            if (folderPathArg) {
+              const res = await resolveOrCreateFolderPath(folderPathArg);
+              targetFolderId = res.folderId || null;
+              targetPathString = res.fullPath;
+            }
+
+            await db.insert(notes).values({
+              title,
+              content,
+              category,
+              tags,
+              folderId: targetFolderId,
+            });
+
+            revalidatePath("/vault"); revalidatePath("/");
+            return {
+              success: true,
+              message: `✓ Note "${title}" created inside folder path [${targetPathString}] in [Second Brain Vault](/vault).`,
+              pageUrl: "/vault",
+              data: sanitizeData({ title, content, category, tags, folderPath: targetPathString }),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to create note: ${e.message}`, pageUrl: "/vault" };
+          }
+        },
+      }),
+
+      move_note_to_folder: makeTool({
+        description: "Moves an existing note to a target folder or nested folder path (e.g. 'Work/Projects' or 'none' for root/unassigned).",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Note title or partial title to move" },
+            targetFolderPath: { type: "string", description: "Target folder path e.g. 'Work/Projects' or 'none'" },
+          },
+          required: ["title", "targetFolderPath"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.title || "").trim();
+            const targetPath = String(args?.targetFolderPath || "").trim();
+
+            const found = await db.select().from(notes).where(like(notes.title, `%${title}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No note matching "${title}" found to move.`, pageUrl: "/vault" };
+
+            const res = await resolveOrCreateFolderPath(targetPath);
+            const targetFolderId = res.folderId || null;
+
+            await db.update(notes).set({ folderId: targetFolderId }).where(eq(notes.id, found[0].id));
+            revalidatePath("/vault"); revalidatePath("/");
+            return {
+              success: true,
+              message: `✓ Note "${found[0].title}" moved to target location: [${res.fullPath}] in [Second Brain Vault](/vault).`,
+              pageUrl: "/vault",
+              data: sanitizeData({ noteId: found[0].id, title: found[0].title, targetFolder: res.fullPath }),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to move note: ${e.message}`, pageUrl: "/vault" };
+          }
+        },
+      }),
+
+      search_vault: makeTool({
+        description: "Searches or lists notes in Second Brain Vault by keyword, title, or folder name/path e.g. 'Work' or 'Architecture & Specs'. Use when user asks 'find note', 'notes in Work folder', 'search vault'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Search query keyword or title (optional)" },
+            folderPath: { type: "string", description: "Filter by folder name or folder path e.g. 'Work' or 'Architecture & Specs' (optional)" },
+          },
+          required: [],
+        }),
+        execute: async (args: any) => {
+          try {
+            const query = String(args?.query || "").trim();
+            const folderPathArg = String(args?.folderPath || "").trim();
+
+            const allFolders = await db.select().from(folders);
+            const allNotes = await db.select().from(notes);
+
+            const folderMap = new Map<number, string>();
+            const buildPath = (id: number): string => {
+              const item = allFolders.find((f) => f.id === id);
+              if (!item) return "";
+              if (!item.parentId) return item.name;
+              return `${buildPath(item.parentId)}/${item.name}`;
+            };
+            allFolders.forEach((f) => folderMap.set(f.id, buildPath(f.id)));
+
+            let filteredNotes = allNotes;
+
+            if (folderPathArg) {
+              const matchedFolderIds = allFolders
+                .filter((f) => {
+                  const fullP = folderMap.get(f.id) || "";
+                  return fullP.toLowerCase().includes(folderPathArg.toLowerCase()) || f.name.toLowerCase().includes(folderPathArg.toLowerCase());
+                })
+                .map((f) => f.id);
+
+              filteredNotes = filteredNotes.filter((n) => n.folderId && matchedFolderIds.includes(n.folderId));
+            }
+
+            if (query) {
+              filteredNotes = filteredNotes.filter(
+                (n) =>
+                  n.title.toLowerCase().includes(query.toLowerCase()) ||
+                  (n.content && n.content.toLowerCase().includes(query.toLowerCase())) ||
+                  (n.tags && n.tags.toLowerCase().includes(query.toLowerCase()))
+              );
+            }
+
+            if (!filteredNotes.length) {
+              return {
+                success: true,
+                message: `No notes found matching query "${query}" ${folderPathArg ? `in folder "${folderPathArg}"` : ""} in Second Brain Vault.`,
+                pageUrl: "/vault",
+                count: 0,
+                data: [],
+              };
+            }
+
+            const list = filteredNotes
+              .map((n) => {
+                const folderName = n.folderId ? folderMap.get(n.folderId) || "Unassigned" : "Unassigned / Root";
+                return `• [${n.title}](/vault?noteId=${n.id}) — Folder: **${folderName}** (Category: ${n.category || "General"})`;
+              })
+              .join("\n");
+
+            return {
+              success: true,
+              message: `🧠 Second Brain Vault Results (${filteredNotes.length}):\n\n${list}`,
+              pageUrl: "/vault",
+              count: filteredNotes.length,
+              data: sanitizeData(filteredNotes),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to search vault: ${e.message}`, pageUrl: "/vault" };
+          }
+        },
+      }),
+
+      delete_note: makeTool({
+        description: "Deletes a note from Second Brain Vault after user confirmation. Use when user says 'delete note', 'remove note'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Note title or partial title to delete" },
+          },
+          required: ["title"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.title || "").trim();
+            const found = await db.select().from(notes).where(like(notes.title, `%${title}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No note matching "${title}" found to delete.`, pageUrl: "/vault" };
+
+            await db.delete(notes).where(eq(notes.id, found[0].id));
+            revalidatePath("/vault"); revalidatePath("/");
+            return {
+              success: true,
+              message: `🗑️ Note "${found[0].title}" deleted from [Second Brain Vault](/vault).`,
+              pageUrl: "/vault",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to delete note: ${e.message}`, pageUrl: "/vault" };
+          }
+        },
+      }),
+
+      // ── SKILLS TRACKER ───────────────────────────────────────────────────
+      list_skills: makeTool({
+        description: "Lists all skills currently tracked or being learned in Skill Matrix. Use when user asks 'what skill am I learning', 'list skills', 'show skills', 'learning status'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            category: { type: "string", description: "Filter by category optional e.g. hard_skill, soft_skill, language, hobby" },
+          },
+          required: [],
+        }),
+        execute: async (args: any) => {
+          try {
+            const cat = args?.category ? String(args.category).trim() : null;
+            const rows = cat
+              ? await db.select().from(skills).where(eq(skills.category, cat)).orderBy(desc(skills.createdAt))
+              : await db.select().from(skills).orderBy(desc(skills.createdAt));
+
+            if (!rows.length) {
+              return {
+                success: true,
+                message: "No skills currently logged in Skill Matrix.",
+                pageUrl: "/skills",
+                count: 0,
+                data: [],
+              };
+            }
+
+            const list = rows
+              ? rows.map((s) => `• ${s.title} — [${s.proficiency.toUpperCase()}] (${s.category}, status: ${s.status})`).join("\n")
+              : "";
+
+            return {
+              success: true,
+              message: `🧠 Skills Matrix (${rows.length} Skills Tracked):\n\n${list}`,
+              pageUrl: "/skills",
+              count: rows.length,
+              data: sanitizeData(rows),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to list skills: ${e.message}`, pageUrl: "/skills" };
+          }
+        },
+      }),
+
+      search_skills: makeTool({
+        description: "Searches skills in Skill Matrix by keyword or name. Use when user asks about a specific skill (e.g., 'TypeScript', 'Piano').",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Skill search keyword" },
+          },
+          required: ["query"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const query = String(args?.query || "").trim();
+            const found = await db
+              .select()
+              .from(skills)
+              .where(or(like(skills.title, `%${query}%`), like(skills.category, `%${query}%`)));
+
+            if (!found.length) {
+              return {
+                success: true,
+                message: `No skill found matching "${query}" in Skill Matrix.`,
+                pageUrl: "/skills",
+                count: 0,
+                data: [],
+              };
+            }
+
+            const list = found.map((s) => `• ${s.title} — Level: ${s.proficiency.toUpperCase()} [${s.category}]`).join("\n");
+            return {
+              success: true,
+              message: `🧠 Skill Matrix Search Results for "${query}":\n\n${list}`,
+              pageUrl: "/skills",
+              count: found.length,
+              data: sanitizeData(found),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to search skills: ${e.message}`, pageUrl: "/skills" };
+          }
+        },
+      }),
+
+      log_skill: makeTool({
+        description: "Adds a skill to the Skills Tracker. Use when user says 'add skill', 'I am learning', 'track skill'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Skill name e.g. TypeScript, Piano, Spanish" },
+            category: { type: "string", enum: ["hard_skill", "soft_skill", "language", "hobby"], description: "Skill category" },
+            proficiency: { type: "string", enum: ["beginner", "intermediate", "advanced", "expert"], description: "Current proficiency level" },
+          },
+          required: ["title"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.title || "").trim();
+            const category = String(args?.category || "hard_skill");
+            const proficiency = String(args?.proficiency || "beginner");
+            await db.insert(skills).values({ title, category, proficiency, status: "learning" });
+            revalidatePath("/skills"); revalidatePath("/");
+            return {
+              success: true,
+              message: `✓ Skill "${title}" added as [${proficiency.toUpperCase()}] ${category} in Skills Tracker.`,
+              pageUrl: "/skills",
+              data: sanitizeData({ title, category, proficiency }),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to log skill: ${e.message}`, pageUrl: "/skills" };
+          }
+        },
+      }),
+
+      delete_skill: makeTool({
+        description: "Deletes a skill from Skill Matrix after user confirmation. Use when user says 'delete skill', 'remove skill'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Skill name or partial name to delete" },
+          },
+          required: ["title"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.title || "").trim();
+            const found = await db.select().from(skills).where(like(skills.title, `%${title}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No skill matching "${title}" found to delete.`, pageUrl: "/skills" };
+
+            await db.delete(skills).where(eq(skills.id, found[0].id));
+            revalidatePath("/skills"); revalidatePath("/");
+            return {
+              success: true,
+              message: `🗑️ Skill "${found[0].title}" deleted from [Skill Matrix](/skills).`,
+              pageUrl: "/skills",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to delete skill: ${e.message}`, pageUrl: "/skills" };
+          }
+        },
+      }),
+
+      // ── DRIVE / ASSET VAULT ──────────────────────────────────────────────
+      list_assets: makeTool({
+        description: "Lists bookmarks, web links, resources, and saved media in Asset Vault / Drive / Inventory. Use when user says 'show bookmarks', 'list assets', 'show links', 'my bookmarks', 'show resources'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            type: { type: "string", description: "Filter by asset type optional e.g. link, pdf, image, video" },
+          },
+          required: [],
+        }),
+        execute: async (args: any) => {
+          try {
+            const filterType = args?.type ? String(args.type).trim() : null;
+            const rows = filterType
+              ? await db.select().from(assets).where(eq(assets.type, filterType)).orderBy(desc(assets.createdAt))
+              : await db.select().from(assets).orderBy(desc(assets.createdAt));
+
+            if (!rows.length) {
+              return {
+                success: true,
+                message: "No bookmarks or assets found in Asset Vault.",
+                pageUrl: "/inventory",
+                count: 0,
+                data: [],
+              };
+            }
+
+            const list = rows.map((a) => `• [${a.type.toUpperCase()}] ${a.title} — ${a.urlOrPath}`).join("\n");
+            return {
+              success: true,
+              message: `📁 Asset Vault & Bookmarks (${rows.length}):\n\n${list}`,
+              pageUrl: "/inventory",
+              count: rows.length,
+              data: sanitizeData(rows),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to list assets: ${e.message}`, pageUrl: "/inventory" };
+          }
+        },
+      }),
+
+      search_assets: makeTool({
+        description: "Searches bookmarks, web links, resources, and saved media in Asset Vault / Inventory / Drive by title, keyword, or URL (e.g. 'moon', 'wikipedia'). Use when user asks for a specific bookmark, link, resource, or asset.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Search keyword e.g. moon, docs, video" },
+          },
+          required: ["query"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const query = String(args?.query || "").trim();
+            const found = await db
+              .select()
+              .from(assets)
+              .where(
+                or(
+                  like(assets.title, `%${query}%`),
+                  like(assets.urlOrPath, `%${query}%`),
+                  like(assets.tags, `%${query}%`)
+                )
+              );
+
+            if (!found.length) {
+              return {
+                success: true,
+                message: `No bookmark or asset found matching "${query}" in Asset Vault.`,
+                pageUrl: "/inventory",
+                count: 0,
+                data: [],
+              };
+            }
+
+            const list = found.map((a) => `• [${a.type.toUpperCase()}] ${a.title}\n  URL: ${a.urlOrPath}`).join("\n");
+            return {
+              success: true,
+              message: `📁 Asset Vault Search Results for "${query}":\n\n${list}`,
+              pageUrl: "/inventory",
+              count: found.length,
+              data: sanitizeData(found),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to search assets: ${e.message}`, pageUrl: "/inventory" };
+          }
+        },
+      }),
+
+      log_asset: makeTool({
+        description: "Saves a link, file reference, or resource to the Drive / Asset Vault. Use when user says 'save link', 'bookmark', 'save resource', 'add to drive'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Asset title or description" },
+            url: { type: "string", description: "URL or file path" },
+            type: { type: "string", enum: ["link", "pdf", "image", "video"], description: "Asset type" },
+            tags: { type: "string", description: "Comma-separated tags" },
+          },
+          required: ["title", "url"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.title || "").trim();
+            const urlOrPath = String(args?.url || "").trim();
+            const type = String(args?.type || "link");
+            const tags = String(args?.tags || "");
+            await db.insert(assets).values({ title, urlOrPath, type, tags });
+            revalidatePath("/inventory"); revalidatePath("/drive"); revalidatePath("/");
+            return {
+              success: true,
+              message: `✓ Asset "${title}" saved to Asset Vault.`,
+              pageUrl: "/inventory",
+              data: sanitizeData({ title, urlOrPath, type, tags }),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to save asset: ${e.message}`, pageUrl: "/inventory" };
+          }
+        },
+      }),
+
+      delete_asset: makeTool({
+        description: "Deletes a bookmark or asset from Asset Vault / Drive after user confirmation. Use when user says 'delete bookmark', 'remove asset', 'delete link'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Asset title or partial title to delete" },
+          },
+          required: ["title"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.title || "").trim();
+            const found = await db.select().from(assets).where(like(assets.title, `%${title}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No asset matching "${title}" found to delete.`, pageUrl: "/inventory" };
+
+            await db.delete(assets).where(eq(assets.id, found[0].id));
+            revalidatePath("/inventory"); revalidatePath("/drive"); revalidatePath("/");
+            return {
+              success: true,
+              message: `🗑️ Asset "${found[0].title}" deleted from [Asset Vault](/inventory).`,
+              pageUrl: "/inventory",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to delete asset: ${e.message}`, pageUrl: "/inventory" };
+          }
+        },
+      }),
+
+      delete_transaction: makeTool({
+        description: "Deletes a transaction from Finance Hub after user confirmation. Use when user says 'delete transaction', 'remove expense', 'delete income'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            description: { type: "string", description: "Transaction description or category to delete" },
+          },
+          required: ["description"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const term = String(args?.description || "").trim();
+            const found = await db.select().from(transactions).where(or(like(transactions.description, `%${term}%`), like(transactions.category, `%${term}%`))).limit(1);
+            if (!found.length) return { success: false, message: `No transaction matching "${term}" found to delete.`, pageUrl: "/finance" };
+
+            await db.delete(transactions).where(eq(transactions.id, found[0].id));
+            revalidatePath("/finance"); revalidatePath("/");
+            return {
+              success: true,
+              message: `🗑️ Transaction of $${found[0].amount} (${found[0].category}) deleted from [Finance Hub](/finance).`,
+              pageUrl: "/finance",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to delete transaction: ${e.message}`, pageUrl: "/finance" };
+          }
+        },
+      }),
+
+      // ── PROJECTS ─────────────────────────────────────────────────────────
+      create_project: makeTool({
+        description: "Creates a new project. Use when user says 'create project', 'start project', 'new project'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            name: { type: "string", description: "Project name" },
+            status: { type: "string", enum: ["active", "paused", "completed"], description: "Initial project status" },
+          },
+          required: ["name"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const name = String(args?.name || "New Project").trim();
+            const status = String(args?.status || "active");
+            await db.insert(projects).values({ name, status });
+            revalidatePath("/"); revalidatePath("/tasks");
+            return {
+              success: true,
+              message: `✓ Project "${name}" created with status [${status.toUpperCase()}].`,
+              pageUrl: "/tasks",
+              data: sanitizeData({ name, status }),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to create project: ${e.message}`, pageUrl: "/tasks" };
+          }
+        },
+      }),
+
+      // ── APP LAUNCHER ─────────────────────────────────────────────────────
+      list_applications: makeTool({
+        description: "Lists registered applications and web shortcuts in App Launcher. Use when user says 'show apps', 'list applications', 'app shortcuts', 'show launchpad'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            category: { type: "string", description: "Filter by category (optional)" },
+          },
+          required: [],
+        }),
+        execute: async (args: any) => {
+          try {
+            const filterCategory = args?.category ? String(args.category).trim() : null;
+            const rows = filterCategory
+              ? await db.select().from(applications).where(like(applications.category, `%${filterCategory}%`)).orderBy(desc(applications.createdAt))
+              : await db.select().from(applications).orderBy(desc(applications.createdAt));
+
+            if (!rows.length) {
+              return {
+                success: true,
+                message: "No applications registered in App Launcher.",
+                pageUrl: "/apps",
+                count: 0,
+                data: [],
+              };
+            }
+
+            const list = rows
+              .map((a) => {
+                const targetUrl = a.url.startsWith("http://") || a.url.startsWith("https://") ? a.url : `https://${a.url}`;
+                return `• [${a.category.toUpperCase()}] [${a.name}](${targetUrl})`;
+              })
+              .join("\n");
+            return {
+              success: true,
+              message: `🚀 App Launcher Applications (${rows.length}):\n\n${list}`,
+              pageUrl: "/apps",
+              count: rows.length,
+              data: sanitizeData(rows),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to list applications: ${e.message}`, pageUrl: "/apps" };
+          }
+        },
+      }),
+
+      register_application: makeTool({
+        description: "Registers a new web application, local service, or shortcut in App Launcher. Use when user says 'add app', 'register app', 'add shortcut', 'save app link'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            name: { type: "string", description: "Application name e.g. n8n Automation" },
+            url: { type: "string", description: "URL e.g. http://localhost:5678" },
+            iconName: { type: "string", description: "Lucide icon name e.g. Zap, Server, Database, Globe" },
+            category: { type: "string", description: "Category e.g. Local Services, Development, Productivity" },
+          },
+          required: ["name", "url"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const name = String(args?.name || "New App").trim();
+            let url = String(args?.url || "").trim();
+            if (!url.startsWith("http://") && !url.startsWith("https://")) {
+              url = `https://${url}`;
+            }
+            const iconName = String(args?.iconName || "Globe").trim();
+            const category = String(args?.category || "General").trim();
+
+            await db.insert(applications).values({ name, url, iconName, category });
+            revalidatePath("/apps"); revalidatePath("/");
+            return {
+              success: true,
+              message: `✓ Application "${name}" registered under [${category}] in App Launcher.`,
+              pageUrl: "/apps",
+              data: sanitizeData({ name, url, iconName, category }),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to register application: ${e.message}`, pageUrl: "/apps" };
+          }
+        },
+      }),
+
+      // ── TMDB WATCHLIST ───────────────────────────────────────────────────
+      list_watchlist: makeTool({
+        description: "Lists saved movies in TMDB Watchlist. Use when user says 'show movies', 'my watchlist', 'saved movies', 'show watchlist'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {},
+          required: [],
+        }),
+        execute: async () => {
+          try {
+            const rows = await db.select().from(watchlist).orderBy(desc(watchlist.createdAt));
+
+            if (!rows.length) {
+              return {
+                success: true,
+                message: "No movies currently saved in your TMDB Watchlist.",
+                pageUrl: "/watchlist",
+                count: 0,
+                data: [],
+              };
+            }
+
+            const list = rows.map((m) => `• ${m.title} (Rating: ${m.rating || "N/A"})`).join("\n");
+            return {
+              success: true,
+              message: `🎬 TMDB Watchlist (${rows.length} Movies Saved):\n\n${list}`,
+              pageUrl: "/watchlist",
+              count: rows.length,
+              data: sanitizeData(rows),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to list watchlist: ${e.message}`, pageUrl: "/watchlist" };
+          }
+        },
+      }),
+
+      // ── EXTERNAL INTELLIGENCE SKILLS (NEWS, STOCKS, SENTIMENT, MOVIES) ─────
+      fetch_news_articles: makeTool({
+        description: "Fetches real-time news headlines on any topic (technology, market, world news). Execute ONLY when user explicitly asks for news, headlines, or current events.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Search term e.g. 'artificial intelligence', 'technology', 'markets'" },
+          },
+          required: ["query"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const query = String(args?.query || "technology").trim();
+            const [newsRow] = await db
+              .select()
+              .from(systemSettings)
+              .where(eq(systemSettings.key, "newsapi_key"));
+
+            const newsApiKey = newsRow?.value?.trim();
+            if (!newsApiKey) {
+              return {
+                success: false,
+                missingKey: true,
+                message: "News API key (GNews API) is not configured in System Settings (/settings).",
+              };
+            }
+
+            const gnewsUrl = `https://gnews.io/api/v4/search?q=${encodeURIComponent(query)}&max=5&apikey=${newsApiKey}`;
+            const res = await fetch(gnewsUrl, { next: { revalidate: 1800 } });
+            if (!res.ok) {
+              return { success: false, message: `News API request failed with status ${res.status}.` };
+            }
+            const data = await res.json();
+            const articles = (data?.articles || []).map((a: any) => ({
+              title: a.title,
+              description: a.description || "",
+              url: a.url,
+              source: a.source?.name || "GNews",
+              image: a.image || null,
+              publishedAt: a.publishedAt,
+            }));
+
+            const listStr = articles.map((a: any) => `• [${a.title}](${a.url}) — ${a.source}\n  ${a.description}`).join("\n\n");
+            return {
+              success: true,
+              message: `📰 Latest News for "${query}" (${articles.length} articles):\n\n${listStr}`,
+              count: articles.length,
+              data: articles,
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to fetch news: ${e.message}` };
+          }
+        },
+      }),
+
+      get_stock_quote: makeTool({
+        description: "Fetches real-time stock price or crypto ticker quote (e.g. AAPL, NVDA, TSLA, BTC, ETH, BBCA). Execute ONLY when user explicitly asks for stock price, ticker quote, or crypto price.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            symbol: { type: "string", description: "Stock symbol or ticker e.g. AAPL, NVDA, TSLA, BTC, BBCA.JK" },
+          },
+          required: ["symbol"],
+        }),
+        execute: async (args: any) => {
+          try {
+            let symbol = String(args?.symbol || "AAPL").trim().toUpperCase();
+            if (symbol === "BBCA") symbol = "BBCA.JK";
+            if (symbol === "TLKM") symbol = "TLKM.JK";
+
+            const res = await fetch(
+              `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`,
+              {
+                headers: { "User-Agent": "Mozilla/5.0" },
+                next: { revalidate: 300 },
+              }
+            );
+
+            if (res.ok) {
+              const data = await res.json();
+              const meta = data?.chart?.result?.[0]?.meta;
+              if (meta && meta.regularMarketPrice !== undefined) {
+                const price = meta.regularMarketPrice;
+                const prevClose = meta.previousClose || meta.chartPreviousClose || price;
+                const change = price - prevClose;
+                const changePercent = (change / prevClose) * 100;
+                const currency = meta.currency || "USD";
+                const formatted = {
+                  symbol: meta.symbol || symbol,
+                  price: Number(price).toFixed(2),
+                  change: Number(change).toFixed(2),
+                  changePercent: `${changePercent >= 0 ? "+" : ""}${changePercent.toFixed(2)}%`,
+                  currency,
+                  high: meta.regularMarketDayHigh ? Number(meta.regularMarketDayHigh).toFixed(2) : "N/A",
+                  low: meta.regularMarketDayLow ? Number(meta.regularMarketDayLow).toFixed(2) : "N/A",
+                };
+
+                return {
+                  success: true,
+                  message: `📈 Stock Quote for **${formatted.symbol}**:\n• Price: **${formatted.price} ${formatted.currency}** (${formatted.changePercent})\n• Day High: ${formatted.high} | Day Low: ${formatted.low}`,
+                  data: formatted,
+                };
+              }
+            }
+
+            return { success: false, message: `Could not fetch quote for ticker symbol "${symbol}".` };
+          } catch (e: any) {
+            return { success: false, message: `Failed to fetch stock quote: ${e.message}` };
+          }
+        },
+      }),
+
+      analyze_market_sentiment: makeTool({
+        description: "Analyzes real-time market sentiment (BULLISH/BEARISH/NEUTRAL) and synthesizes news for any stock, sector, or company. Execute ONLY when user explicitly asks for market analysis, sentiment, or stock analysis.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Target stock or market topic e.g. 'Apple', 'NVIDIA', 'Indonesian Market', 'AI Stocks'" },
+          },
+          required: ["query"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const query = String(args?.query || "").trim();
+            const result = await analyzeMarketSentiment(query);
+            return result;
+          } catch (e: any) {
+            return { success: false, message: `Failed to analyze market sentiment: ${e.message}` };
+          }
+        },
+      }),
+
+      search_tmdb_movies: makeTool({
+        description: "Searches movies on TMDB with posters, rating, overview, and release date. Execute ONLY when user explicitly asks for movie search, film details, or movie info.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Movie title e.g. 'Inception', 'Interstellar', 'Batman'" },
+          },
+          required: ["query"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const query = String(args?.query || "").trim();
+            const res = await searchTmdbMovies(query);
+            if (res.missingKey) {
+              return { success: false, message: "TMDB API key is missing. Please configure TMDB key in System Settings (/settings)." };
+            }
+            if (res.error) {
+              return { success: false, message: `TMDB Search error: ${res.error}` };
+            }
+
+            const listStr = (res.results || [])
+              .slice(0, 5)
+              .map((m: any) => {
+                const poster = m.posterPath ? `![${m.title}](${m.posterPath})\n` : "";
+                return `${poster}🎬 **[${m.title}](/watchlist?search=${encodeURIComponent(m.title)})** (Rating: ${m.rating})\nRelease: ${m.releaseDate}\n${m.overview}`;
+              })
+              .join("\n\n");
+
+            return {
+              success: true,
+              message: `🎥 TMDB Movie Search Results for "${query}" (${res.results.length}):\n\n${listStr}`,
+              data: res.results,
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to search TMDB movies: ${e.message}` };
+          }
+        },
+      }),
+
+      get_trending_movies: makeTool({
+        description: "Fetches top 10 trending movies of the week on TMDB. Execute ONLY when user explicitly asks for trending movies, film recommendations, or popular movies.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {},
+          required: [],
+        }),
+        execute: async () => {
+          try {
+            const res = await getTrendingMovies();
+            if (res.missingKey) {
+              return { success: false, message: "TMDB API key is missing. Please configure TMDB key in System Settings (/settings)." };
+            }
+            if (res.error) {
+              return { success: false, message: `Trending movies error: ${res.error}` };
+            }
+
+            const listStr = (res.results || [])
+              .slice(0, 6)
+              .map((m: any, i: number) => {
+                const poster = m.posterPath ? `![${m.title}](${m.posterPath})\n` : "";
+                return `${i + 1}. ${poster}🎬 **[${m.title}](/watchlist?search=${encodeURIComponent(m.title)})** (Rating: ${m.rating})\nRelease: ${m.releaseDate}\n${m.overview}`;
+              })
+              .join("\n\n");
+
+            return {
+              success: true,
+              message: `🔥 Top Trending Movies of the Week on TMDB:\n\n${listStr}`,
+              data: res.results,
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to fetch trending movies: ${e.message}` };
+          }
+        },
+      }),
+    },
+  });
+
+  return (result as any).toUIMessageStreamResponse
+    ? (result as any).toUIMessageStreamResponse()
+    : result.toTextStreamResponse();
+}

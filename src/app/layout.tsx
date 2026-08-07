@@ -1,0 +1,85 @@
+import type { Metadata } from "next";
+import { Inter, JetBrains_Mono } from "next/font/google";
+import "./globals.css";
+import { Sidebar } from "@/components/sidebar";
+import { PinLockProvider } from "@/components/pin-lock-provider";
+import { HeaderCountdown } from "@/components/header-countdown";
+import { Omnibar } from "@/components/omnibar";
+import { OmniAIChat } from "@/components/omni-ai-chat";
+import { SearchTrigger } from "@/components/search-trigger";
+import { OmniAiTrigger } from "@/components/omni-ai-trigger";
+import { Bell, Activity } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+});
+
+export const metadata: Metadata = {
+  title: "Personal OS | Control Center",
+  description: "Next-gen Personal OS Hub & Bento Dashboard",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en" className={`dark ${inter.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
+      <body className="font-sans bg-[#0a0a0b] text-[#e5e2e3] antialiased min-h-screen flex overflow-hidden" suppressHydrationWarning>
+        <PinLockProvider>
+        {/* Collapsible Sidebar */}
+        <Sidebar />
+
+        {/* Global Universal Search (Ctrl+K) */}
+        <Omnibar />
+
+        {/* Global Omni AI Assistant (Ctrl+J) */}
+        <OmniAIChat />
+
+        {/* Main Content Hub */}
+        <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+          {/* Top Bar Header */}
+          <header className="h-16 border-b border-white/10 glass-panel px-6 flex items-center justify-between shrink-0 z-20">
+            {/* Command Search */}
+            <SearchTrigger />
+
+            {/* System Status Indicators */}
+            <div className="flex items-center gap-4">
+              <OmniAiTrigger />
+
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.03] border border-white/10 text-xs font-mono text-slate-300">
+                <Activity className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                <span>MySQL Database:</span>
+                <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 bg-emerald-500/10 text-[10px]">
+                  CONNECTED
+                </Badge>
+              </div>
+
+              <button className="relative p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-colors">
+                <Bell className="w-4 h-4" />
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-indigo-500 animate-ping"></span>
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-indigo-500"></span>
+              </button>
+
+              <HeaderCountdown />
+            </div>
+          </header>
+
+          {/* Scrollable Viewport */}
+          <main className="flex-1 overflow-y-auto p-6 md:p-8 bg-gradient-to-b from-[#0a0a0b] via-[#101014] to-[#0a0a0b]">
+            {children}
+          </main>
+        </div>
+        </PinLockProvider>
+      </body>
+    </html>
+  );
+}
