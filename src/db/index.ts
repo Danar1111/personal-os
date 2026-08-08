@@ -1,6 +1,13 @@
 import { drizzle } from 'drizzle-orm/mysql2';
 import mysql from 'mysql2/promise';
 import * as schema from './schema';
+import dns from 'node:dns';
+
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch (e) {
+  // ignore
+}
 
 const connectionUri = process.env.DATABASE_URL || 'mysql://root:@localhost:3306/personal_os';
 

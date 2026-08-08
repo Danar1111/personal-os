@@ -29,5 +29,5 @@ jobs:
             npm install
             npx drizzle-kit push
             npm run build
-            pm2 restart personal-os || pm2 start npm --name "personal-os" -- start
+            NODE_OPTIONS="--dns-result-order=ipv4first" pm2 restart personal-os || NODE_OPTIONS="--dns-result-order=ipv4first" pm2 start npm --name "personal-os" -- start
             pm2 save
