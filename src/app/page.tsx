@@ -59,33 +59,6 @@ import { getApplications } from "@/lib/actions/appActions";
 async function fetchCalendarEvents() {
   try {
     const events = await db.select().from(calendarEvents).orderBy(desc(calendarEvents.startTime));
-    if (events.length === 0) {
-      // Return sample default events for current month
-      const now = new Date();
-      return [
-        {
-          id: 1,
-          title: "Personal OS Architecture Review",
-          startTime: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 10, 0),
-          endTime: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 11, 30),
-          eventType: "general",
-        },
-        {
-          id: 2,
-          title: "Market Equities Analysis & Sync",
-          startTime: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2, 14, 0),
-          endTime: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2, 15, 0),
-          eventType: "task",
-        },
-        {
-          id: 3,
-          title: "Next.js App Router Mastery",
-          startTime: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 5, 16, 0),
-          endTime: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 5, 17, 30),
-          eventType: "learning",
-        },
-      ];
-    }
     return events;
   } catch (error) {
     console.error("[fetchCalendarEvents error]:", error);
