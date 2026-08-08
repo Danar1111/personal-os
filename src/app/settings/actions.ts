@@ -97,13 +97,7 @@ export async function saveMultipleSettingsAction(settingsMap: Record<string, str
 
 export async function getAISkills() {
   try {
-    let skillsList = await db.select().from(aiSkills).orderBy(desc(aiSkills.createdAt));
-
-    if (skillsList.length === 0) {
-      await seedDefaultAISkills();
-      skillsList = await db.select().from(aiSkills).orderBy(desc(aiSkills.createdAt));
-    }
-
+    const skillsList = await db.select().from(aiSkills).orderBy(desc(aiSkills.createdAt));
     return skillsList;
   } catch (error) {
     console.error("Failed to fetch AI skills:", error);

@@ -33,11 +33,17 @@ export async function getTrendingMovies() {
     // Cache trending movies for 24 hours (86,400 seconds) so page access/refresh does not hit API constantly
     const res = await fetch(
       `https://api.themoviedb.org/3/trending/movie/week?api_key=${apiKey}`,
-      { next: { revalidate: 86400 } }
+      {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+          Accept: "application/json",
+        },
+        next: { revalidate: 3600 },
+      }
     );
 
     if (!res.ok) {
-      return { results: [], missingKey: false, error: `TMDB API error: ${res.statusText}` };
+      return { results: [], missingKey: false, error: `TMDB API error: ${res.status} ${res.statusText}` };
     }
 
     const data = await res.json();
@@ -76,11 +82,17 @@ export async function searchTmdbMovies(query: string) {
 
     const res = await fetch(
       `https://api.themoviedb.org/3/search/movie?query=${encodeURIComponent(query.trim())}&api_key=${apiKey}`,
-      { next: { revalidate: 3600 } }
+      {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+          Accept: "application/json",
+        },
+        next: { revalidate: 1800 },
+      }
     );
 
     if (!res.ok) {
-      return { results: [], missingKey: false, error: `TMDB API error: ${res.statusText}` };
+      return { results: [], missingKey: false, error: `TMDB API error: ${res.status} ${res.statusText}` };
     }
 
     const data = await res.json();
