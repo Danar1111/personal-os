@@ -12,15 +12,6 @@ export async function getCalendarEvents() {
       .from(calendarEvents)
       .orderBy(asc(calendarEvents.startTime));
 
-    // Seed default sample events if empty
-    if (events.length === 0) {
-      await seedDefaultEventsData();
-      events = await db
-        .select()
-        .from(calendarEvents)
-        .orderBy(asc(calendarEvents.startTime));
-    }
-
     return events;
   } catch (error) {
     console.error("Failed to fetch calendar events:", error);

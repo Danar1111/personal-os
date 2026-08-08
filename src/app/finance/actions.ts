@@ -9,14 +9,9 @@ import { generateText } from "ai";
 
 export async function getFinanceSummary() {
   try {
-    let allTransactions = await db.select().from(transactions).orderBy(desc(transactions.date));
+    const allTransactions = await db.select().from(transactions).orderBy(desc(transactions.date));
     const allAssets = await db.select().from(assets).orderBy(desc(assets.createdAt));
     const allNotes = await db.select().from(notes).orderBy(desc(notes.createdAt));
-
-    if (allTransactions.length === 0) {
-      await seedDefaultFinanceData();
-      allTransactions = await db.select().from(transactions).orderBy(desc(transactions.date));
-    }
 
     let totalIncome = 0;
     let totalExpense = 0;

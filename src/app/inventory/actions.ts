@@ -13,16 +13,6 @@ export async function getAssets() {
       .where(eq(assets.type, "link"))
       .orderBy(desc(assets.createdAt));
 
-    // Seed sample bookmarks if empty
-    if (bookmarkAssets.length === 0) {
-      await seedDefaultBookmarksData();
-      bookmarkAssets = await db
-        .select()
-        .from(assets)
-        .where(eq(assets.type, "link"))
-        .orderBy(desc(assets.createdAt));
-    }
-
     return bookmarkAssets;
   } catch (error) {
     console.error("Failed to fetch bookmark assets:", error);

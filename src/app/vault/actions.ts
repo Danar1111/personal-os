@@ -11,13 +11,6 @@ export async function getVaultData() {
     let allNotes = await db.select().from(notes).orderBy(desc(notes.updatedAt));
     let allAssets = await db.select().from(assets).orderBy(desc(assets.createdAt));
 
-    // Seed default folders & notes if empty
-    if (allFolders.length === 0) {
-      await seedDefaultVaultData();
-      allFolders = await db.select().from(folders).orderBy(desc(folders.createdAt));
-      allNotes = await db.select().from(notes).orderBy(desc(notes.updatedAt));
-    }
-
     return {
       notes: allNotes,
       folders: allFolders,

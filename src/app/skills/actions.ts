@@ -7,17 +7,10 @@ import { revalidatePath } from "next/cache";
 
 export async function getSkillsWithMilestones() {
   try {
-    let allSkills = await db.select().from(skills).orderBy(desc(skills.createdAt));
-    let allMilestones = await db.select().from(skillMilestones);
+    const allSkills = await db.select().from(skills).orderBy(desc(skills.createdAt));
+    const allMilestones = await db.select().from(skillMilestones);
     const allAssets = await db.select().from(assets).orderBy(desc(assets.createdAt));
     const allNotes = await db.select().from(notes).orderBy(desc(notes.createdAt));
-
-    // Seed default sample skills & milestones if database is empty
-    if (allSkills.length === 0) {
-      await seedDefaultSkillsData();
-      allSkills = await db.select().from(skills).orderBy(desc(skills.createdAt));
-      allMilestones = await db.select().from(skillMilestones);
-    }
 
     return {
       skills: allSkills,

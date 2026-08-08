@@ -79,8 +79,8 @@ export function Sidebar() {
           )}
           title="Personal OS Overview"
         >
-          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-emerald-500 shrink-0 shadow-lg shadow-indigo-500/20">
-            <Cpu className="w-5 h-5 text-white" />
+          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-indigo-500/30 shrink-0 shadow-lg shadow-indigo-500/20 overflow-hidden">
+            <img src="/logo.png" alt="Personal OS Logo" className="w-full h-full object-cover" />
           </div>
           {!isCollapsed && (
             <div className="flex flex-col min-w-0">

@@ -12,7 +12,7 @@ export function SearchTrigger() {
   return (
     <div
       onClick={handleOpenSearch}
-      className="flex items-center gap-3 w-96 relative cursor-pointer group"
+      className="flex items-center gap-3 w-80 sm:w-96 relative cursor-pointer group"
     >
       <div className="relative w-full">
         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-hover:text-white transition-colors" />

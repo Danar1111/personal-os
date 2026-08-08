@@ -19,14 +19,6 @@ export async function getTasksWithProjects() {
     const allAssets = await db.select().from(assets).orderBy(desc(assets.createdAt));
     const allNotes = await db.select().from(notes).orderBy(desc(notes.createdAt));
     
-    // Seed initial projects and tasks if database is empty
-    if (allProjects.length === 0 && allTasks.length === 0) {
-      await seedDefaultData();
-      const freshTasks = await db.select().from(tasks).orderBy(asc(tasks.position), desc(tasks.createdAt));
-      const freshProjects = await db.select().from(projects).orderBy(desc(projects.createdAt));
-      return { tasks: freshTasks, projects: freshProjects, assets: allAssets, notes: allNotes };
-    }
-
     return { tasks: allTasks, projects: allProjects, assets: allAssets, notes: allNotes };
   } catch (error) {
     console.error("Failed to fetch tasks/projects:", error);
