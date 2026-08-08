@@ -13,8 +13,8 @@ export const poolConnection =
   mysql.createPool({
     uri: connectionUri,
     waitForConnections: true,
-    connectionLimit: 10,
-    maxIdle: 10,
+    connectionLimit: 30,
+    maxIdle: 30,
     idleTimeout: 60000,
     queueLimit: 0,
   });

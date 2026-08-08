@@ -10,7 +10,30 @@ import {
   deleteTaskAction,
   createProjectAction,
   deleteProjectAction,
+  reorderTasksAction,
 } from "@/app/tasks/actions";
+import {
+  DndContext,
+  closestCenter,
+  pointerWithin,
+  CollisionDetection,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragStartEvent,
+  DragOverlay,
+  useDroppable,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   Plus,
   Trash2,
@@ -35,7 +58,22 @@ import {
   Eye,
   X,
   Link2,
+  ArrowUp,
 } from "lucide-react";
+
+const customCollisionDetection: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  if (pointerCollisions.length > 0) {
+    const colCollision = pointerCollisions.find((c) => typeof c.id === "string" && c.id.startsWith("col-"));
+    const taskCollision = pointerCollisions.find((c) => typeof c.id === "number");
+
+    if (colCollision && !taskCollision) {
+      return [colCollision];
+    }
+  }
+
+  return closestCenter(args);
+};
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -89,9 +127,94 @@ export function KanbanBoard({
     }
   }, [searchParams]);
 
-  // Drag & Drop state
-  const [activeDraggingId, setActiveDraggingId] = useState<number | null>(null);
-  const [activeDropColumn, setActiveDropColumn] = useState<"todo" | "in_progress" | "done" | null>(null);
+  // @dnd-kit state & sensors
+  const [tasksState, setTasksState] = useState<Task[]>(initialTasks);
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
+
+  useEffect(() => {
+    setTasksState(initialTasks);
+  }, [initialTasks]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragStart = (event: DragStartEvent) => {
+    const taskId = event.active.id as number;
+    const task = tasksState.find((t) => t.id === taskId);
+    if (task) {
+      setActiveTask(task);
+    }
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveTask(null);
+
+    if (!over) return;
+
+    const activeId = active.id as number;
+    const overId = over.id;
+
+    if (activeId === overId) return;
+
+    const activeTaskItem = tasksState.find((t) => t.id === activeId);
+    if (!activeTaskItem) return;
+
+    const remaining = tasksState.filter((t) => t.id !== activeId);
+
+    let updatedTask: Task;
+    let targetIndex: number;
+
+    // Case 1: Dropped onto column container (col-todo, col-in_progress, col-done) -> place at top of column!
+    if (typeof overId === "string" && overId.startsWith("col-")) {
+      const targetStatus = overId.replace("col-", "") as "todo" | "in_progress" | "done";
+      updatedTask = { ...activeTaskItem, status: targetStatus };
+
+      const firstColIndex = remaining.findIndex((t) => t.status === targetStatus);
+      targetIndex = firstColIndex === -1 ? remaining.length : firstColIndex;
+    }
+    // Case 2: Dropped onto another task card -> place at that exact position!
+    else if (typeof overId === "number") {
+      const overTask = tasksState.find((t) => t.id === overId);
+      if (!overTask) return;
+
+      updatedTask = { ...activeTaskItem, status: overTask.status };
+      const overIndexInRemaining = remaining.findIndex((t) => t.id === overId);
+      targetIndex = overIndexInRemaining === -1 ? remaining.length : overIndexInRemaining;
+    } else {
+      return;
+    }
+
+    // Insert updatedTask at targetIndex in remaining array
+    const rawNewTasks = [...remaining];
+    rawNewTasks.splice(targetIndex, 0, updatedTask);
+
+    // Group tasks by status and assign continuous global positions 0, 1, 2, 3...
+    const todoList = rawNewTasks.filter((t) => t.status === "todo");
+    const inProgList = rawNewTasks.filter((t) => t.status === "in_progress");
+    const doneList = rawNewTasks.filter((t) => t.status === "done");
+
+    const finalOrderedTasks = [...todoList, ...inProgList, ...doneList].map((t, idx) => ({
+      ...t,
+      position: idx,
+    }));
+
+    const orderedItems = finalOrderedTasks.map((t) => ({
+      id: t.id,
+      status: t.status as "todo" | "in_progress" | "done",
+      position: t.position,
+    }));
+
+    // Update FE state
+    setTasksState(finalOrderedTasks);
+
+    // Save to DB synchronously
+    startTransition(async () => {
+      await reorderTasksAction(orderedItems);
+    });
+  };
 
   // Pagination limits per column
   const [columnLimits, setColumnLimits] = useState({
@@ -215,7 +338,7 @@ export function KanbanBoard({
   };
 
   // Filter tasks based on search & project filter
-  const filteredTasks = initialTasks.filter((task) => {
+  const filteredTasks = tasksState.filter((task) => {
     const matchesSearch =
       task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (task.description && task.description.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -608,83 +731,96 @@ export function KanbanBoard({
       </Dialog>
 
       {/* 3-Column Kanban Board Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* COLUMN 1: TODO */}
-        <KanbanColumn
-          columnStatus="todo"
-          title="TODO"
-          icon={<AlertCircle className="w-4 h-4 text-indigo-400" />}
-          count={todoTasks.length}
-          tasks={todoTasks}
-          limit={columnLimits.todo}
-          onLoadMore={() => setColumnLimits((prev) => ({ ...prev, todo: prev.todo + 8 }))}
-          projectMap={projectMap}
-          getPriorityBadge={getPriorityBadge}
-          onStatusChange={handleStatusChange}
-          onDeleteTask={(t) => setDeletingTaskConfirm(t)}
-          onViewTask={(t) => setViewingTask(t)}
-          onEditTask={handleOpenEditModal}
-          parseReferences={parseReferences}
-          checkReferenceStatus={checkReferenceStatus}
-          isPending={isPending}
-          activeDraggingId={activeDraggingId}
-          setActiveDraggingId={setActiveDraggingId}
-          activeDropColumn={activeDropColumn}
-          setActiveDropColumn={setActiveDropColumn}
-          nextStatus="in_progress"
-        />
+      <DndContext
+        sensors={sensors}
+        collisionDetection={customCollisionDetection}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        autoScroll={{
+          threshold: { x: 0.1, y: 0.25 },
+          acceleration: 25,
+        }}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* COLUMN 1: TODO */}
+          <KanbanColumn
+            columnStatus="todo"
+            title="TODO"
+            icon={<AlertCircle className="w-4 h-4 text-indigo-400" />}
+            count={todoTasks.length}
+            tasks={todoTasks}
+            limit={columnLimits.todo}
+            onLoadMore={() => setColumnLimits((prev) => ({ ...prev, todo: prev.todo + 8 }))}
+            projectMap={projectMap}
+            getPriorityBadge={getPriorityBadge}
+            onStatusChange={handleStatusChange}
+            onDeleteTask={(t) => setDeletingTaskConfirm(t)}
+            onViewTask={(t) => setViewingTask(t)}
+            onEditTask={handleOpenEditModal}
+            parseReferences={parseReferences}
+            checkReferenceStatus={checkReferenceStatus}
+            isPending={isPending}
+            isDraggingAny={activeTask !== null}
+            nextStatus="in_progress"
+          />
 
-        {/* COLUMN 2: IN PROGRESS */}
-        <KanbanColumn
-          columnStatus="in_progress"
-          title="IN PROGRESS"
-          icon={<Clock className="w-4 h-4 text-amber-400" />}
-          count={inProgressTasks.length}
-          tasks={inProgressTasks}
-          limit={columnLimits.in_progress}
-          onLoadMore={() => setColumnLimits((prev) => ({ ...prev, in_progress: prev.in_progress + 8 }))}
-          projectMap={projectMap}
-          getPriorityBadge={getPriorityBadge}
-          onStatusChange={handleStatusChange}
-          onDeleteTask={(t) => setDeletingTaskConfirm(t)}
-          onViewTask={(t) => setViewingTask(t)}
-          onEditTask={handleOpenEditModal}
-          parseReferences={parseReferences}
-          checkReferenceStatus={checkReferenceStatus}
-          isPending={isPending}
-          activeDraggingId={activeDraggingId}
-          setActiveDraggingId={setActiveDraggingId}
-          activeDropColumn={activeDropColumn}
-          setActiveDropColumn={setActiveDropColumn}
-          prevStatus="todo"
-          nextStatus="done"
-        />
+          {/* COLUMN 2: IN PROGRESS */}
+          <KanbanColumn
+            columnStatus="in_progress"
+            title="IN PROGRESS"
+            icon={<Clock className="w-4 h-4 text-amber-400" />}
+            count={inProgressTasks.length}
+            tasks={inProgressTasks}
+            limit={columnLimits.in_progress}
+            onLoadMore={() => setColumnLimits((prev) => ({ ...prev, in_progress: prev.in_progress + 8 }))}
+            projectMap={projectMap}
+            getPriorityBadge={getPriorityBadge}
+            onStatusChange={handleStatusChange}
+            onDeleteTask={(t) => setDeletingTaskConfirm(t)}
+            onViewTask={(t) => setViewingTask(t)}
+            onEditTask={handleOpenEditModal}
+            parseReferences={parseReferences}
+            checkReferenceStatus={checkReferenceStatus}
+            isPending={isPending}
+            isDraggingAny={activeTask !== null}
+            prevStatus="todo"
+            nextStatus="done"
+          />
 
-        {/* COLUMN 3: COMPLETED */}
-        <KanbanColumn
-          columnStatus="done"
-          title="COMPLETED"
-          icon={<CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-          count={doneTasks.length}
-          tasks={doneTasks}
-          limit={columnLimits.done}
-          onLoadMore={() => setColumnLimits((prev) => ({ ...prev, done: prev.done + 8 }))}
-          projectMap={projectMap}
-          getPriorityBadge={getPriorityBadge}
-          onStatusChange={handleStatusChange}
-          onDeleteTask={(t) => setDeletingTaskConfirm(t)}
-          onViewTask={(t) => setViewingTask(t)}
-          onEditTask={handleOpenEditModal}
-          parseReferences={parseReferences}
-          checkReferenceStatus={checkReferenceStatus}
-          isPending={isPending}
-          activeDraggingId={activeDraggingId}
-          setActiveDraggingId={setActiveDraggingId}
-          activeDropColumn={activeDropColumn}
-          setActiveDropColumn={setActiveDropColumn}
-          prevStatus="in_progress"
-        />
-      </div>
+          {/* COLUMN 3: COMPLETED */}
+          <KanbanColumn
+            columnStatus="done"
+            title="COMPLETED"
+            icon={<CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+            count={doneTasks.length}
+            tasks={doneTasks}
+            limit={columnLimits.done}
+            onLoadMore={() => setColumnLimits((prev) => ({ ...prev, done: prev.done + 8 }))}
+            projectMap={projectMap}
+            getPriorityBadge={getPriorityBadge}
+            onStatusChange={handleStatusChange}
+            onDeleteTask={(t) => setDeletingTaskConfirm(t)}
+            onViewTask={(t) => setViewingTask(t)}
+            onEditTask={handleOpenEditModal}
+            parseReferences={parseReferences}
+            checkReferenceStatus={checkReferenceStatus}
+            isPending={isPending}
+            isDraggingAny={activeTask !== null}
+            prevStatus="in_progress"
+          />
+        </div>
+
+        <DragOverlay>
+          {activeTask ? (
+            <div className="glass-panel p-4 rounded-2xl space-y-3 border-2 border-indigo-500 bg-[#12121a]/95 text-white shadow-2xl scale-[1.03] opacity-90 cursor-grabbing font-mono">
+              <div className="flex items-center gap-2 font-bold text-xs">
+                <GripVertical className="w-4 h-4 text-indigo-400" />
+                <span className="truncate">{activeTask.title}</span>
+              </div>
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
 
       {/* TASK DETAIL VIEW MODAL (Triggered on Card Click) */}
       {viewingTask && (
@@ -1312,6 +1448,200 @@ function SearchableSelect({
   );
 }
 
+// Sub-component for individual sortable task card using @dnd-kit
+interface SortableTaskCardProps {
+  task: Task;
+  projectName?: string | null;
+  cleanDesc: string;
+  references: ReferenceItem[];
+  getPriorityBadge: (priority: string) => React.ReactNode;
+  onViewTask: (task: Task) => void;
+  onEditTask: (task: Task) => void;
+  onStatusChange: (taskId: number, status: "todo" | "in_progress" | "done") => void;
+  onDeleteTask: (task: Task) => void;
+  checkReferenceStatus: (ref: ReferenceItem) => { isMissing: boolean; label: string; link: string | null };
+  isPending: boolean;
+  prevStatus?: "todo" | "in_progress" | "done";
+  nextStatus?: "todo" | "in_progress" | "done";
+}
+
+function SortableTaskCard({
+  task,
+  projectName,
+  cleanDesc,
+  references,
+  getPriorityBadge,
+  onViewTask,
+  onEditTask,
+  onStatusChange,
+  onDeleteTask,
+  checkReferenceStatus,
+  isPending,
+  prevStatus,
+  nextStatus,
+}: SortableTaskCardProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: task.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.35 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      onClick={() => onViewTask(task)}
+      className={cn(
+        "glass-panel glass-panel-hover p-4 rounded-2xl space-y-3 relative group transition-all duration-200 cursor-pointer select-none border border-white/10 hover:border-indigo-500/50 shadow-lg",
+        isDragging && "ring-2 ring-indigo-500/60 bg-indigo-500/10 shadow-2xl z-50 scale-[1.02]"
+      )}
+    >
+      {/* Header: Drag Grip, Priority, Project, Edit & Delete Buttons */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            onClick={(e) => e.stopPropagation()}
+            className="p-1 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/10 cursor-grab active:cursor-grabbing touch-none transition-colors"
+            title="Hold & drag handle to reorder task"
+          >
+            <GripVertical className="w-3.5 h-3.5" />
+          </button>
+          {getPriorityBadge(task.priority)}
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          {projectName && (
+            <span className="text-[10px] font-mono text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20 flex items-center gap-1">
+              <Layers className="w-2.5 h-2.5 inline" /> {projectName}
+            </span>
+          )}
+
+          {/* Separate Edit Button */}
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEditTask(task);
+            }}
+            className="w-7 h-7 rounded-xl text-slate-400 hover:text-white hover:bg-white/10"
+            title="Edit Task"
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Body: Title & Description */}
+      <div className="space-y-1">
+        <h4 className="text-xs font-bold text-white leading-snug font-sans group-hover:text-indigo-300 transition-colors">
+          {task.title}
+        </h4>
+        {cleanDesc && (
+          <p className="text-[11px] text-slate-400 font-sans line-clamp-2 leading-relaxed">
+            {cleanDesc}
+          </p>
+        )}
+      </div>
+
+      {/* Multiple Reference Attachment Badges */}
+      {references.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          {references.map((ref) => {
+            const status = checkReferenceStatus(ref);
+            return (
+              <React.Fragment key={ref.id}>
+                {status.isMissing ? (
+                  <div className="inline-flex items-center gap-1 text-[10px] font-mono text-rose-300 bg-rose-500/15 px-2 py-0.5 rounded-xl border border-rose-500/30">
+                    <AlertTriangle className="w-3 h-3 text-rose-400 shrink-0" />
+                    <span>Ref Missing</span>
+                  </div>
+                ) : (
+                  <a
+                    href={status.link || "#"}
+                    onClick={(e) => e.stopPropagation()}
+                    target={status.link?.startsWith("http") ? "_blank" : "_self"}
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[10px] font-mono text-purple-300 bg-purple-500/15 hover:bg-purple-500/25 px-2.5 py-0.5 rounded-xl border border-purple-500/30 transition-colors max-w-full"
+                  >
+                    {ref.type === "note" ? (
+                      <Brain className="w-3 h-3 text-purple-400 shrink-0" />
+                    ) : ref.type === "drive" ? (
+                      <HardDrive className="w-3 h-3 text-indigo-400 shrink-0" />
+                    ) : ref.type === "asset" ? (
+                      <FileText className="w-3 h-3 text-cyan-400 shrink-0" />
+                    ) : (
+                      <Globe className="w-3 h-3 text-emerald-400 shrink-0" />
+                    )}
+                    <span className="truncate max-w-[150px]">{status.label}</span>
+                    <ExternalLink className="w-2.5 h-2.5 ml-0.5 opacity-70" />
+                  </a>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Footer Controls: Move Status & Delete */}
+      <div className="pt-2 border-t border-white/10 flex items-center justify-between">
+        <div className="flex items-center gap-1">
+          {prevStatus && (
+            <Button
+              size="icon"
+              variant="ghost"
+              disabled={isPending}
+              onClick={(e) => {
+                e.stopPropagation();
+                onStatusChange(task.id, prevStatus);
+              }}
+              className="w-7 h-7 rounded-xl text-slate-400 hover:text-white hover:bg-white/10"
+              title={`Move to ${prevStatus}`}
+            >
+              <MoveLeft className="w-3.5 h-3.5" />
+            </Button>
+          )}
+          {nextStatus && (
+            <Button
+              size="icon"
+              variant="ghost"
+              disabled={isPending}
+              onClick={(e) => {
+                e.stopPropagation();
+                onStatusChange(task.id, nextStatus);
+              }}
+              className="w-7 h-7 rounded-xl text-slate-400 hover:text-white hover:bg-white/10"
+              title={`Move to ${nextStatus}`}
+            >
+              <MoveRight className="w-3.5 h-3.5" />
+            </Button>
+          )}
+        </div>
+
+        <Button
+          size="icon"
+          variant="ghost"
+          disabled={isPending}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDeleteTask(task);
+          }}
+          className="w-7 h-7 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 opacity-70 group-hover:opacity-100 transition-opacity"
+          title="Delete task"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // Sub-component for individual Kanban column
 interface KanbanColumnProps {
   columnStatus: "todo" | "in_progress" | "done";
@@ -1330,10 +1660,7 @@ interface KanbanColumnProps {
   parseReferences: (descText?: string | null) => { cleanDesc: string; references: ReferenceItem[] };
   checkReferenceStatus: (ref: ReferenceItem) => { isMissing: boolean; label: string; link: string | null };
   isPending: boolean;
-  activeDraggingId: number | null;
-  setActiveDraggingId: (id: number | null) => void;
-  activeDropColumn: "todo" | "in_progress" | "done" | null;
-  setActiveDropColumn: (col: "todo" | "in_progress" | "done" | null) => void;
+  isDraggingAny?: boolean;
   prevStatus?: "todo" | "in_progress" | "done";
   nextStatus?: "todo" | "in_progress" | "done";
 }
@@ -1355,50 +1682,37 @@ function KanbanColumn({
   parseReferences,
   checkReferenceStatus,
   isPending,
-  activeDraggingId,
-  setActiveDraggingId,
-  activeDropColumn,
-  setActiveDropColumn,
+  isDraggingAny = false,
   prevStatus,
   nextStatus,
 }: KanbanColumnProps) {
-  const isTargetColumn = activeDropColumn === columnStatus;
-  const visibleTasks = tasks.slice(0, limit);
-  const hasMore = tasks.length > limit;
+  const { setNodeRef, isOver } = useDroppable({
+    id: `col-${columnStatus}`,
+  });
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    if (activeDropColumn !== columnStatus) {
-      setActiveDropColumn(columnStatus);
-    }
-  };
+  const visibleTasks = isDraggingAny ? tasks : tasks.slice(0, limit);
+  const hasMore = !isDraggingAny && tasks.length > limit;
 
-  const handleDragLeave = (e: React.DragEvent) => {
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-      setActiveDropColumn(null);
-    }
-  };
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDraggingAny || !scrollRef.current) return;
+    const rect = scrollRef.current.getBoundingClientRect();
+    const relativeY = e.clientY - rect.top;
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setActiveDropColumn(null);
-    const taskIdStr = e.dataTransfer.getData("text/plain");
-    if (!taskIdStr) return;
-    const taskId = parseInt(taskIdStr, 10);
-    if (!isNaN(taskId)) {
-      onStatusChange(taskId, columnStatus);
+    if (relativeY < 120 && scrollRef.current.scrollTop > 0) {
+      scrollRef.current.scrollTop -= 20;
+    } else if (rect.bottom - e.clientY < 120) {
+      scrollRef.current.scrollTop += 20;
     }
   };
 
   return (
     <div
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      ref={setNodeRef}
+      onPointerMove={handlePointerMove}
       className={cn(
         "glass-panel p-4 rounded-3xl flex flex-col h-[calc(100vh-230px)] min-h-[520px] transition-all duration-200 border border-white/10",
-        isTargetColumn && "border-indigo-500/60 bg-indigo-950/20 ring-2 ring-indigo-500/30"
+        isOver && "border-indigo-500/80 bg-indigo-950/40 ring-2 ring-indigo-500/50 shadow-2xl shadow-indigo-500/20"
       )}
     >
       {/* Column Header */}
@@ -1412,189 +1726,48 @@ function KanbanColumn({
         </Badge>
       </div>
 
-      {/* Drop Highlight Zone */}
-      {isTargetColumn && (
-        <div className="p-3 mb-3 border-2 border-dashed border-indigo-400/50 bg-indigo-500/10 rounded-2xl text-center text-xs font-mono text-indigo-300 animate-pulse shrink-0">
-          Drop task to move to {title}
-        </div>
-      )}
-
       {/* Task Cards Scroll Container */}
-      <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3 pr-1">
         {tasks.length === 0 ? (
           <div className="h-36 flex flex-col items-center justify-center border border-dashed border-white/10 rounded-2xl text-slate-500 font-mono text-xs">
             No tasks in {title.toLowerCase()}
           </div>
         ) : (
-          <>
+          <SortableContext items={visibleTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
             {visibleTasks.map((task) => {
               const projectName = task.projectId ? projectMap.get(task.projectId) : null;
-              const isDraggingThis = activeDraggingId === task.id;
               const { cleanDesc, references } = parseReferences(task.description);
 
               return (
-                <div
+                <SortableTaskCard
                   key={task.id}
-                  draggable={!isPending}
-                  onClick={() => onViewTask(task)}
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData("text/plain", task.id.toString());
-                    setActiveDraggingId(task.id);
-                  }}
-                  onDragEnd={() => {
-                    setActiveDraggingId(null);
-                    setActiveDropColumn(null);
-                  }}
-                  className={cn(
-                    "glass-panel glass-panel-hover p-4 rounded-2xl space-y-3 relative group transition-all duration-200 cursor-pointer select-none border border-white/10 hover:border-indigo-500/50 shadow-lg",
-                    isDraggingThis && "opacity-40 border-indigo-500 border-dashed scale-[0.98]"
-                  )}
-                >
-                  {/* Header: Drag Grip, Priority, Project, Edit & Delete Buttons */}
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5">
-                      <GripVertical className="w-3.5 h-3.5 text-slate-500 group-hover:text-slate-300 shrink-0" />
-                      {getPriorityBadge(task.priority)}
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      {projectName && (
-                        <span className="text-[10px] font-mono text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20 flex items-center gap-1">
-                          <Layers className="w-2.5 h-2.5 inline" /> {projectName}
-                        </span>
-                      )}
-
-                      {/* Separate Edit Button */}
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onEditTask(task);
-                        }}
-                        className="w-7 h-7 rounded-xl text-slate-400 hover:text-white hover:bg-white/10"
-                        title="Edit Task"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Body: Title & Description */}
-                  <div className="space-y-1">
-                    <h4 className="text-xs font-bold text-white leading-snug font-sans group-hover:text-indigo-300 transition-colors">
-                      {task.title}
-                    </h4>
-                    {cleanDesc && (
-                      <p className="text-[11px] text-slate-400 font-sans line-clamp-2 leading-relaxed">
-                        {cleanDesc}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Multiple Reference Attachment Badges */}
-                  {references.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {references.map((ref) => {
-                        const status = checkReferenceStatus(ref);
-                        return (
-                          <React.Fragment key={ref.id}>
-                            {status.isMissing ? (
-                              <div className="inline-flex items-center gap-1 text-[10px] font-mono text-rose-300 bg-rose-500/15 px-2 py-0.5 rounded-xl border border-rose-500/30">
-                                <AlertTriangle className="w-3 h-3 text-rose-400 shrink-0" />
-                                <span>Ref Missing</span>
-                              </div>
-                            ) : (
-                              <a
-                                href={status.link || "#"}
-                                onClick={(e) => e.stopPropagation()}
-                                target={status.link?.startsWith("http") ? "_blank" : "_self"}
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-[10px] font-mono text-purple-300 bg-purple-500/15 hover:bg-purple-500/25 px-2.5 py-0.5 rounded-xl border border-purple-500/30 transition-colors max-w-full"
-                              >
-                                {ref.type === "note" ? (
-                                  <Brain className="w-3 h-3 text-purple-400 shrink-0" />
-                                ) : ref.type === "drive" ? (
-                                  <HardDrive className="w-3 h-3 text-indigo-400 shrink-0" />
-                                ) : ref.type === "asset" ? (
-                                  <FileText className="w-3 h-3 text-cyan-400 shrink-0" />
-                                ) : (
-                                  <Globe className="w-3 h-3 text-emerald-400 shrink-0" />
-                                )}
-                                <span className="truncate max-w-[150px]">{status.label}</span>
-                                <ExternalLink className="w-2.5 h-2.5 ml-0.5 opacity-70" />
-                              </a>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Footer Controls: Move Status & Delete */}
-                  <div className="pt-2 border-t border-white/10 flex items-center justify-between">
-                    <div className="flex items-center gap-1">
-                      {prevStatus && (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          disabled={isPending}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onStatusChange(task.id, prevStatus);
-                          }}
-                          className="w-7 h-7 rounded-xl text-slate-400 hover:text-white hover:bg-white/10"
-                          title={`Move to ${prevStatus}`}
-                        >
-                          <MoveLeft className="w-3.5 h-3.5" />
-                        </Button>
-                      )}
-                      {nextStatus && (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          disabled={isPending}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onStatusChange(task.id, nextStatus);
-                          }}
-                          className="w-7 h-7 rounded-xl text-slate-400 hover:text-white hover:bg-white/10"
-                          title={`Move to ${nextStatus}`}
-                        >
-                          <MoveRight className="w-3.5 h-3.5" />
-                        </Button>
-                      )}
-                    </div>
-
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      disabled={isPending}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteTask(task);
-                      }}
-                      className="w-7 h-7 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 opacity-70 group-hover:opacity-100 transition-opacity"
-                      title="Delete task"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                </div>
+                  task={task}
+                  projectName={projectName}
+                  cleanDesc={cleanDesc}
+                  references={references}
+                  getPriorityBadge={getPriorityBadge}
+                  onViewTask={onViewTask}
+                  onEditTask={onEditTask}
+                  onStatusChange={onStatusChange}
+                  onDeleteTask={onDeleteTask}
+                  checkReferenceStatus={checkReferenceStatus}
+                  isPending={isPending}
+                  prevStatus={prevStatus}
+                  nextStatus={nextStatus}
+                />
               );
             })}
+          </SortableContext>
+        )}
 
-            {/* Load More Button */}
-            {hasMore && (
-              <Button
-                onClick={onLoadMore}
-                variant="outline"
-                className="w-full text-xs font-mono border-white/15 text-indigo-300 hover:text-white hover:bg-indigo-500/10 rounded-2xl h-10 my-2"
-              >
-                Load More Tasks ({tasks.length - limit} remaining)
-              </Button>
-            )}
-          </>
+        {hasMore && (
+          <Button
+            onClick={onLoadMore}
+            variant="outline"
+            className="w-full text-xs font-mono border-white/15 text-indigo-300 hover:text-white hover:bg-indigo-500/10 rounded-2xl h-10 my-2"
+          >
+            Load More Tasks ({tasks.length - limit} remaining)
+          </Button>
         )}
       </div>
     </div>

@@ -23,6 +23,7 @@ import {
   Command as CommandIcon,
   X,
   Loader2,
+  Wand2,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -41,6 +42,7 @@ const PAGE_ITEMS = [
   { id: "page-calendar", group: "Pages & Apps", title: "Master Calendar", subtitle: "Events & Timetable", url: "/calendar", icon: Calendar },
   { id: "page-zen", group: "Pages & Apps", title: "Zen Time-Blocker", subtitle: "Focus & Productivity Blocker", url: "/zen", icon: Timer },
   { id: "page-briefing", group: "Pages & Apps", title: "Daily AI Briefing", subtitle: "Daily Brief & Intelligence Summary", url: "/ai-briefing", icon: Sparkles },
+  { id: "page-image-analyzer", group: "Pages & Apps", title: "AI Image Detail Analyzer", subtitle: "Reverse-Engineer Images into Prompts", url: "/apps/image-analyzer", icon: Wand2 },
   { id: "page-apps", group: "Pages & Apps", title: "App Launcher", subtitle: "Installed Web & System Tools", url: "/apps", icon: AppWindow },
   { id: "page-watchlist", group: "Pages & Apps", title: "TMDB Watchlist", subtitle: "Movies & Series Watchlist", url: "/watchlist", icon: Film },
   { id: "page-settings", group: "Pages & Apps", title: "System Settings", subtitle: "Control Center & Security Configuration", url: "/settings", icon: Settings },

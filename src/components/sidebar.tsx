@@ -24,6 +24,7 @@ import {
   Cpu,
   Flame,
   Lock,
+  Wand2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ const navItems = [
   { name: "Master Calendar", href: "/calendar", icon: Calendar },
   { name: "Zen Time-Blocker", href: "/zen", icon: Timer },
   { name: "Daily AI Briefing", href: "/ai-briefing", icon: Sparkles },
+  { name: "AI Image Analyzer", href: "/apps/image-analyzer", icon: Wand2 },
   { name: "App Launcher", href: "/apps", icon: AppWindow },
   { name: "TMDB Watchlist", href: "/watchlist", icon: Film },
   { name: "System Settings", href: "/settings", icon: Settings },

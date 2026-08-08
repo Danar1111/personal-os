@@ -15,6 +15,7 @@ export const tasks = mysqlTable('tasks', {
   description: text('description'),
   status: varchar('status', { length: 50 }).notNull().default('todo'),
   priority: varchar('priority', { length: 50 }).notNull().default('medium'),
+  position: int('position').notNull().default(0),
   createdAt: timestamp('created_at').defaultNow(),
 });
 

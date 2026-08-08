@@ -1,13 +1,20 @@
 "use server";
 
-import { db } from "@/db";
+import { db, poolConnection } from "@/db";
 import { tasks, projects, assets, notes, Task, Project, Asset, Note } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, asc } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
 export async function getTasksWithProjects() {
   try {
-    const allTasks = await db.select().from(tasks).orderBy(desc(tasks.createdAt));
+    // Ensure position column exists in MySQL tasks table
+    try {
+      await poolConnection.query("ALTER TABLE tasks ADD COLUMN position INT DEFAULT 0");
+    } catch {
+      // Column already exists or already updated
+    }
+
+    const allTasks = await db.select().from(tasks).orderBy(asc(tasks.position), desc(tasks.createdAt));
     const allProjects = await db.select().from(projects).orderBy(desc(projects.createdAt));
     const allAssets = await db.select().from(assets).orderBy(desc(assets.createdAt));
     const allNotes = await db.select().from(notes).orderBy(desc(notes.createdAt));
@@ -15,7 +22,7 @@ export async function getTasksWithProjects() {
     // Seed initial projects and tasks if database is empty
     if (allProjects.length === 0 && allTasks.length === 0) {
       await seedDefaultData();
-      const freshTasks = await db.select().from(tasks).orderBy(desc(tasks.createdAt));
+      const freshTasks = await db.select().from(tasks).orderBy(asc(tasks.position), desc(tasks.createdAt));
       const freshProjects = await db.select().from(projects).orderBy(desc(projects.createdAt));
       return { tasks: freshTasks, projects: freshProjects, assets: allAssets, notes: allNotes };
     }
@@ -25,6 +32,44 @@ export async function getTasksWithProjects() {
     console.error("Failed to fetch tasks/projects:", error);
     return { tasks: [], projects: [], assets: [], notes: [] };
   }
+}
+
+export async function reorderTasksAction(
+  orderedItems: { id: number; status: "todo" | "in_progress" | "done"; position: number }[]
+) {
+  if (!orderedItems || orderedItems.length === 0) return { success: true };
+
+  try {
+    const ids = orderedItems.map((item) => item.id);
+
+    let statusCases = "CASE id ";
+    let positionCases = "CASE id ";
+
+    orderedItems.forEach((item) => {
+      statusCases += `WHEN ${item.id} THEN ${poolConnection.escape(item.status)} `;
+      positionCases += `WHEN ${item.id} THEN ${item.position} `;
+    });
+
+    statusCases += "END";
+    positionCases += "END";
+
+    const query = `
+      UPDATE tasks 
+      SET 
+        status = ${statusCases},
+        position = ${positionCases}
+      WHERE id IN (${ids.join(",")})
+    `;
+
+    await poolConnection.query(query);
+  } catch (error) {
+    console.error("Failed to reorder tasks in DB:", error);
+    return { success: false };
+  }
+
+  revalidatePath("/tasks");
+  revalidatePath("/");
+  return { success: true };
 }
 
 export async function createTaskAction(data: {
@@ -44,6 +89,7 @@ export async function createTaskAction(data: {
     status: data.status || "todo",
     priority: data.priority || "medium",
     projectId: data.projectId || null,
+    position: 0,
   });
 
   revalidatePath("/tasks");

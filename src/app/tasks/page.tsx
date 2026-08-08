@@ -5,6 +5,7 @@ import { CheckSquare, Database } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 export const revalidate = 0; // Disable static cache for live data updates
+export const dynamic = "force-dynamic"; // Force dynamic server rendering on every request
 
 export default async function TasksPage() {
   const {
