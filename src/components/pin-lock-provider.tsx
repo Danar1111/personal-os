@@ -62,13 +62,34 @@ export function PinLockProvider({ children }: { children: React.ReactNode }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const zenRunningRef = useRef(false);
 
-  /* ── Session check on mount + zen listener ── */
+  /* ── Session & PIN Config check on mount + zen listener ── */
   useEffect(() => {
-    const unlocked = sessionStorage.getItem(SESSION_KEY);
-    if (unlocked === "true") {
-      setIsLocked(false);
-      setTimeLeft(1800);
-    }
+    let isMounted = true;
+    const checkPinConfig = async () => {
+      try {
+        const res = await fetch("/api/verify-pin");
+        const data = await res.json();
+        if (!isMounted) return;
+        if (!data.configured) {
+          // No PIN configured in .env or DB — bypass lock screen
+          setIsLocked(false);
+          setIsReady(true);
+          return;
+        }
+      } catch (e) {
+        console.warn("Failed to check PIN config:", e);
+      }
+
+      const unlocked = sessionStorage.getItem(SESSION_KEY);
+      if (unlocked === "true") {
+        setIsLocked(false);
+        setTimeLeft(1800);
+      }
+      setIsReady(true);
+    };
+
+    checkPinConfig();
+
     // Read initial zen state
     const initialZen = localStorage.getItem("zen_running") === "true";
     setZenRunning(initialZen);
@@ -82,8 +103,9 @@ export function PinLockProvider({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener("zen_state_change", handleStorage);
     window.addEventListener("storage", handleStorage);
-    setIsReady(true);
+
     return () => {
+      isMounted = false;
       window.removeEventListener("zen_state_change", handleStorage);
       window.removeEventListener("storage", handleStorage);
     };
