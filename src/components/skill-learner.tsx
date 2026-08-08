@@ -315,15 +315,25 @@ export function SkillLearner({
       {/* Top Filter & Action Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 glass-panel p-4 rounded-3xl border border-white/10">
         {/* Category Tabs & Search */}
-        <div className="flex items-center gap-3 w-full sm:w-auto flex-1 overflow-x-auto">
+        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto flex-1">
           <div className="relative w-full sm:w-64 shrink-0">
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <Input
               placeholder="Search skills matrix..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 bg-white/[0.04] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-2xl h-11 focus:border-indigo-500 font-mono"
+              className="pl-10 pr-9 bg-white/[0.04] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-2xl h-11 focus:border-indigo-500 font-mono"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 transition-colors"
+                title="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-1 bg-white/[0.03] border border-white/10 p-1.5 rounded-2xl shrink-0">

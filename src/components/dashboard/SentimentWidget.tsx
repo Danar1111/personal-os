@@ -14,6 +14,7 @@ import {
   Settings,
   AlertCircle,
   Newspaper,
+  X,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -73,8 +74,18 @@ export function SentimentWidget() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search any stock or topic (e.g. BBCA, NVDA, Crypto, Fed, Inflation, Tech)..."
-            className="pl-10 pr-4 bg-white/[0.04] border-white/10 text-xs text-white placeholder:text-slate-500 rounded-xl h-11 focus:border-purple-500/50 font-mono"
+            className="pl-10 pr-9 bg-white/[0.04] border-white/10 text-xs text-white placeholder:text-slate-500 rounded-xl h-11 focus:border-purple-500/50 font-mono"
           />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 transition-colors"
+              title="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
         <Button
           type="submit"
