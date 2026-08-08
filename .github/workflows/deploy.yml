@@ -27,6 +27,7 @@ jobs:
             git fetch --all
             git reset --hard origin/main
             npm install
+            npx drizzle-kit push
             npm run build
             pm2 restart personal-os || pm2 start npm --name "personal-os" -- start
             pm2 save

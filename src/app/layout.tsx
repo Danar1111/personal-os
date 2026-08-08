@@ -8,8 +8,8 @@ import { Omnibar } from "@/components/omnibar";
 import { OmniAIChat } from "@/components/omni-ai-chat";
 import { SearchTrigger } from "@/components/search-trigger";
 import { OmniAiTrigger } from "@/components/omni-ai-trigger";
-import { Bell, Activity } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { DbStatusBadge } from "@/components/db-status-badge";
+import { Bell } from "lucide-react";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -55,13 +55,7 @@ export default function RootLayout({
             <div className="flex items-center gap-4">
               <OmniAiTrigger />
 
-              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.03] border border-white/10 text-xs font-mono text-slate-300">
-                <Activity className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                <span>MySQL Database:</span>
-                <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 bg-emerald-500/10 text-[10px]">
-                  CONNECTED
-                </Badge>
-              </div>
+              <DbStatusBadge />
 
               <button className="relative p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-colors">
                 <Bell className="w-4 h-4" />
