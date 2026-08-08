@@ -241,14 +241,16 @@ function SingleMovieCard({ movie }: { movie: MovieItem }) {
 export function MovieRecommendationWidget({ movies = [] }: MovieRecommendationWidgetProps) {
   if (!movies || movies.length === 0) {
     return (
-      <div className="glass-panel rounded-3xl p-5 border border-white/10 flex flex-col justify-between h-full font-mono text-xs text-slate-500 text-center">
-        <div className="flex items-center gap-2 border-b border-white/10 pb-3 mb-3">
+      <div className="glass-panel rounded-3xl p-5 border border-white/10 flex flex-col justify-between h-[495px] font-mono text-xs text-slate-500 text-center">
+        <div className="flex items-center gap-2 border-b border-white/10 pb-3">
           <div className="p-2 rounded-xl bg-purple-500/20 text-purple-300">
             <Film className="w-4 h-4" />
           </div>
           <h3 className="text-xs font-bold text-white font-mono uppercase">TOP 3 MOVIES</h3>
         </div>
-        <p className="py-4">No TMDB recommendations found. Configure TMDB API key in Settings.</p>
+        <div className="flex-1 flex flex-col items-center justify-center p-4">
+          <p className="max-w-[200px] leading-relaxed">No TMDB recommendations found. Configure TMDB API key in Settings.</p>
+        </div>
       </div>
     );
   }

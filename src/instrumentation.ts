@@ -1,10 +1,7 @@
-export async function register() {
+export function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    try {
-      const dns = await import("node:dns");
-      dns.setDefaultResultOrder("ipv4first");
-    } catch (e) {
-      // ignore
-    }
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const dns = require("node:dns");
+    dns.setDefaultResultOrder("ipv4first");
   }
 }
