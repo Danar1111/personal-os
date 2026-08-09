@@ -9,6 +9,7 @@ import { OmniAIChat } from "@/components/omni-ai-chat";
 import { SearchTrigger } from "@/components/search-trigger";
 import { OmniAiTrigger } from "@/components/omni-ai-trigger";
 import { DbStatusBadge } from "@/components/db-status-badge";
+import { NavigationProgress } from "@/components/navigation-progress";
 import { Bell } from "lucide-react";
 
 const inter = Inter({
@@ -40,6 +41,9 @@ export default function RootLayout({
     <html lang="en" className={`dark ${inter.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
       <body className="font-sans bg-[#0a0a0b] text-[#e5e2e3] antialiased min-h-screen flex overflow-hidden" suppressHydrationWarning>
         <PinLockProvider>
+        {/* Page navigation loading pill */}
+        <NavigationProgress />
+
         {/* Collapsible Sidebar */}
         <Sidebar />
 

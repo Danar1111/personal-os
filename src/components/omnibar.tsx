@@ -193,6 +193,11 @@ export function Omnibar() {
     } else if (item.url.startsWith("http://") || item.url.startsWith("https://")) {
       window.open(item.url, "_blank", "noopener,noreferrer");
     } else {
+      // Only show loading if navigating to a different page
+      const targetPath = item.url.split("?")[0].split("#")[0];
+      if (targetPath !== window.location.pathname) {
+        window.dispatchEvent(new CustomEvent("nav:start"));
+      }
       router.push(item.url);
     }
   };
