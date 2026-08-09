@@ -277,6 +277,7 @@ export function MasterCalendar({ initialEvents }: MasterCalendarProps) {
                 <div className="space-y-1.5">
                   <label className="text-xs font-mono text-slate-300">Event Title *</label>
                   <Input
+                    autoFocus
                     required
                     placeholder="e.g. Next.js Architecture Deep Dive"
                     value={newTitle}

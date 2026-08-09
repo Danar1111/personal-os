@@ -121,6 +121,7 @@ export async function updateAssetAction(
   id: number,
   data: {
     title?: string;
+    type?: "link" | "pdf" | "image" | "video";
     urlOrPath?: string;
     thumbnailUrl?: string;
     tags?: string;
@@ -128,6 +129,7 @@ export async function updateAssetAction(
 ) {
   const updatePayload: any = {};
   if (data.title !== undefined) updatePayload.title = data.title.trim();
+  if (data.type !== undefined) updatePayload.type = data.type;
   if (data.urlOrPath !== undefined) {
     updatePayload.urlOrPath = data.urlOrPath.trim();
     if (!data.thumbnailUrl) {

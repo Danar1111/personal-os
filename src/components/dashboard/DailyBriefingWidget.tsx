@@ -8,7 +8,7 @@ interface DailyBriefingWidgetProps {
   totalTasksCount: number;
   completionRate: number;
   nextEvent?: { title: string; startTime: Date } | null;
-  appsCount?: number;
+  aiSkillsCount?: number;
 }
 
 export function DailyBriefingWidget({
@@ -16,7 +16,7 @@ export function DailyBriefingWidget({
   totalTasksCount,
   completionRate,
   nextEvent,
-  appsCount = 0,
+  aiSkillsCount = 54,
 }: DailyBriefingWidgetProps) {
   const currentDateStr = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -28,8 +28,6 @@ export function DailyBriefingWidget({
   const nextEventTimeStr = nextEvent
     ? `${new Date(nextEvent.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} (${new Date(nextEvent.startTime).toLocaleDateString([], { month: "short", day: "numeric" })})`
     : "";
-
-  const totalServicesCount = 16 + appsCount;
 
   return (
     <div className="glass-panel glass-panel-hover rounded-3xl p-6 border border-white/10 flex flex-col justify-between h-full relative overflow-hidden">
@@ -118,9 +116,9 @@ export function DailyBriefingWidget({
           <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-center gap-2 col-span-2 sm:col-span-1">
             <Cpu className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             <div className="min-w-0 flex-1">
-              <span className="text-slate-400 text-[9px] block uppercase">App Services</span>
+              <span className="text-slate-400 text-[9px] block uppercase">AI Engine Skills</span>
               <span className="text-emerald-400 font-bold">
-                {totalServicesCount} Services OK
+                {aiSkillsCount} Skills Active
               </span>
             </div>
           </div>
@@ -131,7 +129,7 @@ export function DailyBriefingWidget({
       <div className="pt-3 mt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-3 text-xs font-mono text-slate-400">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse glow-emerald" />
-          <span>All {totalServicesCount} App Services &amp; Modules Operational</span>
+          <span>All {aiSkillsCount} AI Core Engine Skills Operational</span>
         </div>
         <Link href="/tasks" className="text-purple-400 hover:text-purple-300 underline">
           View Task Omni-Kanban →

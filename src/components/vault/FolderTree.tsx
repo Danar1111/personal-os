@@ -52,6 +52,7 @@ interface FolderTreeProps {
   onDeleteFolder: (folder: Folder) => void;
   onDeleteNote?: (note: Note) => void;
   onMoveNoteToFolder?: (noteId: number, targetFolderId: number | null) => void;
+  onMoveFolderToFolder?: (folderId: number, targetParentId: number | null) => void;
   onCutNote?: (note: Note) => void;
   onCopyNote?: (note: Note) => void;
   onPasteNoteToFolder?: (targetFolderId: number | null) => void;
@@ -73,6 +74,7 @@ export function FolderTree({
   onDeleteFolder,
   onDeleteNote,
   onMoveNoteToFolder,
+  onMoveFolderToFolder,
   onCutNote,
   onCopyNote,
   onPasteNoteToFolder,
@@ -236,6 +238,15 @@ export function FolderTree({
     }
   };
 
+  // Recursive helper to calculate total notes inside a folder including all nested subfolders
+  const getDeepNoteCount = (fn: FolderNode): number => {
+    let count = fn.notes.length;
+    for (const sub of fn.subfolders) {
+      count += getDeepNoteCount(sub);
+    }
+    return count;
+  };
+
   const filterNode = (node: FolderNode, q: string): boolean => {
     if (!q) return true;
     const folderMatches = node.folder.name.toLowerCase().includes(q);
@@ -273,6 +284,11 @@ export function FolderTree({
       <div className="space-y-1 select-none">
         {/* Folder Header Row */}
         <div
+          draggable
+          onDragStart={(e) => {
+            e.stopPropagation();
+            e.dataTransfer.setData("application/json", JSON.stringify({ folderId: node.folder.id }));
+          }}
           onClick={() => toggleFolder(node.folder.id)}
           onDragOver={(e) => {
             e.preventDefault();
@@ -297,6 +313,8 @@ export function FolderTree({
                 const data = JSON.parse(dataStr);
                 if (data.noteId) {
                   onMoveNoteToFolder?.(data.noteId, node.folder.id);
+                } else if (data.folderId && data.folderId !== node.folder.id) {
+                  onMoveFolderToFolder?.(data.folderId, node.folder.id);
                 }
               }
             } catch (err) {}
@@ -326,7 +344,7 @@ export function FolderTree({
             <span className="truncate font-mono font-medium">{node.folder.name}</span>
 
             <span className="text-[10px] text-slate-500 font-bold ml-1">
-              ({node.notes.length})
+              ({getDeepNoteCount(node)})
             </span>
           </div>
 
@@ -578,6 +596,8 @@ export function FolderTree({
                   const data = JSON.parse(dataStr);
                   if (data.noteId) {
                     onMoveNoteToFolder?.(data.noteId, null);
+                  } else if (data.folderId) {
+                    onMoveFolderToFolder?.(data.folderId, null);
                   }
                 }
               } catch (err) {}

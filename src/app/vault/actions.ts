@@ -53,6 +53,18 @@ export async function renameFolderAction(id: number, name: string) {
   return { success: true };
 }
 
+export async function moveFolderAction(id: number, newParentId: number | null) {
+  if (newParentId === id) {
+    throw new Error("A folder cannot be moved into itself");
+  }
+
+  await db.update(folders).set({ parentId: newParentId || null }).where(eq(folders.id, id));
+
+  revalidatePath("/vault");
+  revalidatePath("/");
+  return { success: true };
+}
+
 export async function deleteFolderAction(id: number) {
   await db.delete(folders).where(eq(folders.id, id));
 

@@ -284,6 +284,7 @@ export function DigitalInventory({ initialAssets }: DigitalInventoryProps) {
               <div className="space-y-1.5">
                 <label className="text-xs font-mono text-slate-300">Asset Title *</label>
                 <Input
+                  autoFocus
                   required
                   placeholder="e.g. Next.js 16 App Router Specs"
                   value={newTitle}

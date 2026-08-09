@@ -9,6 +9,7 @@ import {
   updateTaskFullAction,
   deleteTaskAction,
   createProjectAction,
+  renameProjectAction,
   deleteProjectAction,
   reorderTasksAction,
 } from "@/app/tasks/actions";
@@ -57,6 +58,7 @@ import {
   ExternalLink,
   Eye,
   X,
+  Check,
   Link2,
   ArrowUp,
 } from "lucide-react";
@@ -236,6 +238,16 @@ export function KanbanBoard({
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
   const [isManageProjectsOpen, setIsManageProjectsOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
+  const [editingProjectId, setEditingProjectId] = useState<number | null>(null);
+  const [editingProjectName, setEditingProjectName] = useState("");
+
+  const handleSaveProjectRename = (projectId: number) => {
+    if (!editingProjectName.trim()) return;
+    startTransition(async () => {
+      await renameProjectAction(projectId, editingProjectName.trim());
+      setEditingProjectId(null);
+    });
+  };
 
   // Task Detail View Modal State (ReadOnly / Action View)
   const [viewingTask, setViewingTask] = useState<Task | null>(null);
@@ -277,14 +289,14 @@ export function KanbanBoard({
   const parseReferences = (descText?: string | null) => {
     if (!descText) return { cleanDesc: "", references: [] };
 
-    const normalizedText = descText.replace(/\[REF:FILE:/g, "[REF:LINK:");
-    const matches = Array.from(normalizedText.matchAll(/\[REF:(ASSET|DRIVE|NOTE|LINK):(.*?)\]/g));
-    const cleanDesc = normalizedText.replace(/\[REF:(ASSET|DRIVE|NOTE|LINK):.*?\]/g, "").trim();
+    const normalizedText = descText.replace(/\[REF:FILE:/gi, "[REF:LINK:");
+    const matches = Array.from(normalizedText.matchAll(/\[REF:(ASSET|DRIVE|NOTE|LINK):(.*?)\]/gi));
+    const cleanDesc = normalizedText.replace(/\[REF:(ASSET|DRIVE|NOTE|LINK):.*?\]/gi, "").trim();
 
     const references: ReferenceItem[] = matches.map((m, index) => ({
       id: `ref-${index}-${Date.now()}`,
       type: m[1].toLowerCase() as "asset" | "drive" | "note" | "link",
-      value: m[2],
+      value: m[2].trim(),
     }));
 
     return { cleanDesc, references };
@@ -303,29 +315,35 @@ export function KanbanBoard({
 
   // Helper to resolve reference status & title
   const checkReferenceStatus = (ref: ReferenceItem) => {
-    if (ref.type === "asset") {
-      const assetId = parseInt(ref.value, 10);
-      const asset = assetMap.get(assetId);
+    if (ref.type === "asset" || ref.type === "drive") {
+      const numId = parseInt(ref.value, 10);
+      let asset = !isNaN(numId) ? assetMap.get(numId) : undefined;
       if (!asset) {
-        return { isMissing: true, label: `Asset Vault Item #${ref.value} Deleted`, link: null };
+        const valLower = ref.value.toLowerCase().trim();
+        asset = initialAssets.find(
+          (a) =>
+            a.title.toLowerCase().trim() === valLower ||
+            a.title.toLowerCase().includes(valLower) ||
+            a.urlOrPath.toLowerCase().includes(valLower)
+        );
+      }
+      if (!asset) {
+        return { isMissing: true, label: `${ref.type === "asset" ? "Asset Vault Item" : "Drive File"} "${ref.value}" Deleted`, link: null };
       }
       return { isMissing: false, label: asset.title, link: asset.urlOrPath };
     }
 
-    if (ref.type === "drive") {
-      const driveId = parseInt(ref.value, 10);
-      const file = assetMap.get(driveId);
-      if (!file) {
-        return { isMissing: true, label: `Drive File #${ref.value} Removed`, link: null };
-      }
-      return { isMissing: false, label: file.title, link: file.urlOrPath };
-    }
-
     if (ref.type === "note") {
-      const noteId = parseInt(ref.value, 10);
-      const note = noteMap.get(noteId);
+      const numId = parseInt(ref.value, 10);
+      let note = !isNaN(numId) ? noteMap.get(numId) : undefined;
       if (!note) {
-        return { isMissing: true, label: `Brain Note #${ref.value} Deleted`, link: null };
+        const valLower = ref.value.toLowerCase().trim();
+        note = initialNotes.find(
+          (n) => n.title.toLowerCase().trim() === valLower || n.title.toLowerCase().includes(valLower)
+        );
+      }
+      if (!note) {
+        return { isMissing: true, label: `Brain Note "${ref.value}" Deleted`, link: null };
       }
       return { isMissing: false, label: note.title, link: `/vault?note=${note.id}` };
     }
@@ -540,7 +558,16 @@ export function KanbanBoard({
       </div>
 
       {/* Manage Projects Modal Dialog */}
-      <Dialog open={isManageProjectsOpen} onOpenChange={setIsManageProjectsOpen}>
+      <Dialog
+        open={isManageProjectsOpen}
+        onOpenChange={(open) => {
+          setIsManageProjectsOpen(open);
+          if (!open) {
+            setEditingProjectId(null);
+            setEditingProjectName("");
+          }
+        }}
+      >
         <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-lg p-6 shadow-2xl backdrop-blur-2xl space-y-4 font-mono">
           <DialogHeader className="flex flex-row items-center justify-between border-b border-white/10 pb-3">
             <div className="flex items-center gap-2.5">
@@ -552,7 +579,11 @@ export function KanbanBoard({
               </DialogTitle>
             </div>
             <button
-              onClick={() => setIsManageProjectsOpen(false)}
+              onClick={() => {
+                setIsManageProjectsOpen(false);
+                setEditingProjectId(null);
+                setEditingProjectName("");
+              }}
               className="p-1.5 rounded-xl bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-colors border border-white/10"
             >
               <X className="w-4 h-4" />
@@ -567,31 +598,81 @@ export function KanbanBoard({
             ) : (
               initialProjects.map((proj) => {
                 const taskCount = initialTasks.filter((t) => t.projectId === proj.id).length;
+                const isEditing = editingProjectId === proj.id;
 
                 return (
                   <div
                     key={proj.id}
                     className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between gap-3 hover:border-purple-500/40 transition-all font-mono text-xs"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
                       <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 shrink-0">
                         <Folder className="w-4 h-4" />
                       </div>
-                      <div className="min-w-0">
-                        <h4 className="font-bold text-white truncate text-xs">{proj.name}</h4>
-                        <p className="text-[10px] text-slate-400 mt-0.5">{taskCount} linked task{taskCount !== 1 ? "s" : ""}</p>
-                      </div>
+                      {isEditing ? (
+                        <div className="flex items-center gap-2 flex-1">
+                          <Input
+                            autoFocus
+                            value={editingProjectName}
+                            onChange={(e) => setEditingProjectName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleSaveProjectRename(proj.id);
+                              if (e.key === "Escape") setEditingProjectId(null);
+                            }}
+                            className="h-8 text-xs bg-white/10 border-indigo-500/50 font-mono text-white rounded-xl"
+                          />
+                          <Button
+                            size="icon"
+                            disabled={isPending}
+                            onClick={() => handleSaveProjectRename(proj.id)}
+                            className="w-8 h-8 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white shrink-0"
+                            title="Save Project Name"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => setEditingProjectId(null)}
+                            className="w-8 h-8 rounded-xl text-slate-400 hover:text-white shrink-0"
+                            title="Cancel"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="min-w-0 flex-1">
+                          <h4 className="font-bold text-white truncate text-xs">{proj.name}</h4>
+                          <p className="text-[10px] text-slate-400 mt-0.5">{taskCount} linked task{taskCount !== 1 ? "s" : ""}</p>
+                        </div>
+                      )}
                     </div>
 
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => setDeletingProjectConfirm(proj)}
-                      className="w-8 h-8 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 shrink-0"
-                      title="Delete Project & Tasks"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    {!isEditing && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => {
+                            setEditingProjectId(proj.id);
+                            setEditingProjectName(proj.name);
+                          }}
+                          className="w-8 h-8 rounded-xl text-slate-400 hover:text-indigo-300 hover:bg-indigo-500/10"
+                          title="Rename Project"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => setDeletingProjectConfirm(proj)}
+                          className="w-8 h-8 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10"
+                          title="Delete Project & Tasks"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 );
               })
@@ -602,6 +683,8 @@ export function KanbanBoard({
             <Button
               onClick={() => {
                 setIsManageProjectsOpen(false);
+                setEditingProjectId(null);
+                setEditingProjectName("");
                 setIsProjectDialogOpen(true);
               }}
               className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-10 px-4 gap-1.5"

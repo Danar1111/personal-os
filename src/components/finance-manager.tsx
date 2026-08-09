@@ -312,6 +312,7 @@ export function FinanceManager({
               <div className="space-y-1.5">
                 <label className="text-xs font-mono text-slate-300">Amount ($) *</label>
                 <Input
+                  autoFocus
                   required
                   type="number"
                   step="0.01"

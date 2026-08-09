@@ -108,6 +108,21 @@ export async function toggleMilestoneAction(id: number, isCompleted: boolean) {
   return { success: true };
 }
 
+export async function updateMilestoneAction(id: number, description: string) {
+  if (!description || description.trim() === "") {
+    throw new Error("Milestone description is required");
+  }
+
+  await db
+    .update(skillMilestones)
+    .set({ description: description.trim() })
+    .where(eq(skillMilestones.id, id));
+
+  revalidatePath("/skills");
+  revalidatePath("/");
+  return { success: true };
+}
+
 export async function deleteMilestoneAction(id: number) {
   await db.delete(skillMilestones).where(eq(skillMilestones.id, id));
 

@@ -9,6 +9,7 @@ import {
   deleteNoteAction,
   createFolderAction,
   renameFolderAction,
+  moveFolderAction,
   deleteFolderAction,
 } from "@/app/vault/actions";
 import {
@@ -789,6 +790,13 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
     });
   };
 
+  const handleMoveFolderToFolder = (folderId: number, targetParentId: number | null) => {
+    if (folderId === targetParentId) return;
+    startTransition(async () => {
+      await moveFolderAction(folderId, targetParentId);
+    });
+  };
+
   const handleCutNote = (note: Note) => {
     if (isDirty && note.id === currentActiveNoteId) {
       setUnsavedActionNotice("cutting this note");
@@ -907,6 +915,7 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
                   <div className="space-y-1.5">
                     <label className="text-xs font-mono text-slate-300">Folder Name</label>
                     <Input
+                      autoFocus
                       required
                       placeholder="e.g. Architecture & Specs"
                       value={newFolderName}
@@ -1102,6 +1111,7 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
           onDeleteFolder={(folder) => setDeletingFolderConfirm(folder)}
           onDeleteNote={(note) => setDeletingNoteConfirm(note)}
           onMoveNoteToFolder={handleMoveNoteToFolder}
+          onMoveFolderToFolder={handleMoveFolderToFolder}
           onCutNote={handleCutNote}
           onCopyNote={handleCopyNote}
           onPasteNoteToFolder={handlePasteNoteToFolder}

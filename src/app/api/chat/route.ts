@@ -9,15 +9,22 @@ import {
   folders,
   assets,
   skills,
+  skillMilestones,
   projects,
   applications,
   watchlist,
   systemSettings,
 } from "@/db/schema";
-import { like, or, eq, desc } from "drizzle-orm";
+import { like, or, eq, desc, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { analyzeMarketSentiment } from "@/app/finance/actions";
-import { searchTmdbMovies, getTrendingMovies } from "@/app/watchlist/actions";
+import { searchTmdbMovies, getTrendingMovies, saveMovieToWatchlist, removeMovieFromWatchlist } from "@/app/watchlist/actions";
+import { updateApplication } from "@/app/apps/actions";
+import { updateEventAction } from "@/app/calendar/actions";
+import { updateAssetAction } from "@/app/inventory/actions";
+import { deleteFolderAction, renameFolderAction, updateNoteAction } from "@/app/vault/actions";
+import { renameProjectAction, deleteProjectAction, updateTaskFullAction } from "@/app/tasks/actions";
+import { updateSkillAction, createMilestoneAction, updateMilestoneAction, deleteMilestoneAction } from "@/app/skills/actions";
 
 export const maxDuration = 30;
 
@@ -30,31 +37,37 @@ You are Personal OS AI Core — an executive AI agent embedded in the user's per
 EXACT SYSTEM MODULE DOMAINS & TOOLS MAPPING:
 
 • Second Brain Vault & Folders (/vault)
-  → Tools: search_vault, create_note, move_note_to_folder, delete_note, list_folders, create_folder
+  → Tools: search_vault, create_note, update_note, move_note_to_folder, delete_note, list_folders, create_folder, rename_folder, move_folder, delete_folder
   → Folders & Nested Paths: You can create notes inside any folder or nested folder path (e.g. "Work/Projects/Frontend" or "Architecture").
-  → Folder Browsing: Use list_folders to browse existing folders and inspect notes structure.
+  → Folder Operations: You can rename folders (rename_folder), move folders into other folders or root (move_folder), and delete folders (delete_folder).
+  → Note Editing: Use update_note to edit title, content, tags, or category of existing notes.
 
 • Task Omni-Kanban & Projects (/tasks)
-  → Tools: list_tasks, create_task, update_task_status, move_task_to_project, delete_task, create_project
-  → Projects: Assign tasks to projects using projectName (e.g. "Personal OS v2").
+  → Tools: list_tasks, create_task, update_task, update_task_status, add_task_reference, move_task_to_project, delete_task, create_project, list_projects, rename_project, delete_project
+  → Projects: Create (create_project), list (list_projects), rename (rename_project), or delete projects (delete_project). When deleting a project, always confirm with user first.
+  → Task Management: Use update_task to edit title, description, priority, status, or project. Use add_task_reference to attach linked documents/links (Asset Vault, Drive Storage, Second Brain Note, or External Link) in [REF:type:value] format.
 
 • Asset Vault / Bookmarks / Links / Resources (/inventory & /drive)
-  → Tools: search_assets, list_assets, log_asset, delete_asset
+  → Tools: search_assets, list_assets, log_asset, update_asset, delete_asset
+  → Asset Editing: Use update_asset to edit title, type, url/path, or tags.
 
-• Skill Matrix / Learning (/skills)
-  → Tools: list_skills, search_skills, log_skill, delete_skill
+• Skill Matrix & Milestones (/skills)
+  → Tools: list_skills, search_skills, log_skill, update_skill, add_skill_reference, delete_skill, add_milestone, update_milestone, list_milestones, delete_milestone
+  → Milestones: You can add (add_milestone), list (list_milestones), edit (update_milestone), or delete (delete_milestone) milestones/goals for any skill.
+  → Skill Editing & References: Use update_skill to edit skill details, and add_skill_reference to attach references (Asset Vault, Drive, Second Brain Note, or External Link).
 
 • App Launcher / Web Shortcuts (/apps)
-  → Tools: list_applications, register_application, delete_application
+  → Tools: list_applications, register_application, update_application, delete_application
 
 • Finance Hub (/finance)
   → Tools: list_transactions, log_transaction, delete_transaction
 
 • Master Calendar (/calendar)
-  → Tools: list_calendar_events, create_calendar_event, delete_calendar_event
+  → Tools: list_calendar_events, create_calendar_event, update_calendar_event, delete_calendar_event
 
 • TMDB Watchlist & Movie Intelligence (/watchlist)
-  → Tools: list_watchlist, delete_watchlist_item, search_tmdb_movies, get_trending_movies
+  → Tools: list_watchlist, add_to_watchlist, delete_watchlist_item, search_tmdb_movies, get_trending_movies
+  → Watchlist: Use add_to_watchlist to save movies and delete_watchlist_item to remove saved movies.
 
 • Real-time External Intelligence (News, Stocks & Market Analysis)
   → Tools: fetch_news_articles, get_stock_quote, analyze_market_sentiment
@@ -84,10 +97,17 @@ RULES:
      - Include the interactive navigation button right below the image so the user can open its target location ("/drive?search=...", "/inventory?search=...", or external URL).
    - External links (http:// or https://) will directly open in a new tab.
 4. DELETION & REMOVAL CONFIRMATION RULE:
-   - When the user requests to delete or remove any item (task, note, calendar event, transaction, asset, skill, folder):
-   - If the user has NOT explicitly confirmed, ask for confirmation first detailing the item title and target path.
+   - When the user requests to delete or remove any item (task, note, calendar event, transaction, asset, skill, folder, project):
+   - If the user has NOT explicitly confirmed, ask for confirmation first detailing the item title/name and target path.
    - Execute deletion ONLY when user confirms.
-5. Always answer concisely, politely, and clearly.
+5. LINKED REFERENCES FORMAT:
+   - References in Tasks and Skills use standard markers in the description:
+     - Asset Vault: [REF:asset:Title]
+     - Drive Storage: [REF:drive:Title]
+     - Second Brain Note: [REF:note:Title]
+     - External Link: [REF:link:https://...]
+   - Use add_task_reference or add_skill_reference to attach these easily.
+6. Always answer concisely, politely, and clearly.
 `.trim();
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -235,7 +255,7 @@ export async function POST(req: Request) {
     model: customOpenAI(activeModel as any),
     system: systemPrompt,
     messages: modelMessages,
-    stopWhen: ({ steps }: any) => steps.length >= 5,
+    maxSteps: 5,
 
     tools: {
       // ── TASKS ────────────────────────────────────────────────────────────
@@ -445,6 +465,154 @@ export async function POST(req: Request) {
         },
       }),
 
+      update_task: makeTool({
+        description: "Edits full details of a task (title, description, priority, status, or project) in Omni-Kanban. Use when user says 'edit task', 'update task', 'change task'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            currentTitle: { type: "string", description: "Existing task title or partial title to find" },
+            newTitle: { type: "string", description: "New task title" },
+            description: { type: "string", description: "New task description" },
+            priority: { type: "string", enum: ["low", "medium", "high"], description: "New priority level" },
+            status: { type: "string", enum: ["todo", "in_progress", "done"], description: "New status" },
+            projectName: { type: "string", description: "Project name to move task to" },
+          },
+          required: ["currentTitle"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const currentTitle = String(args?.currentTitle || "").trim();
+            const found = await db.select().from(tasks).where(like(tasks.title, `%${currentTitle}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No task matching "${currentTitle}" found to update.`, pageUrl: "/tasks" };
+
+            const targetTask = found[0];
+            let projectId = targetTask.projectId;
+
+            if (args?.projectName) {
+              const pName = String(args.projectName).trim();
+              const existingProj = await db.select().from(projects).where(like(projects.name, `%${pName}%`)).limit(1);
+              if (existingProj.length) {
+                projectId = existingProj[0].id;
+              } else {
+                const [ins] = await db.insert(projects).values({ name: pName, status: "active" });
+                projectId = (ins as any).insertId;
+              }
+            }
+
+            await updateTaskFullAction(targetTask.id, {
+              title: args?.newTitle || targetTask.title,
+              description: args?.description !== undefined ? args.description : (targetTask.description || undefined),
+              status: args?.status || targetTask.status as any,
+              priority: args?.priority || targetTask.priority as any,
+              projectId,
+            });
+
+            return {
+              success: true,
+              message: `✓ Task "${targetTask.title}" updated in [Task Omni-Kanban](/tasks).`,
+              pageUrl: "/tasks",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to update task: ${e.message}`, pageUrl: "/tasks" };
+          }
+        },
+      }),
+
+      add_task_reference: makeTool({
+        description: "Adds a reference link (Asset Vault, Drive Storage, Second Brain Note, or External Link) to a task description in [REF:type:value] format.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            taskTitle: { type: "string", description: "Task title or partial title" },
+            type: { type: "string", enum: ["asset", "drive", "note", "link"], description: "Reference type: 'asset' (Asset Vault), 'drive' (Drive Storage), 'note' (Second Brain Note), or 'link' (External Link)" },
+            value: { type: "string", description: "Item title or external URL link" },
+          },
+          required: ["taskTitle", "type", "value"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.taskTitle || "").trim();
+            const type = String(args?.type || "link").trim();
+            const value = String(args?.value || "").trim();
+
+            const found = await db.select().from(tasks).where(like(tasks.title, `%${title}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No task matching "${title}" found to add reference.`, pageUrl: "/tasks" };
+
+            const target = found[0];
+            const refMarker = `[REF:${type.toUpperCase()}:${value}]`;
+            const updatedDesc = target.description ? `${target.description}\n${refMarker}` : refMarker;
+
+            await db.update(tasks).set({ description: updatedDesc }).where(eq(tasks.id, target.id));
+            revalidatePath("/tasks"); revalidatePath("/");
+
+            return {
+              success: true,
+              message: `✓ Attached reference (${type}: ${value}) to task "${target.title}" in [Task Omni-Kanban](/tasks).`,
+              pageUrl: "/tasks",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to add task reference: ${e.message}`, pageUrl: "/tasks" };
+          }
+        },
+      }),
+
+      rename_project: makeTool({
+        description: "Renames an existing project in Task Omni-Kanban. All tasks linked to the project will remain safely linked.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            currentName: { type: "string", description: "Current project name or partial name" },
+            newName: { type: "string", description: "New project name" },
+          },
+          required: ["currentName", "newName"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const currentName = String(args?.currentName || "").trim();
+            const newName = String(args?.newName || "").trim();
+
+            const found = await db.select().from(projects).where(like(projects.name, `%${currentName}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No project matching "${currentName}" found to rename.`, pageUrl: "/tasks" };
+
+            await renameProjectAction(found[0].id, newName);
+            return {
+              success: true,
+              message: `✓ Renamed project from "${found[0].name}" to **"${newName}"** in [Task Omni-Kanban](/tasks). All linked tasks remain safe.`,
+              pageUrl: "/tasks",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to rename project: ${e.message}`, pageUrl: "/tasks" };
+          }
+        },
+      }),
+
+      delete_project: makeTool({
+        description: "Deletes a project and ALL tasks linked to it after user confirmation.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            projectName: { type: "string", description: "Project name or partial name to delete" },
+          },
+          required: ["projectName"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const projName = String(args?.projectName || "").trim();
+            const found = await db.select().from(projects).where(like(projects.name, `%${projName}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No project matching "${projName}" found to delete.`, pageUrl: "/tasks" };
+
+            await deleteProjectAction(found[0].id);
+            return {
+              success: true,
+              message: `🗑️ Project **"${found[0].name}"** and all its tasks were deleted from [Task Omni-Kanban](/tasks).`,
+              pageUrl: "/tasks",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to delete project: ${e.message}`, pageUrl: "/tasks" };
+          }
+        },
+      }),
+
       // ── FINANCE ──────────────────────────────────────────────────────────
       log_transaction: makeTool({
         description: "Logs an income or expense in Finance Hub. Use when user says 'log expense', 'add income', 'spent', 'earned', 'bought', 'received'.",
@@ -617,6 +785,50 @@ export async function POST(req: Request) {
             };
           } catch (e: any) {
             return { success: false, message: `Failed to delete event: ${e.message}`, pageUrl: "/calendar" };
+          }
+        },
+      }),
+
+      update_calendar_event: makeTool({
+        description: "Edits details of an existing event (title, start time, end time, or event type) in Master Calendar.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            currentTitle: { type: "string", description: "Existing event title or partial title" },
+            newTitle: { type: "string", description: "New event title" },
+            eventType: { type: "string", enum: ["task", "learning", "general"], description: "New event type" },
+            startTime: { type: "string", description: "New ISO start time string" },
+            durationMinutes: { type: "number", description: "New duration in minutes" },
+          },
+          required: ["currentTitle"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const currentTitle = String(args?.currentTitle || "").trim();
+            const found = await db.select().from(calendarEvents).where(like(calendarEvents.title, `%${currentTitle}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No event matching "${currentTitle}" found to update.`, pageUrl: "/calendar" };
+
+            const target = found[0];
+            const newTitle = args?.newTitle || target.title;
+            const eventType = args?.eventType || target.eventType;
+            const start = args?.startTime ? new Date(args.startTime) : new Date(target.startTime);
+            const durationMs = (Number(args?.durationMinutes) || 60) * 60 * 1000;
+            const end = args?.startTime || args?.durationMinutes ? new Date(start.getTime() + durationMs) : new Date(target.endTime);
+
+            await updateEventAction(target.id, {
+              title: newTitle,
+              eventType,
+              startTime: start,
+              endTime: end,
+            });
+
+            return {
+              success: true,
+              message: `✓ Event "${target.title}" updated in [Master Calendar](/calendar).`,
+              pageUrl: "/calendar",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to update event: ${e.message}`, pageUrl: "/calendar" };
           }
         },
       }),
@@ -910,6 +1122,154 @@ export async function POST(req: Request) {
         },
       }),
 
+      update_note: makeTool({
+        description: "Edits full details of a note (title, content, tags, category, or folder) in Second Brain Vault. Use when user says 'edit note', 'update note', 'modify note'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            currentTitle: { type: "string", description: "Existing note title or partial title to find" },
+            newTitle: { type: "string", description: "New note title" },
+            content: { type: "string", description: "New note body content" },
+            category: { type: "string", enum: ["idea", "reference", "project", "journal", "learning"], description: "New category" },
+            tags: { type: "string", description: "New comma-separated tags" },
+            folderPath: { type: "string", description: "Folder path to move note to" },
+          },
+          required: ["currentTitle"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const currentTitle = String(args?.currentTitle || "").trim();
+            const found = await db.select().from(notes).where(like(notes.title, `%${currentTitle}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No note matching "${currentTitle}" found to update.`, pageUrl: "/vault" };
+
+            const target = found[0];
+            let folderId = target.folderId;
+
+            if (args?.folderPath !== undefined) {
+              const res = await resolveOrCreateFolderPath(String(args.folderPath));
+              folderId = res.folderId || null;
+            }
+
+            await updateNoteAction(target.id, {
+              title: args?.newTitle || target.title,
+              content: args?.content !== undefined ? args.content : target.content,
+              category: args?.category || target.category as any,
+              tags: args?.tags !== undefined ? args.tags : target.tags,
+              folderId,
+            });
+
+            return {
+              success: true,
+              message: `✓ Note "${target.title}" updated in [Second Brain Vault](/vault).`,
+              pageUrl: "/vault",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to update note: ${e.message}`, pageUrl: "/vault" };
+          }
+        },
+      }),
+
+      rename_folder: makeTool({
+        description: "Renames an existing folder in Second Brain Vault.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            currentName: { type: "string", description: "Current folder name or path segment" },
+            newName: { type: "string", description: "New folder name" },
+          },
+          required: ["currentName", "newName"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const currentName = String(args?.currentName || "").trim();
+            const newName = String(args?.newName || "").trim();
+
+            const found = await db.select().from(folders).where(like(folders.name, `%${currentName}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No folder matching "${currentName}" found to rename.`, pageUrl: "/vault" };
+
+            await renameFolderAction(found[0].id, newName);
+            return {
+              success: true,
+              message: `✓ Renamed folder from "${found[0].name}" to **"${newName}"** in [Second Brain Vault](/vault).`,
+              pageUrl: "/vault",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to rename folder: ${e.message}`, pageUrl: "/vault" };
+          }
+        },
+      }),
+
+      move_folder: makeTool({
+        description: "Moves a folder into another target folder (subfolder) or to root ('none' or 'root') in Second Brain Vault.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            folderName: { type: "string", description: "Name of folder to move" },
+            targetParentFolderPath: { type: "string", description: "Target parent folder path or 'root'/'none'" },
+          },
+          required: ["folderName", "targetParentFolderPath"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const fName = String(args?.folderName || "").trim();
+            const targetP = String(args?.targetParentFolderPath || "").trim();
+
+            const found = await db.select().from(folders).where(like(folders.name, `%${fName}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No folder matching "${fName}" found to move.`, pageUrl: "/vault" };
+
+            const targetFolder = found[0];
+            let newParentId: number | null = null;
+
+            if (targetP && targetP.toLowerCase() !== "root" && targetP.toLowerCase() !== "none") {
+              const res = await resolveOrCreateFolderPath(targetP);
+              newParentId = res.folderId || null;
+            }
+
+            if (newParentId === targetFolder.id) {
+              return { success: false, message: "Cannot move a folder into itself.", pageUrl: "/vault" };
+            }
+
+            await db.update(folders).set({ parentId: newParentId }).where(eq(folders.id, targetFolder.id));
+            revalidatePath("/vault"); revalidatePath("/");
+
+            return {
+              success: true,
+              message: `✓ Folder "${targetFolder.name}" moved in [Second Brain Vault](/vault).`,
+              pageUrl: "/vault",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to move folder: ${e.message}`, pageUrl: "/vault" };
+          }
+        },
+      }),
+
+      delete_folder: makeTool({
+        description: "Deletes a folder and ALL subfolders + notes inside it after user confirmation in Second Brain Vault.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            folderName: { type: "string", description: "Folder name or partial name to delete" },
+          },
+          required: ["folderName"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const fName = String(args?.folderName || "").trim();
+            const found = await db.select().from(folders).where(like(folders.name, `%${fName}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No folder matching "${fName}" found to delete.`, pageUrl: "/vault" };
+
+            await deleteFolderAction(found[0].id);
+            return {
+              success: true,
+              message: `🗑️ Folder **"${found[0].name}"** and all its notes/subfolders were deleted from [Second Brain Vault](/vault).`,
+              pageUrl: "/vault",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to delete folder: ${e.message}`, pageUrl: "/vault" };
+          }
+        },
+      }),
+
       // ── SKILLS TRACKER ───────────────────────────────────────────────────
       list_skills: makeTool({
         description: "Lists all skills currently tracked or being learned in Skill Matrix. Use when user asks 'what skill am I learning', 'list skills', 'show skills', 'learning status'.",
@@ -1049,6 +1409,211 @@ export async function POST(req: Request) {
             };
           } catch (e: any) {
             return { success: false, message: `Failed to delete skill: ${e.message}`, pageUrl: "/skills" };
+          }
+        },
+      }),
+
+      update_skill: makeTool({
+        description: "Edits full details of a skill (title, description, category, proficiency, or status) in Skill Matrix.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            currentTitle: { type: "string", description: "Existing skill title or partial title to find" },
+            newTitle: { type: "string", description: "New skill title" },
+            description: { type: "string", description: "New skill description" },
+            category: { type: "string", enum: ["hard_skill", "creative", "language", "soft_skill"], description: "New category" },
+            proficiency: { type: "string", enum: ["beginner", "intermediate", "advanced", "mastery"], description: "New proficiency" },
+            status: { type: "string", enum: ["learning", "paused", "completed"], description: "New status" },
+          },
+          required: ["currentTitle"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const currentTitle = String(args?.currentTitle || "").trim();
+            const found = await db.select().from(skills).where(like(skills.title, `%${currentTitle}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No skill matching "${currentTitle}" found to update.`, pageUrl: "/skills" };
+
+            const target = found[0];
+            await updateSkillAction(target.id, {
+              title: args?.newTitle || target.title,
+              description: args?.description !== undefined ? args.description : (target.description || undefined),
+              category: args?.category || target.category as any,
+              proficiency: args?.proficiency || target.proficiency as any,
+              status: args?.status || target.status as any,
+            });
+
+            return {
+              success: true,
+              message: `✓ Skill "${target.title}" updated in [Skill Matrix](/skills).`,
+              pageUrl: "/skills",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to update skill: ${e.message}`, pageUrl: "/skills" };
+          }
+        },
+      }),
+
+      add_skill_reference: makeTool({
+        description: "Adds a reference link (Asset Vault, Drive Storage, Second Brain Note, or External Link) to a skill description in [REF:type:value] format.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            skillTitle: { type: "string", description: "Skill title or partial title" },
+            type: { type: "string", enum: ["asset", "drive", "note", "link"], description: "Reference type: 'asset' (Asset Vault), 'drive' (Drive Storage), 'note' (Second Brain Note), or 'link' (External Link)" },
+            value: { type: "string", description: "Item title or external URL link" },
+          },
+          required: ["skillTitle", "type", "value"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.skillTitle || "").trim();
+            const type = String(args?.type || "link").trim();
+            const value = String(args?.value || "").trim();
+
+            const found = await db.select().from(skills).where(like(skills.title, `%${title}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No skill matching "${title}" found to add reference.`, pageUrl: "/skills" };
+
+            const target = found[0];
+            const refMarker = `[REF:${type.toUpperCase()}:${value}]`;
+            const updatedDesc = target.description ? `${target.description}\n${refMarker}` : refMarker;
+
+            await updateSkillAction(target.id, { description: updatedDesc });
+            return {
+              success: true,
+              message: `✓ Attached reference (${type}: ${value}) to skill "${target.title}" in [Skill Matrix](/skills).`,
+              pageUrl: "/skills",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to add skill reference: ${e.message}`, pageUrl: "/skills" };
+          }
+        },
+      }),
+
+      add_milestone: makeTool({
+        description: "Adds a new milestone goal to a skill in Skill Matrix.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            skillTitle: { type: "string", description: "Skill title or partial title" },
+            description: { type: "string", description: "Milestone goal description" },
+          },
+          required: ["skillTitle", "description"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.skillTitle || "").trim();
+            const descStr = String(args?.description || "").trim();
+
+            const found = await db.select().from(skills).where(like(skills.title, `%${title}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No skill matching "${title}" found to add milestone.`, pageUrl: "/skills" };
+
+            await createMilestoneAction(found[0].id, descStr);
+            return {
+              success: true,
+              message: `✓ Milestone "${descStr}" added to skill **"${found[0].title}"** in [Skill Matrix](/skills).`,
+              pageUrl: "/skills",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to add milestone: ${e.message}`, pageUrl: "/skills" };
+          }
+        },
+      }),
+
+      update_milestone: makeTool({
+        description: "Edits the text description or completion status of an existing skill milestone.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            currentMilestoneText: { type: "string", description: "Current milestone text or partial text to find" },
+            newDescription: { type: "string", description: "New milestone text" },
+            isCompleted: { type: "boolean", description: "Mark completed (true) or uncompleted (false)" },
+          },
+          required: ["currentMilestoneText"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const textToFind = String(args?.currentMilestoneText || "").trim();
+            const foundMs = await db.select().from(skillMilestones).where(like(skillMilestones.description, `%${textToFind}%`)).limit(1);
+
+            if (!foundMs.length) return { success: false, message: `No milestone matching "${textToFind}" found.`, pageUrl: "/skills" };
+
+            const targetMs = foundMs[0];
+
+            if (args?.newDescription) {
+              await updateMilestoneAction(targetMs.id, String(args.newDescription));
+            }
+            if (args?.isCompleted !== undefined) {
+              await db.update(skillMilestones).set({ isCompleted: Boolean(args.isCompleted) }).where(eq(skillMilestones.id, targetMs.id));
+              revalidatePath("/skills"); revalidatePath("/");
+            }
+
+            return {
+              success: true,
+              message: `✓ Milestone updated in [Skill Matrix](/skills).`,
+              pageUrl: "/skills",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to update milestone: ${e.message}`, pageUrl: "/skills" };
+          }
+        },
+      }),
+
+      list_milestones: makeTool({
+        description: "Lists all milestones and completion statuses for a skill in Skill Matrix.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            skillTitle: { type: "string", description: "Skill title or partial title" },
+          },
+          required: ["skillTitle"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.skillTitle || "").trim();
+            const found = await db.select().from(skills).where(like(skills.title, `%${title}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No skill matching "${title}" found.`, pageUrl: "/skills" };
+
+            const msList = await db.select().from(skillMilestones).where(eq(skillMilestones.skillId, found[0].id));
+            if (!msList.length) {
+              return { success: true, message: `Skill "${found[0].title}" has no milestones configured yet.`, pageUrl: "/skills" };
+            }
+
+            const strList = msList.map((m) => `${m.isCompleted ? "[x]" : "[ ]"} ${m.description}`).join("\n");
+            return {
+              success: true,
+              message: `🎯 Milestones for **${found[0].title}**:\n\n${strList}`,
+              pageUrl: "/skills",
+              data: msList,
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to list milestones: ${e.message}`, pageUrl: "/skills" };
+          }
+        },
+      }),
+
+      delete_milestone: makeTool({
+        description: "Deletes a milestone from a skill in Skill Matrix.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            milestoneText: { type: "string", description: "Milestone text description to delete" },
+          },
+          required: ["milestoneText"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const textToFind = String(args?.milestoneText || "").trim();
+            const foundMs = await db.select().from(skillMilestones).where(like(skillMilestones.description, `%${textToFind}%`)).limit(1);
+            if (!foundMs.length) return { success: false, message: `No milestone matching "${textToFind}" found to delete.`, pageUrl: "/skills" };
+
+            await deleteMilestoneAction(foundMs[0].id);
+            return {
+              success: true,
+              message: `🗑️ Milestone "${foundMs[0].description}" deleted from [Skill Matrix](/skills).`,
+              pageUrl: "/skills",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to delete milestone: ${e.message}`, pageUrl: "/skills" };
           }
         },
       }),
@@ -1201,6 +1766,44 @@ export async function POST(req: Request) {
         },
       }),
 
+      update_asset: makeTool({
+        description: "Edits details of an existing bookmark or resource (title, type, url, tags) in Asset Vault.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            currentTitle: { type: "string", description: "Existing asset title or partial title" },
+            newTitle: { type: "string", description: "New title" },
+            type: { type: "string", enum: ["link", "pdf", "image", "video"], description: "New type" },
+            url: { type: "string", description: "New URL or file path" },
+            tags: { type: "string", description: "New comma-separated tags" },
+          },
+          required: ["currentTitle"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const currentTitle = String(args?.currentTitle || "").trim();
+            const found = await db.select().from(assets).where(like(assets.title, `%${currentTitle}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No asset matching "${currentTitle}" found to update.`, pageUrl: "/inventory" };
+
+            const target = found[0];
+            await updateAssetAction(target.id, {
+              title: args?.newTitle || target.title,
+              type: args?.type || target.type as any,
+              urlOrPath: args?.url !== undefined ? args.url : target.urlOrPath,
+              tags: args?.tags !== undefined ? args.tags : target.tags,
+            });
+
+            return {
+              success: true,
+              message: `✓ Asset "${target.title}" updated in [Asset Vault](/inventory).`,
+              pageUrl: "/inventory",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to update asset: ${e.message}`, pageUrl: "/inventory" };
+          }
+        },
+      }),
+
       delete_transaction: makeTool({
         description: "Deletes a transaction from Finance Hub after user confirmation. Use when user says 'delete transaction', 'remove expense', 'delete income'.",
         inputSchema: jsonSchema({
@@ -1254,6 +1857,42 @@ export async function POST(req: Request) {
             };
           } catch (e: any) {
             return { success: false, message: `Failed to create project: ${e.message}`, pageUrl: "/tasks" };
+          }
+        },
+      }),
+
+      list_projects: makeTool({
+        description: "Lists all projects in Task Omni-Kanban with status and task count statistics.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {},
+        }),
+        execute: async () => {
+          try {
+            const allProjects = await db.select().from(projects).orderBy(desc(projects.createdAt));
+            const allTasks = await db.select().from(tasks);
+            
+            const result = allProjects.map((p) => {
+              const linkedTasks = allTasks.filter((t) => t.projectId === p.id);
+              const doneCount = linkedTasks.filter((t) => t.status === "done").length;
+              return {
+                id: p.id,
+                name: p.name,
+                status: p.status,
+                totalTasks: linkedTasks.length,
+                completedTasks: doneCount,
+              };
+            });
+
+            return {
+              success: true,
+              count: result.length,
+              projects: result,
+              message: `Found ${result.length} projects in [Task Omni-Kanban](/tasks).`,
+              pageUrl: "/tasks",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to list projects: ${e.message}`, pageUrl: "/tasks" };
           }
         },
       }),
@@ -1340,6 +1979,49 @@ export async function POST(req: Request) {
         },
       }),
 
+      update_application: makeTool({
+        description: "Edits details of an existing registered app or web shortcut (name, url, icon, or category) in App Launcher.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            currentName: { type: "string", description: "Current application name or partial name" },
+            newName: { type: "string", description: "New application name" },
+            url: { type: "string", description: "New target URL" },
+            iconName: { type: "string", description: "New Lucide icon name" },
+            category: { type: "string", description: "New category" },
+          },
+          required: ["currentName"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const currentName = String(args?.currentName || "").trim();
+            const found = await db.select().from(applications).where(like(applications.name, `%${currentName}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No application matching "${currentName}" found to update.`, pageUrl: "/apps" };
+
+            const target = found[0];
+            let url = args?.url ? String(args.url).trim() : target.url;
+            if (url && !url.startsWith("http://") && !url.startsWith("https://")) {
+              url = `https://${url}`;
+            }
+
+            await updateApplication(target.id, {
+              name: args?.newName || target.name,
+              url,
+              iconName: args?.iconName || target.iconName,
+              category: args?.category || target.category,
+            });
+
+            return {
+              success: true,
+              message: `✓ Application "${target.name}" updated in App Launcher.`,
+              pageUrl: "/apps",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to update application: ${e.message}`, pageUrl: "/apps" };
+          }
+        },
+      }),
+
       // ── TMDB WATCHLIST ───────────────────────────────────────────────────
       list_watchlist: makeTool({
         description: "Lists saved movies in TMDB Watchlist. Use when user says 'show movies', 'my watchlist', 'saved movies', 'show watchlist'.",
@@ -1372,6 +2054,68 @@ export async function POST(req: Request) {
             };
           } catch (e: any) {
             return { success: false, message: `Failed to list watchlist: ${e.message}`, pageUrl: "/watchlist" };
+          }
+        },
+      }),
+
+      add_to_watchlist: makeTool({
+        description: "Searches TMDB for a movie and saves it to TMDB Watchlist. Use when user says 'add movie to watchlist', 'save movie', 'bookmark movie'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Movie title e.g. Inception, Interstellar, Dune" },
+          },
+          required: ["title"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.title || "").trim();
+            const tmdbRes = await searchTmdbMovies(title);
+            if (tmdbRes.missingKey) {
+              return { success: false, message: "TMDB API key missing. Configure key in System Settings (/settings).", pageUrl: "/watchlist" };
+            }
+            if (!tmdbRes.results || !tmdbRes.results.length) {
+              return { success: false, message: `No movie matching "${title}" found on TMDB.`, pageUrl: "/watchlist" };
+            }
+
+            const topMatch = tmdbRes.results[0];
+            await saveMovieToWatchlist(topMatch);
+
+            return {
+              success: true,
+              message: `🎬 Saved **"${topMatch.title}"** (Rating: ${topMatch.rating}) to [TMDB Watchlist](/watchlist).`,
+              pageUrl: "/watchlist",
+              data: topMatch,
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to add movie to watchlist: ${e.message}`, pageUrl: "/watchlist" };
+          }
+        },
+      }),
+
+      delete_watchlist_item: makeTool({
+        description: "Removes a movie from TMDB Watchlist after user confirmation. Use when user says 'remove movie', 'delete watchlist item'.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Movie title or partial title to remove" },
+          },
+          required: ["title"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.title || "").trim();
+            const found = await db.select().from(watchlist).where(like(watchlist.title, `%${title}%`)).limit(1);
+            if (!found.length) return { success: false, message: `No movie matching "${title}" found in Watchlist.`, pageUrl: "/watchlist" };
+
+            await removeMovieFromWatchlist(found[0].id);
+            return {
+              success: true,
+              message: `🗑️ Movie **"${found[0].title}"** removed from [TMDB Watchlist](/watchlist).`,
+              pageUrl: "/watchlist",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to remove movie: ${e.message}`, pageUrl: "/watchlist" };
           }
         },
       }),
@@ -1585,7 +2329,5 @@ export async function POST(req: Request) {
     },
   });
 
-  return (result as any).toUIMessageStreamResponse
-    ? (result as any).toUIMessageStreamResponse()
-    : result.toTextStreamResponse();
+  return result.toUIMessageStreamResponse();
 }

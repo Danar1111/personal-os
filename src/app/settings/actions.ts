@@ -34,6 +34,15 @@ export async function getSettings() {
   }
 }
 
+export async function getActiveModelAction() {
+  try {
+    const settings = await getSettings();
+    return settings["active_model"] || "gpt-4o-mini";
+  } catch (error) {
+    return "gpt-4o-mini";
+  }
+}
+
 export async function saveSettingAction(key: string, value: string) {
   if (!key || key.trim() === "") throw new Error("Setting key is required");
 
@@ -95,106 +104,67 @@ export async function saveMultipleSettingsAction(settingsMap: Record<string, str
   }
 }
 
+import { OMNI_AI_SKILLS_REGISTRY } from "@/lib/ai-skills-registry";
+
+export async function syncAiSkillsAction() {
+  try {
+    const existing = await db.select().from(aiSkills);
+    const existingMap = new Map(existing.map((s) => [s.name, s]));
+
+    const regNames = new Set(OMNI_AI_SKILLS_REGISTRY.map((s) => s.name));
+
+    // Delete obsolete skills from DB that are no longer in registry
+    for (const existingSkill of existing) {
+      if (!regNames.has(existingSkill.name)) {
+        await db.delete(aiSkills).where(eq(aiSkills.id, existingSkill.id));
+      }
+    }
+
+    for (const regSkill of OMNI_AI_SKILLS_REGISTRY) {
+      const match = existingMap.get(regSkill.name);
+      const descWithPrompt = regSkill.examplePrompt
+        ? `${regSkill.description}\n\n💡 Example: "${regSkill.examplePrompt}"`
+        : regSkill.description;
+
+      if (!match) {
+        await db.insert(aiSkills).values({
+          name: regSkill.name,
+          module: regSkill.module,
+          description: descWithPrompt,
+          isEnabled: true,
+        });
+      } else if (match.module !== regSkill.module || match.description !== descWithPrompt) {
+        await db
+          .update(aiSkills)
+          .set({
+            module: regSkill.module,
+            description: descWithPrompt,
+          })
+          .where(eq(aiSkills.id, match.id));
+      }
+    }
+
+    return { success: true, count: OMNI_AI_SKILLS_REGISTRY.length };
+  } catch (error: any) {
+    console.error("[syncAiSkillsAction error]:", error);
+    return { success: false, message: error.message };
+  }
+}
+
+export async function forceSyncAiSkillsAction() {
+  const result = await syncAiSkillsAction();
+  revalidatePath("/settings");
+  revalidatePath("/");
+  return result;
+}
+
 export async function getAISkills() {
   try {
+    await syncAiSkillsAction();
     const skillsList = await db.select().from(aiSkills).orderBy(desc(aiSkills.createdAt));
     return skillsList;
   } catch (error) {
     console.error("Failed to fetch AI skills:", error);
     return [];
   }
-}
-
-export async function createAISkillAction(data: {
-  name: string;
-  module: string;
-  description: string;
-}) {
-  if (!data.name || data.name.trim() === "") throw new Error("Skill name is required");
-  if (!data.module || data.module.trim() === "") throw new Error("Skill module is required");
-  if (!data.description || data.description.trim() === "") throw new Error("Skill description is required");
-
-  await db.insert(aiSkills).values({
-    name: data.name.trim().toLowerCase().replace(/\s+/g, "_"),
-    module: data.module.trim(),
-    description: data.description.trim(),
-    isEnabled: true,
-  });
-
-  revalidatePath("/settings");
-  revalidatePath("/");
-  return { success: true };
-}
-
-export async function deleteAISkillAction(id: number) {
-  await db.delete(aiSkills).where(eq(aiSkills.id, id));
-
-  revalidatePath("/settings");
-  revalidatePath("/");
-  return { success: true };
-}
-
-async function seedDefaultAISkills() {
-  await db.insert(aiSkills).values([
-    {
-      name: "create_task",
-      module: "Task Omni-Kanban",
-      description: "Creates a new task record in local MySQL database with title and priority.",
-      isEnabled: true,
-    },
-    {
-      name: "list_tasks",
-      module: "Task Omni-Kanban",
-      description: "Lists tasks in Kanban filtered by status or priority.",
-      isEnabled: true,
-    },
-    {
-      name: "create_calendar_event",
-      module: "Master Calendar",
-      description: "Schedules a start/end event in the master calendar database.",
-      isEnabled: true,
-    },
-    {
-      name: "log_expense",
-      module: "Finance Hub",
-      description: "Logs income or expense transactions to local financial ledger.",
-      isEnabled: true,
-    },
-    {
-      name: "search_vault",
-      module: "Second Brain Vault",
-      description: "Performs full-text search across Zettelkasten Markdown notes.",
-      isEnabled: true,
-    },
-    {
-      name: "search_assets",
-      module: "Asset Vault",
-      description: "Searches bookmarks, web links, and resources in Asset Vault by title or keyword.",
-      isEnabled: true,
-    },
-    {
-      name: "list_assets",
-      module: "Asset Vault",
-      description: "Lists all saved bookmarks, web links, and media resources in Asset Vault.",
-      isEnabled: true,
-    },
-    {
-      name: "list_skills",
-      module: "Skill Matrix",
-      description: "Lists all skills currently tracked or being learned in Skill Matrix.",
-      isEnabled: true,
-    },
-    {
-      name: "search_skills",
-      module: "Skill Matrix",
-      description: "Searches skills in Skill Matrix by title, name, or category.",
-      isEnabled: true,
-    },
-    {
-      name: "list_applications",
-      module: "App Launcher",
-      description: "Lists all registered web apps and local services in App Launcher.",
-      isEnabled: true,
-    },
-  ]);
 }

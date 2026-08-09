@@ -22,13 +22,24 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { getActiveModelAction } from "@/app/settings/actions";
 
 const CHAT_STORAGE_KEY = "personal_os_omnibar_chat_history";
 
-/** Robustly extract plain text from any AI SDK message structure */
+/** Robustly extract plain text from ai v7 UIMessage (parts-based) */
 function extractText(m: any): string {
+  // ai v7: text is in m.parts[].text where type === "text"
+  if (Array.isArray(m?.parts)) {
+    const texts = m.parts
+      .filter((p: any) => p?.type === "text" && typeof p?.text === "string" && p.text.trim())
+      .map((p: any) => p.text as string);
+    if (texts.length) return texts.join("\n").trim();
+  }
+
+  // Fallback: legacy content string
   if (typeof m?.content === "string" && m.content.trim()) return m.content.trim();
 
+  // Fallback: legacy content array
   if (Array.isArray(m?.content)) {
     const texts = m.content
       .filter((p: any) => p?.type === "text" && p?.text)
@@ -36,36 +47,21 @@ function extractText(m: any): string {
     if (texts.length) return texts.join("\n").trim();
   }
 
-  if (Array.isArray(m?.parts)) {
-    const texts = m.parts
-      .filter((p: any) => p?.type === "text" && p?.text)
-      .map((p: any) => p.text as string);
-    if (texts.length) return texts.join("\n").trim();
-  }
-
-  if (typeof m?.text === "string" && m.text.trim()) return m.text.trim();
-
   return "";
 }
 
-/** Extract all tool invocations from a message */
+/** Extract all tool invocations from ai v7 UIMessage parts */
 function extractToolInvocations(m: any): any[] {
-  const fromDirect = Array.isArray(m?.toolInvocations) ? m.toolInvocations : [];
-  const fromParts = Array.isArray(m?.parts)
-    ? m.parts
-        .filter((p: any) => p?.type === "tool-invocation" || p?.toolInvocation)
-        .map((p: any) => p?.toolInvocation ?? p)
-    : [];
+  if (!Array.isArray(m?.parts)) return [];
 
-  const seen = new Set<string>();
-  const all = [...fromDirect, ...fromParts].filter((t) => {
-    const id = t?.toolCallId ?? t?.id ?? JSON.stringify(t);
-    if (seen.has(id)) return false;
-    seen.add(id);
-    return true;
+  // In ai v7, tool parts have type "tool-{toolName}" or "dynamic-tool"
+  // They contain toolCallId, toolName, state, input, output
+  return m.parts.filter((p: any) => {
+    if (!p?.type) return false;
+    return p.type === "dynamic-tool" || (typeof p.type === "string" && p.type.startsWith("tool-"));
   });
-  return all;
 }
+
 
 function isImageUrl(url: string): boolean {
   if (!url) return false;
@@ -328,103 +324,35 @@ function renderFormattedText(text: string, onInternalLinkClick: () => void, zenR
 export function OmniAIChat() {
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [input, setInput] = useState("");
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [activeModel, setActiveModel] = useState("gpt-4o-mini");
+  const [chatKey, setChatKey] = useState(0);
   const zenRunning = useZenRunning();
 
-  const { messages, sendMessage, status, setMessages } = useChat({
-    maxSteps: 5,
-  } as any);
-
-  const isLoading = status === "submitted" || status === "streaming";
-
-  // Auto focus input when modal opens
   useEffect(() => {
-    if (isOpen) {
-      const timer = setTimeout(() => {
-        inputRef.current?.focus();
-      }, 50);
-      return () => clearTimeout(timer);
-    }
+    getActiveModelAction().then((m) => { if (m) setActiveModel(m); });
   }, [isOpen]);
 
-  // Listen for custom open events (e.g. open-omni-ai) or Ctrl+J shortcut
   useEffect(() => {
-    const handleOpen = (e: CustomEvent) => {
-      setIsOpen(true);
-      if (e.detail?.initialQuery) {
-        setInput(e.detail.initialQuery);
-      }
+    const handleOpen = () => setIsOpen(true);
+    const onClear = () => {
+      try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch (e) {}
+      setChatKey((k) => k + 1);
     };
-    window.addEventListener("open-omni-ai" as any, handleOpen);
-
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "j") {
         e.preventDefault();
         setIsOpen((p) => !p);
       }
     };
+    window.addEventListener("open-omni-ai" as any, handleOpen);
+    window.addEventListener("omni-ai-clear" as any, onClear);
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("open-omni-ai" as any, handleOpen);
+      window.removeEventListener("omni-ai-clear" as any, onClear);
       window.removeEventListener("keydown", onKey);
     };
   }, []);
-
-  // Restore saved chat history on initial mount
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(CHAT_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setMessages(parsed);
-        }
-      }
-    } catch (e) {}
-  }, [setMessages]);
-
-  // Persist chat history to localStorage whenever messages update
-  useEffect(() => {
-    if (messages && messages.length > 0) {
-      try {
-        localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages));
-      } catch (e) {}
-    }
-  }, [messages]);
-
-  const handleClearHistory = () => {
-    setMessages([]);
-    try {
-      localStorage.removeItem(CHAT_STORAGE_KEY);
-    } catch (e) {}
-  };
-
-  useEffect(() => {
-    if (isOpen) {
-      const timer = setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 120);
-      return () => clearTimeout(timer);
-    }
-  }, [isOpen, messages, isLoading]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
-    sendMessage({ text: input.trim() });
-    setInput("");
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      if (!input.trim() || isLoading) return;
-      sendMessage({ text: input.trim() });
-      setInput("");
-    }
-  };
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -438,176 +366,218 @@ export function OmniAIChat() {
         )}
       >
         <DialogTitle className="sr-only">Omni AI Control Assistant</DialogTitle>
-
-        {/* Modal Header */}
-        <div className="p-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02] shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <Sparkles className="w-4 h-4 text-white animate-pulse" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold font-mono text-white flex items-center gap-2">
-                <span>OMNI AI ASSISTANT</span>
-                <Badge variant="outline" className="border-indigo-500/40 text-indigo-300 bg-indigo-500/10 text-[9px] font-mono">
-                  GPT-4o
-                </Badge>
-              </h3>
-              <p className="text-[10px] text-slate-400 font-mono">Control Center AI • Press Ctrl+J anytime</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1">
-            {messages.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleClearHistory}
-                className="h-8 px-2.5 text-xs text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl font-mono gap-1"
-                title="Clear Chat History"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Clear</span>
-              </Button>
-            )}
-
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="w-8 h-8 rounded-xl text-slate-400 hover:text-white hover:bg-white/10"
-              title={isExpanded ? "Collapse View" : "Expand Fullscreen View"}
-            >
-              {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setIsOpen(false)}
-              className="w-8 h-8 rounded-xl text-slate-400 hover:text-white hover:bg-white/10"
-            >
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-
-        {/* Scrollable Chat Stream Area */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
-          {messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400 space-y-3 font-mono">
-              <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shadow-xl">
-                <Bot className="w-7 h-7" />
-              </div>
-              <div className="space-y-1 max-w-sm">
-                <p className="text-sm font-bold text-slate-200">How can I assist your Personal OS today?</p>
-                <p className="text-xs text-slate-400 font-sans">Ask me to query notes, create tasks, summarize briefing, or inspect system state.</p>
-              </div>
-            </div>
-          ) : (
-            messages.map((m: any) => {
-              const textContent = extractText(m);
-              const toolInvocations = extractToolInvocations(m);
-              const isUser = m.role === "user";
-
-              if (!textContent && toolInvocations.length === 0) return null;
-
-              return (
-                <div
-                  key={m.id}
-                  className={cn("flex gap-3 text-xs font-mono", isUser ? "justify-end" : "justify-start")}
-                >
-                  {!isUser && (
-                    <div className="w-7 h-7 rounded-xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-indigo-300 shrink-0 mt-0.5">
-                      <Bot className="w-4 h-4" />
-                    </div>
-                  )}
-
-                  <div className="space-y-2 max-w-[85%]">
-                    {textContent && (
-                      <div
-                        className={cn(
-                          "p-3.5 rounded-2xl leading-relaxed whitespace-pre-wrap font-sans text-xs shadow-md",
-                          isUser
-                            ? "bg-indigo-600 text-white rounded-tr-none font-mono"
-                            : "bg-white/[0.04] border border-white/10 text-slate-200 rounded-tl-none"
-                        )}
-                      >
-                        {isUser ? textContent : renderFormattedText(textContent, () => setIsOpen(false), zenRunning)}
-                      </div>
-                    )}
-
-                    {toolInvocations.map((t: any) => {
-                      const isComplete = t.state === "result" || !!t.result;
-                      const callId = t.toolCallId ?? t.id ?? Math.random().toString();
-                      return (
-                        <div
-                          key={callId}
-                          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.02] border border-white/10 text-[11px] font-mono text-slate-300"
-                        >
-                          {isComplete ? (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                          ) : (
-                            <Loader2 className="w-3.5 h-3.5 text-indigo-400 animate-spin shrink-0" />
-                          )}
-                          <span>
-                            Tool: <strong className="text-indigo-300">{t.toolName}</strong>
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {isUser && (
-                    <div className="w-7 h-7 rounded-xl bg-purple-600/30 border border-purple-500/40 flex items-center justify-center text-purple-300 shrink-0 mt-0.5">
-                      <User className="w-4 h-4" />
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
-
-          {isLoading && (
-            <div className="flex items-center gap-2 text-xs font-mono text-indigo-400 bg-indigo-500/10 p-3 rounded-2xl border border-indigo-500/20 w-fit">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Omni AI is analyzing...</span>
-            </div>
-          )}
-
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input Form */}
-        <form onSubmit={handleSubmit} className="p-3 border-t border-white/10 bg-white/[0.01] flex flex-col gap-2 shrink-0">
-          <div className="flex items-end gap-2">
-            <Textarea
-              ref={inputRef}
-              autoFocus
-              rows={1}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask Omni AI assistant... (Enter to send, Shift+Enter for new line)"
-              disabled={isLoading}
-              className="flex-1 bg-white/[0.04] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-2xl min-h-[44px] max-h-[140px] py-3 px-4 font-mono focus-visible:ring-indigo-500/40 resize-none scrollbar-thin"
-            />
-            <Button
-              type="submit"
-              disabled={isLoading || !input.trim()}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl h-11 px-4 cursor-pointer shadow-lg shadow-indigo-600/30 shrink-0"
-            >
-              <Send className="w-4 h-4" />
-            </Button>
-          </div>
-
-          <div className="flex items-center justify-between px-2 text-[10px] font-mono text-slate-500">
-            <span>
-              Press <kbd className="px-1.5 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300 font-bold">Enter</kbd> to send, <kbd className="px-1.5 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300 font-bold">Shift + Enter</kbd> for newline
-            </span>
-            <span>GPT-4o Multiline</span>
-          </div>
-        </form>
+        <ChatDialogContent
+          key={chatKey}
+          isExpanded={isExpanded}
+          setIsExpanded={setIsExpanded}
+          activeModel={activeModel}
+          setIsOpen={setIsOpen}
+          zenRunning={zenRunning}
+        />
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ChatDialogContent({
+  isExpanded,
+  setIsExpanded,
+  activeModel,
+  setIsOpen,
+  zenRunning,
+}: {
+  isExpanded: boolean;
+  setIsExpanded: (v: boolean) => void;
+  activeModel: string;
+  setIsOpen: (v: boolean) => void;
+  zenRunning: boolean;
+}) {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [input, setInput] = useState("");
+
+  const { messages, sendMessage, status } = useChat({
+    maxSteps: 5,
+    initialMessages: (() => {
+      try {
+        const saved = localStorage.getItem(CHAT_STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch (e) {}
+      return [];
+    })(),
+  } as any);
+
+  const isLoading = status === "submitted" || status === "streaming";
+
+  useEffect(() => {
+    if (messages && messages.length > 0) {
+      try { localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages)); } catch (e) {}
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => inputRef.current?.focus(), 50);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (messages.length > 0 && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    }
+  }, [messages, isLoading]);
+
+  const sendMsg = () => {
+    if (!input.trim() || isLoading) return;
+    sendMessage({ text: input.trim() });
+    setInput("");
+  };
+
+  return (
+    <>
+      {/* Header */}
+      <div className="p-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02] shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+            <Sparkles className="w-4 h-4 text-white animate-pulse" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold font-mono text-white flex items-center gap-2">
+              <span>OMNI AI ASSISTANT</span>
+              <Badge variant="outline" className="border-indigo-500/40 text-indigo-300 bg-indigo-500/10 text-[9px] font-mono">
+                {activeModel}
+              </Badge>
+            </h3>
+            <p className="text-[10px] text-slate-400 font-mono">Control Center AI • Press Ctrl+J anytime</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1">
+          {messages.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => window.dispatchEvent(new CustomEvent("omni-ai-clear"))}
+              className="h-8 px-2.5 text-xs text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl font-mono gap-1"
+              title="Clear Chat History"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Clear</span>
+            </Button>
+          )}
+          <Button variant="ghost" size="icon" onClick={() => setIsExpanded(!isExpanded)} className="w-8 h-8 rounded-xl text-slate-400 hover:text-white hover:bg-white/10" title={isExpanded ? "Collapse View" : "Expand Fullscreen View"}>
+            {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </Button>
+          <Button variant="ghost" size="icon" onClick={() => setIsOpen(false)} className="w-8 h-8 rounded-xl text-slate-400 hover:text-white hover:bg-white/10">
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Chat area */}
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+        {messages.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400 space-y-3 font-mono">
+            <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shadow-xl">
+              <Bot className="w-7 h-7" />
+            </div>
+            <div className="space-y-1 max-w-sm">
+              <p className="text-sm font-bold text-slate-200">How can I assist your Personal OS today?</p>
+              <p className="text-xs text-slate-400 font-sans">Ask me to query notes, create tasks, summarize briefing, or inspect system state.</p>
+            </div>
+          </div>
+        ) : (
+          messages.map((m: any) => {
+            const textContent = extractText(m);
+            const toolInvocations = extractToolInvocations(m);
+            const isUser = m.role === "user";
+            if (!textContent && toolInvocations.length === 0) return null;
+            return (
+              <div key={m.id} className={cn("flex gap-3 text-xs font-mono", isUser ? "justify-end" : "justify-start")}>
+                {!isUser && (
+                  <div className="w-7 h-7 rounded-xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-indigo-300 shrink-0 mt-0.5">
+                    <Bot className="w-4 h-4" />
+                  </div>
+                )}
+                <div className="space-y-2 max-w-[85%]">
+                  {textContent && (
+                    <div className={cn("p-3.5 rounded-2xl leading-relaxed whitespace-pre-wrap font-sans text-xs shadow-md", isUser ? "bg-indigo-600 text-white rounded-tr-none font-mono" : "bg-white/[0.04] border border-white/10 text-slate-200 rounded-tl-none")}>
+                      {isUser ? textContent : renderFormattedText(textContent, () => setIsOpen(false), zenRunning)}
+                    </div>
+                  )}
+                  {toolInvocations.map((t: any) => {
+                    const isComplete = t.state === "output-available" || t.state === "result" || !!t.result || !!t.output;
+                    const callId = t.toolCallId ?? t.id ?? Math.random().toString();
+                    const rawOutput = t.output ?? t.result;
+                    const resultMsg = typeof rawOutput === "string" ? rawOutput : rawOutput?.message;
+                    const toolNameDisplay = t.toolName ?? (typeof t.type === "string" && t.type.startsWith("tool-") ? t.type.replace(/^tool-/, "") : t.type) ?? "tool";
+                    return (
+                      <div key={callId} className="space-y-1.5">
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.02] border border-white/10 text-[11px] font-mono text-slate-300">
+                          {isComplete ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" /> : <Loader2 className="w-3.5 h-3.5 text-indigo-400 animate-spin shrink-0" />}
+                          <span>Tool: <strong className="text-indigo-300">{toolNameDisplay}</strong></span>
+                        </div>
+                        {resultMsg && (
+                          <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 text-slate-200 leading-relaxed whitespace-pre-wrap font-sans text-xs shadow-md">
+                            {renderFormattedText(resultMsg, () => setIsOpen(false), zenRunning)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {isUser && (
+                  <div className="w-7 h-7 rounded-xl bg-purple-600/30 border border-purple-500/40 flex items-center justify-center text-purple-300 shrink-0 mt-0.5">
+                    <User className="w-4 h-4" />
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+        {isLoading && (
+          <div className="flex items-center gap-2 text-xs font-mono text-indigo-400 bg-indigo-500/10 p-3 rounded-2xl border border-indigo-500/20 w-fit">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>Omni AI is analyzing...</span>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Input */}
+      <form onSubmit={(e) => { e.preventDefault(); sendMsg(); }} className="p-3 border-t border-white/10 bg-white/[0.01] flex flex-col gap-2 shrink-0">
+        <div className="flex items-end gap-2">
+          <Textarea
+            ref={inputRef}
+            autoFocus
+            rows={1}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); } }}
+            placeholder={isLoading ? "Omni AI is responding... (Type message here)" : "Ask Omni AI assistant... (Enter to send, Shift+Enter for new line)"}
+            className="flex-1 bg-white/[0.04] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-2xl min-h-[44px] max-h-[140px] py-3 px-4 font-mono focus-visible:ring-indigo-500/40 resize-none scrollbar-thin"
+          />
+          <Button type="submit" disabled={isLoading || !input.trim()} className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl h-11 px-4 cursor-pointer shadow-lg shadow-indigo-600/30 shrink-0">
+            <Send className="w-4 h-4" />
+          </Button>
+        </div>
+        <div className="flex items-center justify-between px-2 text-[10px] font-mono text-slate-500">
+          <span>Press <kbd className="px-1.5 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300 font-bold">Enter</kbd> to send, <kbd className="px-1.5 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300 font-bold">Shift + Enter</kbd> for newline</span>
+          <span>{activeModel} Multiline</span>
+        </div>
+      </form>
+    </>
   );
 }

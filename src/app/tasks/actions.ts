@@ -156,6 +156,21 @@ export async function createProjectAction(name: string) {
   return { success: true };
 }
 
+export async function renameProjectAction(projectId: number, name: string) {
+  if (!name || name.trim() === "") {
+    throw new Error("Project name is required");
+  }
+
+  await db
+    .update(projects)
+    .set({ name: name.trim() })
+    .where(eq(projects.id, projectId));
+
+  revalidatePath("/tasks");
+  revalidatePath("/");
+  return { success: true };
+}
+
 export async function deleteProjectAction(projectId: number) {
   // Delete all tasks associated with this project first
   await db.delete(tasks).where(eq(tasks.projectId, projectId));

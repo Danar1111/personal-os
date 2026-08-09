@@ -77,6 +77,8 @@ async function fetchTopThreeMovies() {
   return [];
 }
 
+import { OMNI_AI_SKILLS_REGISTRY } from "@/lib/ai-skills-registry";
+
 export default async function DashboardPage() {
   // Fetch Tasks for Kanban Widget
   let recentTasks: Task[] = [];
@@ -154,7 +156,7 @@ export default async function DashboardPage() {
             totalTasksCount={totalTasks}
             completionRate={completionRate}
             nextEvent={nextEvent}
-            appsCount={apps.length}
+            aiSkillsCount={OMNI_AI_SKILLS_REGISTRY.length}
           />
         </div>
 

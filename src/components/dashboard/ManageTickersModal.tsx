@@ -207,6 +207,7 @@ export function ManageTickersModal({ initialTickers }: ManageTickersModalProps) 
         <form onSubmit={handleAdd} className="space-y-2.5">
           <div className="flex gap-3">
             <Input
+              autoFocus
               value={newSymbol}
               onChange={(e) => {
                 setNewSymbol(e.target.value);

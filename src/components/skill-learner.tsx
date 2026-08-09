@@ -8,6 +8,7 @@ import {
   updateSkillAction,
   deleteSkillAction,
   createMilestoneAction,
+  updateMilestoneAction,
   toggleMilestoneAction,
   deleteMilestoneAction,
 } from "@/app/skills/actions";
@@ -30,6 +31,7 @@ import {
   ExternalLink,
   Eye,
   X,
+  Check,
   Link2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -98,6 +100,16 @@ export function SkillLearner({
   // Skill Detail View Modal State (ReadOnly / View Action)
   const [viewingSkill, setViewingSkill] = useState<Skill | null>(null);
   const [newMilestoneDesc, setNewMilestoneDesc] = useState("");
+  const [editingMilestoneId, setEditingMilestoneId] = useState<number | null>(null);
+  const [editingMilestoneText, setEditingMilestoneText] = useState("");
+
+  const handleSaveMilestoneEdit = (milestoneId: number) => {
+    if (!editingMilestoneText.trim()) return;
+    startTransition(async () => {
+      await updateMilestoneAction(milestoneId, editingMilestoneText.trim());
+      setEditingMilestoneId(null);
+    });
+  };
 
   // Edit Skill Modal State
   const [editingSkill, setEditingSkill] = useState<Skill | null>(null);
@@ -129,14 +141,14 @@ export function SkillLearner({
   const parseReferences = (descText?: string | null) => {
     if (!descText) return { cleanDesc: "", references: [] };
 
-    const normalizedText = descText.replace(/\[REF:FILE:/g, "[REF:LINK:");
-    const matches = Array.from(normalizedText.matchAll(/\[REF:(ASSET|DRIVE|NOTE|LINK):(.*?)\]/g));
-    const cleanDesc = normalizedText.replace(/\[REF:(ASSET|DRIVE|NOTE|LINK):.*?\]/g, "").trim();
+    const normalizedText = descText.replace(/\[REF:FILE:/gi, "[REF:LINK:");
+    const matches = Array.from(normalizedText.matchAll(/\[REF:(ASSET|DRIVE|NOTE|LINK):(.*?)\]/gi));
+    const cleanDesc = normalizedText.replace(/\[REF:(ASSET|DRIVE|NOTE|LINK):.*?\]/gi, "").trim();
 
     const references: ReferenceItem[] = matches.map((m, index) => ({
       id: `ref-${index}-${Date.now()}`,
       type: m[1].toLowerCase() as "asset" | "drive" | "note" | "link",
-      value: m[2],
+      value: m[2].trim(),
     }));
 
     return { cleanDesc, references };
@@ -155,29 +167,35 @@ export function SkillLearner({
 
   // Helper to resolve reference status & title
   const checkReferenceStatus = (ref: ReferenceItem) => {
-    if (ref.type === "asset") {
-      const assetId = parseInt(ref.value, 10);
-      const asset = assetMap.get(assetId);
+    if (ref.type === "asset" || ref.type === "drive") {
+      const numId = parseInt(ref.value, 10);
+      let asset = !isNaN(numId) ? assetMap.get(numId) : undefined;
       if (!asset) {
-        return { isMissing: true, label: `Asset Vault Item #${ref.value} Deleted`, link: null };
+        const valLower = ref.value.toLowerCase().trim();
+        asset = initialAssets.find(
+          (a) =>
+            a.title.toLowerCase().trim() === valLower ||
+            a.title.toLowerCase().includes(valLower) ||
+            a.urlOrPath.toLowerCase().includes(valLower)
+        );
+      }
+      if (!asset) {
+        return { isMissing: true, label: `${ref.type === "asset" ? "Asset Vault Item" : "Drive File"} "${ref.value}" Deleted`, link: null };
       }
       return { isMissing: false, label: asset.title, link: asset.urlOrPath };
     }
 
-    if (ref.type === "drive") {
-      const driveId = parseInt(ref.value, 10);
-      const file = assetMap.get(driveId);
-      if (!file) {
-        return { isMissing: true, label: `Drive File #${ref.value} Removed`, link: null };
-      }
-      return { isMissing: false, label: file.title, link: file.urlOrPath };
-    }
-
     if (ref.type === "note") {
-      const noteId = parseInt(ref.value, 10);
-      const note = noteMap.get(noteId);
+      const numId = parseInt(ref.value, 10);
+      let note = !isNaN(numId) ? noteMap.get(numId) : undefined;
       if (!note) {
-        return { isMissing: true, label: `Brain Note #${ref.value} Deleted`, link: null };
+        const valLower = ref.value.toLowerCase().trim();
+        note = initialNotes.find(
+          (n) => n.title.toLowerCase().trim() === valLower || n.title.toLowerCase().includes(valLower)
+        );
+      }
+      if (!note) {
+        return { isMissing: true, label: `Brain Note "${ref.value}" Deleted`, link: null };
       }
       return { isMissing: false, label: note.title, link: `/vault?note=${note.id}` };
     }
@@ -389,6 +407,7 @@ export function SkillLearner({
             <div className="space-y-1.5">
               <label className="text-xs font-mono text-slate-300">Skill Title *</label>
               <Input
+                autoFocus
                 required
                 placeholder="e.g. Rust Systems Programming"
                 value={newTitle}
@@ -627,7 +646,17 @@ export function SkillLearner({
 
       {/* SKILL DETAIL VIEW & SYLLABUS MANAGEMENT MODAL */}
       {viewingSkill && (
-        <Dialog open={!!viewingSkill} onOpenChange={() => setViewingSkill(null)}>
+        <Dialog
+          open={!!viewingSkill}
+          onOpenChange={(open) => {
+            if (!open) {
+              setViewingSkill(null);
+              setEditingMilestoneId(null);
+              setEditingMilestoneText("");
+              setNewMilestoneDesc("");
+            }
+          }}
+        >
           <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-lg p-6 shadow-2xl backdrop-blur-2xl space-y-4 font-mono">
             <DialogHeader className="flex flex-row items-center justify-between border-b border-white/10 pb-3">
               <div className="flex items-center gap-2.5">
@@ -639,7 +668,12 @@ export function SkillLearner({
                 </DialogTitle>
               </div>
               <button
-                onClick={() => setViewingSkill(null)}
+                onClick={() => {
+                  setViewingSkill(null);
+                  setEditingMilestoneId(null);
+                  setEditingMilestoneText("");
+                  setNewMilestoneDesc("");
+                }}
                 className="p-1.5 rounded-xl bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-colors border border-white/10"
               >
                 <X className="w-4 h-4" />
@@ -696,43 +730,99 @@ export function SkillLearner({
                             No milestone items added yet. Add one below!
                           </div>
                         ) : (
-                          viewingSkillMilestones.map((m) => (
-                            <div
-                              key={m.id}
-                              onClick={() => handleToggleMilestone(m.id, m.isCompleted)}
-                              className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-indigo-500/40 transition-all flex items-center justify-between gap-3 cursor-pointer group"
-                            >
-                              <div className="flex items-center gap-2.5 min-w-0">
-                                {m.isCompleted ? (
-                                  <CheckSquare className="w-4 h-4 text-emerald-400 shrink-0" />
-                                ) : (
-                                  <Square className="w-4 h-4 text-slate-500 shrink-0" />
-                                )}
-                                <span
-                                  className={cn(
-                                    "text-xs font-sans text-slate-200",
-                                    m.isCompleted && "line-through text-slate-500"
-                                  )}
-                                >
-                                  {m.description}
-                                </span>
-                              </div>
+                          viewingSkillMilestones.map((m) => {
+                            const isEditing = editingMilestoneId === m.id;
 
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                disabled={isPending}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setDeletingMilestoneConfirm(m);
-                                }}
-                                className="w-7 h-7 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 opacity-70 group-hover:opacity-100"
-                                title="Delete milestone"
+                            return (
+                              <div
+                                key={m.id}
+                                className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-indigo-500/40 transition-all flex items-center justify-between gap-3 group"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </Button>
-                            </div>
-                          ))
+                                {isEditing ? (
+                                  <div className="flex items-center gap-2 flex-1">
+                                    <Input
+                                      autoFocus
+                                      value={editingMilestoneText}
+                                      onChange={(e) => setEditingMilestoneText(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") handleSaveMilestoneEdit(m.id);
+                                        if (e.key === "Escape") setEditingMilestoneId(null);
+                                      }}
+                                      className="h-8 text-xs bg-white/10 border-indigo-500/50 font-mono text-white rounded-xl"
+                                    />
+                                    <Button
+                                      size="icon"
+                                      disabled={isPending}
+                                      onClick={() => handleSaveMilestoneEdit(m.id)}
+                                      className="w-7 h-7 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white shrink-0"
+                                      title="Save Milestone"
+                                    >
+                                      <Check className="w-3.5 h-3.5" />
+                                    </Button>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      onClick={() => setEditingMilestoneId(null)}
+                                      className="w-7 h-7 rounded-xl text-slate-400 hover:text-white shrink-0"
+                                      title="Cancel"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div
+                                      onClick={() => handleToggleMilestone(m.id, m.isCompleted)}
+                                      className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
+                                    >
+                                      {m.isCompleted ? (
+                                        <CheckSquare className="w-4 h-4 text-emerald-400 shrink-0" />
+                                      ) : (
+                                        <Square className="w-4 h-4 text-slate-500 shrink-0" />
+                                      )}
+                                      <span
+                                        className={cn(
+                                          "text-xs font-sans text-slate-200",
+                                          m.isCompleted && "line-through text-slate-500"
+                                        )}
+                                      >
+                                        {m.description}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setEditingMilestoneId(m.id);
+                                          setEditingMilestoneText(m.description);
+                                        }}
+                                        className="w-7 h-7 rounded-xl text-slate-500 hover:text-indigo-300 hover:bg-indigo-500/10 opacity-70 group-hover:opacity-100"
+                                        title="Edit milestone"
+                                      >
+                                        <Edit3 className="w-3.5 h-3.5" />
+                                      </Button>
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        disabled={isPending}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setDeletingMilestoneConfirm(m);
+                                        }}
+                                        className="w-7 h-7 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 opacity-70 group-hover:opacity-100"
+                                        title="Delete milestone"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </Button>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })
                         )}
                       </div>
                     </div>
@@ -808,14 +898,22 @@ export function SkillLearner({
             <DialogFooter className="pt-3 border-t border-white/10 flex items-center justify-between gap-3">
               <Button
                 variant="ghost"
-                onClick={() => setDeletingSkillConfirm(viewingSkill)}
+                onClick={() => {
+                  setDeletingSkillConfirm(viewingSkill);
+                  setEditingMilestoneId(null);
+                  setEditingMilestoneText("");
+                }}
                 className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 font-mono text-xs rounded-2xl h-11 px-4"
               >
                 <Trash2 className="w-4 h-4 mr-1" /> Delete Skill
               </Button>
               <Button
-                onClick={() => handleOpenEditModal(viewingSkill)}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 px-5 shadow-lg shadow-indigo-600/30"
+                onClick={() => {
+                  handleOpenEditModal(viewingSkill);
+                  setEditingMilestoneId(null);
+                  setEditingMilestoneText("");
+                }}
+                className="bg-purple-600 hover:bg-purple-500 text-white font-mono text-xs rounded-2xl h-11 px-5 gap-1.5 shadow-lg shadow-purple-600/20"
               >
                 <Edit3 className="w-3.5 h-3.5 mr-1.5" /> Edit Skill
               </Button>

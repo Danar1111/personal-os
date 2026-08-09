@@ -5,8 +5,7 @@ import { AISkill } from "@/db/schema";
 import {
   saveSettingAction,
   saveMultipleSettingsAction,
-  createAISkillAction,
-  deleteAISkillAction,
+  forceSyncAiSkillsAction,
 } from "@/app/settings/actions";
 import {
   Key,
@@ -14,8 +13,6 @@ import {
   Terminal,
   Wrench,
   Save,
-  Eye,
-  EyeOff,
   CheckCircle2,
   Lock,
   Plus,
@@ -29,6 +26,7 @@ import {
   ShieldCheck,
   AlertTriangle,
   X,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,13 +59,11 @@ export function SettingsControlCenter({
   const [openaiKey, setOpenaiKey] = useState(initialSettings["openai_key"] || "");
   const [anthropicKey, setAnthropicKey] = useState(initialSettings["anthropic_key"] || "");
   const [geminiKey, setGeminiKey] = useState(initialSettings["gemini_key"] || "");
-  const [showAiKeys, setShowAiKeys] = useState(false);
 
   // Third-Party External Data Pipeline Keys state (Finnhub, TMDB, NewsAPI)
   const [finnhubKey, setFinnhubKey] = useState(initialSettings["finnhub_api_key"] || "");
   const [tmdbKey, setTmdbKey] = useState(initialSettings["tmdb_api_key"] || "");
   const [newsapiKey, setNewsapiKey] = useState(initialSettings["newsapi_key"] || "");
-  const [showExternalKeys, setShowExternalKeys] = useState(false);
 
   // Free-form LLM Model state
   const [customModel, setCustomModel] = useState(
@@ -80,14 +76,15 @@ export function SettingsControlCenter({
       "You are the Personal OS AI Core, an intelligent autonomous system assistant embedded inside the user's Personal OS dashboard. You assist with productivity, task management, second brain notes, finance tracking, time blocking, and local files. Execute tools proactively when requested."
   );
 
-  // Register Skill Modal State
-  const [isAddSkillOpen, setIsAddSkillOpen] = useState(false);
-  const [newSkillName, setNewSkillName] = useState("");
-  const [newSkillModule, setNewSkillModule] = useState("");
-  const [newSkillDesc, setNewSkillDesc] = useState("");
+  // Filter Search State
+  const [skillSearch, setSkillSearch] = useState("");
 
-  // Custom Glassmorphic Delete Confirmation Modal State (Popup Verif)
-  const [deletingSkillConfirm, setDeletingSkillConfirm] = useState<AISkill | null>(null);
+  const handleSyncSkills = () => {
+    startTransition(async () => {
+      await forceSyncAiSkillsAction();
+      triggerSavedFeedback("System AI Skills synced successfully!");
+    });
+  };
 
   // Feedback banner
   const [savedFeedback, setSavedFeedback] = useState<string | null>(null);
@@ -137,31 +134,14 @@ export function SettingsControlCenter({
     });
   };
 
-  const handleCreateSkill = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newSkillName.trim() || !newSkillModule.trim() || !newSkillDesc.trim()) return;
-
-    startTransition(async () => {
-      await createAISkillAction({
-        name: newSkillName,
-        module: newSkillModule,
-        description: newSkillDesc,
-      });
-      setNewSkillName("");
-      setNewSkillModule("");
-      setNewSkillDesc("");
-      setIsAddSkillOpen(false);
-      triggerSavedFeedback(`New AI Skill "${newSkillName}" registered!`);
-    });
-  };
-
   const modelPresets = [
-    { id: "gpt-4o-mini", label: "gpt-4o-mini (Fast & Recommended)" },
-    { id: "gpt-4o", label: "gpt-4o (High Intelligence)" },
-    { id: "claude-3-5-sonnet", label: "claude-3-5-sonnet" },
-    { id: "gemini-1.5-pro", label: "gemini-1.5-pro" },
-    { id: "groq/llama-3-70b", label: "groq/llama-3-70b" },
-    { id: "ollama/llama3", label: "ollama/llama3 (Local)" },
+    { id: "gpt-4o-mini", label: "gpt-4o-mini ⚡ Recommended" },
+    { id: "gpt-5-nano-2025-08-07", label: "gpt-5-nano-2025-08-07" },
+    { id: "gpt-4o", label: "gpt-4o" },
+    { id: "gpt-4-turbo", label: "gpt-4-turbo" },
+    { id: "gpt-3.5-turbo", label: "gpt-3.5-turbo" },
+    { id: "o1-mini", label: "o1-mini" },
+    { id: "o3-mini", label: "o3-mini" },
   ];
 
   return (
@@ -211,7 +191,7 @@ export function SettingsControlCenter({
         {activeTab === "api" && (
           <div className="space-y-6 py-2">
             {/* AI Provider Keys */}
-            <form onSubmit={handleSaveAiKeys} className="space-y-4">
+            <form onSubmit={handleSaveAiKeys} className="space-y-4 py-2">
               <div className="flex items-center justify-between pb-3 border-b border-white/10">
                 <div>
                   <h3 className="text-sm font-bold text-white font-mono flex items-center gap-2">
@@ -221,22 +201,13 @@ export function SettingsControlCenter({
                     Configure OpenAI, Anthropic &amp; Gemini keys for Personal OS AI Core
                   </p>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => setShowAiKeys(!showAiKeys)}
-                  className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white bg-white/5 px-3 py-1.5 rounded-xl border border-white/10 transition-colors cursor-pointer"
-                >
-                  {showAiKeys ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  <span>{showAiKeys ? "Hide Keys" : "Show Keys"}</span>
-                </button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-mono text-slate-300">OpenAI API Key</label>
                   <Input
-                    type={showAiKeys ? "text" : "password"}
+                    type="password"
                     placeholder="sk-proj-..."
                     value={openaiKey}
                     onChange={(e) => setOpenaiKey(e.target.value)}
@@ -247,7 +218,7 @@ export function SettingsControlCenter({
                 <div className="space-y-1.5">
                   <label className="text-xs font-mono text-slate-300">Anthropic API Key</label>
                   <Input
-                    type={showAiKeys ? "text" : "password"}
+                    type="password"
                     placeholder="sk-ant-..."
                     value={anthropicKey}
                     onChange={(e) => setAnthropicKey(e.target.value)}
@@ -258,7 +229,7 @@ export function SettingsControlCenter({
                 <div className="space-y-1.5">
                   <label className="text-xs font-mono text-slate-300">Gemini API Key</label>
                   <Input
-                    type={showAiKeys ? "text" : "password"}
+                    type="password"
                     placeholder="AIzaSy..."
                     value={geminiKey}
                     onChange={(e) => setGeminiKey(e.target.value)}
@@ -287,15 +258,6 @@ export function SettingsControlCenter({
                     Configure Finnhub (Finance), TMDB (Watchlist) &amp; NewsAPI (Briefing) keys
                   </p>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => setShowExternalKeys(!showExternalKeys)}
-                  className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white bg-white/5 px-3 py-1.5 rounded-xl border border-white/10 transition-colors cursor-pointer"
-                >
-                  {showExternalKeys ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  <span>{showExternalKeys ? "Hide Keys" : "Show Keys"}</span>
-                </button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -304,7 +266,7 @@ export function SettingsControlCenter({
                     <TrendingUp className="w-3.5 h-3.5 text-emerald-400" /> Finnhub Stock API Key
                   </label>
                   <Input
-                    type={showExternalKeys ? "text" : "password"}
+                    type="password"
                     placeholder="ct0..."
                     value={finnhubKey}
                     onChange={(e) => setFinnhubKey(e.target.value)}
@@ -317,7 +279,7 @@ export function SettingsControlCenter({
                     <Film className="w-3.5 h-3.5 text-purple-400" /> TMDB Movie API Key
                   </label>
                   <Input
-                    type={showExternalKeys ? "text" : "password"}
+                    type="password"
                     placeholder="a47f..."
                     value={tmdbKey}
                     onChange={(e) => setTmdbKey(e.target.value)}
@@ -330,7 +292,7 @@ export function SettingsControlCenter({
                     <Newspaper className="w-3.5 h-3.5 text-cyan-400" /> NewsAPI Key
                   </label>
                   <Input
-                    type={showExternalKeys ? "text" : "password"}
+                    type="password"
                     placeholder="84bf..."
                     value={newsapiKey}
                     onChange={(e) => setNewsapiKey(e.target.value)}
@@ -446,176 +408,122 @@ export function SettingsControlCenter({
               <Wrench className="w-4 h-4 text-indigo-400" /> REGISTERED AI SKILL DIRECTORY
             </h3>
             <p className="text-xs text-slate-400 font-mono mt-0.5">
-              Function calling capabilities registered with the Personal OS AI Core
+              Function calling capabilities registered with the Personal OS AI Core (Auto-Synced with Engine)
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <Badge variant="outline" className="border-indigo-500/40 text-indigo-300 bg-indigo-500/10 text-xs font-mono">
-              {initialSkills.length} Registered Skills
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <Badge variant="outline" className="border-emerald-500/40 text-emerald-300 bg-emerald-500/10 text-xs font-mono gap-1 py-1">
+              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Live Sync ({initialSkills.length} Skills)
             </Badge>
 
-            <Dialog open={isAddSkillOpen} onOpenChange={setIsAddSkillOpen}>
-              <DialogTrigger className={cn(Button, "bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 px-4 gap-2 cursor-pointer flex items-center shadow-lg shadow-indigo-600/30")}>
-                <Plus className="w-4 h-4" /> Register New AI Skill
-              </DialogTrigger>
-              <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-md p-6 shadow-2xl backdrop-blur-2xl space-y-4 font-mono">
-                <DialogHeader className="flex flex-row items-center justify-between border-b border-white/10 pb-3">
-                  <DialogTitle className="text-base font-bold text-white font-mono flex items-center gap-2">
-                    <Wrench className="w-4 h-4 text-indigo-400" /> REGISTER NEW AI SKILL
-                  </DialogTitle>
-                  <button
-                    onClick={() => setIsAddSkillOpen(false)}
-                    className="p-1.5 rounded-xl bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-colors border border-white/10"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </DialogHeader>
-
-                <form onSubmit={handleCreateSkill} className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-mono text-slate-300">Skill Function Name *</label>
-                    <Input
-                      required
-                      placeholder="e.g. log_workout or generate_invoice"
-                      value={newSkillName}
-                      onChange={(e) => setNewSkillName(e.target.value)}
-                      className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-mono text-slate-300">Target Module / System *</label>
-                    <Input
-                      required
-                      placeholder="e.g. Health Matrix or Finance Hub"
-                      value={newSkillModule}
-                      onChange={(e) => setNewSkillModule(e.target.value)}
-                      className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-mono text-slate-300">Skill Function Description *</label>
-                    <Textarea
-                      required
-                      rows={3}
-                      placeholder="Describe what this tool does when invoked by the AI Core..."
-                      value={newSkillDesc}
-                      onChange={(e) => setNewSkillDesc(e.target.value)}
-                      className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl p-4 font-sans leading-relaxed"
-                    />
-                  </div>
-
-                  <DialogFooter className="pt-2">
-                    <Button type="submit" disabled={isPending} className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 w-full shadow-lg shadow-indigo-600/30 cursor-pointer">
-                      {isPending ? "Registering..." : "Register Skill"}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </div>
-
-        {/* Dynamic Skill Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {initialSkills.slice(0, skillsVisibleLimit).map((skill) => (
-            <div
-              key={skill.id}
-              className="p-4 rounded-3xl bg-white/[0.03] border border-white/10 space-y-2 hover:border-indigo-500/50 transition-all group relative shadow-md"
+            <Button
+              onClick={handleSyncSkills}
+              disabled={isPending}
+              variant="outline"
+              className="border-white/15 text-slate-300 hover:text-white font-mono text-xs rounded-2xl h-9 px-3 gap-1.5 cursor-pointer"
+              title="Force Sync System Skills"
             >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-mono font-bold text-indigo-300 bg-indigo-500/10 px-2.5 py-1 rounded-xl border border-indigo-500/30">
-                  {skill.name}
-                </span>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono text-slate-400">{skill.module}</span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeletingSkillConfirm(skill);
-                    }}
-                    className="p-1.5 rounded-xl bg-black/80 text-slate-400 hover:text-rose-400 hover:bg-rose-600/80 transition-colors border border-white/10 cursor-pointer"
-                    title="Delete skill"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-              <p className="text-xs text-slate-300 font-sans leading-relaxed">
-                {skill.description}
-              </p>
-            </div>
-          ))}
+              <RefreshCw className={cn("w-3.5 h-3.5", isPending && "animate-spin")} />
+              <span>Sync Skills</span>
+            </Button>
+          </div>
         </div>
 
-        {/* Show More / Show Less Expander Button */}
-        {initialSkills.length > 6 && (
-          <div className="flex justify-center pt-4">
-            {skillsVisibleLimit < initialSkills.length ? (
-              <Button
-                onClick={() => setSkillsVisibleLimit(initialSkills.length)}
-                className="bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/40 font-mono text-xs rounded-2xl h-10 px-6 gap-2 shadow-lg cursor-pointer transition-all"
-              >
-                Show More (+{initialSkills.length - skillsVisibleLimit} more skills)
-              </Button>
-            ) : (
-              <Button
-                onClick={() => setSkillsVisibleLimit(6)}
-                variant="outline"
-                className="border-white/15 text-slate-400 hover:text-white font-mono text-xs rounded-2xl h-10 px-6 cursor-pointer"
-              >
-                Show Less
-              </Button>
-            )}
-          </div>
-        )}
+        {/* Filter / Search Bar */}
+        <div className="flex items-center gap-3">
+          <Input
+            placeholder="Filter skills by function name, module, or description..."
+            value={skillSearch}
+            onChange={(e) => setSkillSearch(e.target.value)}
+            className="bg-white/[0.03] border-white/10 text-xs text-white placeholder:text-slate-500 rounded-2xl h-10 px-4 font-mono flex-1"
+          />
+          {skillSearch && (
+            <Button
+              variant="ghost"
+              onClick={() => setSkillSearch("")}
+              className="text-xs font-mono text-slate-400 hover:text-white h-10 px-3 rounded-2xl"
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+
+        {/* Dynamic Skill Cards Grouped by Module */}
+        {(() => {
+          const filtered = initialSkills.filter((s) => {
+            if (!skillSearch.trim()) return true;
+            const q = skillSearch.toLowerCase();
+            return (
+              s.name.toLowerCase().includes(q) ||
+              s.module.toLowerCase().includes(q) ||
+              s.description.toLowerCase().includes(q)
+            );
+          });
+
+          if (filtered.length === 0) {
+            return (
+              <div className="p-6 text-center text-xs font-mono text-slate-500 border border-dashed border-white/10 rounded-3xl">
+                No AI skills matching &quot;{skillSearch}&quot;.
+              </div>
+            );
+          }
+
+          // Group by module
+          const groupedByModule: Record<string, AISkill[]> = {};
+          filtered.forEach((s) => {
+            const mod = s.module || "General System";
+            if (!groupedByModule[mod]) groupedByModule[mod] = [];
+            groupedByModule[mod].push(s);
+          });
+
+          const moduleKeys = Object.keys(groupedByModule);
+
+          return (
+            <div className="space-y-6">
+              {moduleKeys.map((modName) => {
+                const skillsInMod = groupedByModule[modName];
+                return (
+                  <div key={modName} className="space-y-3">
+                    <div className="flex items-center gap-2.5 pb-2 border-b border-white/10">
+                      <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                        <Wrench className="w-3.5 h-3.5" />
+                      </div>
+                      <h4 className="text-xs font-bold font-mono text-white tracking-wider uppercase">
+                        {modName}
+                      </h4>
+                      <Badge variant="outline" className="border-white/10 text-slate-400 text-[10px] font-mono">
+                        {skillsInMod.length} Skill{skillsInMod.length !== 1 ? "s" : ""}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                      {skillsInMod.map((skill) => (
+                        <div
+                          key={skill.id}
+                          className="p-4 rounded-3xl bg-white/[0.03] border border-white/10 space-y-2 hover:border-indigo-500/50 transition-all group relative shadow-md"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-mono font-bold text-indigo-300 bg-indigo-500/10 px-2.5 py-1 rounded-xl border border-indigo-500/30">
+                              {skill.name}
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400 bg-white/5 px-2 py-0.5 rounded-lg border border-white/5">
+                              {skill.module}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-300 font-sans leading-relaxed whitespace-pre-line">
+                            {skill.description}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
-
-      {/* COOL GLASSMORPHIC DELETE SKILL CONFIRMATION DIALOG (Popup Verif) */}
-      {deletingSkillConfirm && (
-        <Dialog open={!!deletingSkillConfirm} onOpenChange={() => setDeletingSkillConfirm(null)}>
-          <DialogContent showCloseButton={false} className="bg-[#16131c] border-rose-500/30 text-slate-100 rounded-3xl max-w-md p-6 shadow-2xl backdrop-blur-2xl font-mono text-center space-y-4">
-            <div className="mx-auto w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400">
-              <AlertTriangle className="w-7 h-7 animate-pulse" />
-            </div>
-
-            <div>
-              <h3 className="text-base font-bold text-white tracking-wide uppercase">DELETE AI SKILL</h3>
-              <p className="text-xs text-slate-300 mt-2 leading-relaxed font-sans">
-                Are you sure you want to delete AI skill <span className="text-rose-300 font-bold">&quot;{deletingSkillConfirm.name}&quot;</span>?
-              </p>
-              <p className="text-[10px] text-slate-500 mt-1">This action cannot be undone.</p>
-            </div>
-
-            <div className="flex items-center gap-3 pt-2">
-              <Button
-                variant="outline"
-                onClick={() => setDeletingSkillConfirm(null)}
-                className="flex-1 border-white/15 text-slate-300 hover:bg-white/10 rounded-2xl h-11 text-xs font-mono"
-              >
-                Cancel
-              </Button>
-              <Button
-                disabled={isPending}
-                onClick={() => {
-                  const id = deletingSkillConfirm.id;
-                  setDeletingSkillConfirm(null);
-                  startTransition(async () => {
-                    await deleteAISkillAction(id);
-                    triggerSavedFeedback("AI Skill deleted");
-                  });
-                }}
-                className="flex-1 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl h-11 text-xs font-mono font-bold shadow-lg shadow-rose-600/40 cursor-pointer"
-              >
-                {isPending ? "Deleting..." : "Delete Skill"}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
     </div>
   );
 }

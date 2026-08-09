@@ -512,6 +512,7 @@ export function AppLauncherClient({ initialApps }: AppLauncherClientProps) {
             <div className="space-y-1.5">
               <label className="text-xs font-mono text-slate-300">Application Name *</label>
               <Input
+                autoFocus
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder="e.g. n8n Automation Hub"
