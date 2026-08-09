@@ -111,6 +111,8 @@ export function PinLockProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const lastActivityRef = useRef<number>(Date.now());
+
   /* ── Lock screen ── */
   const lockScreen = useCallback(() => {
     sessionStorage.removeItem(SESSION_KEY);
@@ -119,34 +121,35 @@ export function PinLockProvider({ children }: { children: React.ReactNode }) {
     setStatus("idle");
     setErrorMsg("");
     setTimeLeft(1800);
-    if (countdownTimer.current) clearInterval(countdownTimer.current);
-  }, []);
-
-  /* ── Countdown tick (pauses when zen is running) ── */
-  const startCountdown = useCallback((seconds: number) => {
-    if (countdownTimer.current) clearInterval(countdownTimer.current);
-    setTimeLeft(seconds);
-    countdownTimer.current = setInterval(() => {
-      // Pause tick when zen timer is active
-      if (zenRunningRef.current) return;
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          if (countdownTimer.current) clearInterval(countdownTimer.current);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
   }, []);
 
   /* ── Reset inactivity & countdown (skips reset when zen running) ── */
   const resetInactivityTimer = useCallback(() => {
-    // Don't reset if zen is actively running
     if (zenRunningRef.current) return;
+    lastActivityRef.current = Date.now();
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
     inactivityTimer.current = setTimeout(lockScreen, INACTIVITY_TIMEOUT_MS);
-    startCountdown(1800);
-  }, [lockScreen, startCountdown]);
+  }, [lockScreen]);
+
+  /* ── Continuous 1-second countdown tick ── */
+  useEffect(() => {
+    if (isLocked) return;
+
+    lastActivityRef.current = Date.now();
+    setTimeLeft(1800);
+
+    const interval = setInterval(() => {
+      if (zenRunningRef.current) return;
+      const elapsedSeconds = Math.floor((Date.now() - lastActivityRef.current) / 1000);
+      const remaining = Math.max(0, 1800 - elapsedSeconds);
+      setTimeLeft(remaining);
+      if (remaining <= 0) {
+        lockScreen();
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isLocked, lockScreen]);
 
   /* ── Inactivity listeners when unlocked ── */
   useEffect(() => {
@@ -158,7 +161,6 @@ export function PinLockProvider({ children }: { children: React.ReactNode }) {
       return () => {
         events.forEach((ev) => window.removeEventListener(ev, resetInactivityTimer));
         if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
-        if (countdownTimer.current) clearInterval(countdownTimer.current);
       };
     }
   }, [isLocked, resetInactivityTimer]);

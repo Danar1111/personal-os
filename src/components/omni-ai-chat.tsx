@@ -374,6 +374,7 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeModel, setActiveModel] = useState("gpt-4o-mini");
+  const [initialPrompt, setInitialPrompt] = useState("");
   const zenRunning = useZenRunning();
 
   useEffect(() => {
@@ -381,7 +382,13 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
   }, [isOpen]);
 
   useEffect(() => {
-    const handleOpen = () => setIsOpen(true);
+    const handleOpen = (e?: any) => {
+      setIsOpen(true);
+      const query = e?.detail?.initialQuery || e?.detail?.prompt;
+      if (query && typeof query === "string") {
+        setInitialPrompt(query);
+      }
+    };
     const onKey = (e: KeyboardEvent) => {
       // Ctrl + Shift + J -> Toggle Expand / Fullscreen
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "j") {
@@ -444,6 +451,8 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
           messages={messages}
           sendMessage={sendMessage}
           isLoading={isLoading}
+          initialPrompt={initialPrompt}
+          clearInitialPrompt={() => setInitialPrompt("")}
         />
       </DialogContent>
     </Dialog>
@@ -460,6 +469,8 @@ function ChatDialogContent({
   messages,
   sendMessage,
   isLoading,
+  initialPrompt,
+  clearInitialPrompt,
 }: {
   isExpanded: boolean;
   setIsExpanded: (v: boolean) => void;
@@ -469,11 +480,23 @@ function ChatDialogContent({
   messages: any[];
   sendMessage: (opts: { text: string }) => void;
   isLoading: boolean;
+  initialPrompt: string;
+  clearInitialPrompt: () => void;
 }) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
+
+  // Populate input when initialPrompt is provided via Jump to event
+  useEffect(() => {
+    if (initialPrompt) {
+      setInput(initialPrompt);
+      clearInitialPrompt();
+      const timer = setTimeout(() => inputRef.current?.focus(), 50);
+      return () => clearTimeout(timer);
+    }
+  }, [initialPrompt, clearInitialPrompt]);
 
   // Focus input when modal opens (component mounts = dialog opened)
   useEffect(() => {
