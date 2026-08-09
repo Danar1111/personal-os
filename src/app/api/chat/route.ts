@@ -32,7 +32,7 @@ export const maxDuration = 30;
 // SYSTEM PROMPT
 // ─────────────────────────────────────────────────────────────────────────────
 const DEFAULT_MASTER_SYSTEM_PROMPT = `
-You are Personal OS AI Core — an executive AI agent embedded in the user's personal operating system.
+You are Personal OS AI Core — a friendly, warm, intelligent executive AI assistant embedded in the user's personal operating system.
 
 EXACT SYSTEM MODULE DOMAINS & TOOLS MAPPING:
 
@@ -77,9 +77,9 @@ RULES:
 1. ALWAYS call the correct tool for the specific domain module.
 2. FOLDER & NESTED PATH RULE:
    - When creating or moving notes, if the user specifies a folder or folder path (e.g. "Work/Projects/Frontend" or "Ideas"), pass folderPath to create_note or move_note_to_folder.
-   - Always state the exact target folder path in your output response (e.g. "✓ Created inside folder: Work/Projects/Frontend").
+   - Always state the exact target folder path in your output response (e.g. "Saya sudah membuat catatan di folder Work/Projects/Frontend").
    - When user asks to find or list notes in a specific folder (e.g. "carikan notes di folder Work"), call search_vault with folderPath parameter or call list_folders.
-   - STRICT ACCURACY RULE FOR FOLDERS: NEVER guess or assume which folder a note belongs to! Only report a note as belonging to a folder if its actual Folder path in the tool output matches that folder. If a note is in another folder (e.g. Architecture & Specs), state its real folder name!
+   - STRICT ACCURACY RULE FOR FOLDERS: NEVER guess or assume which folder a note belongs to! Only report a note as belonging to a folder if its actual Folder path in the tool output matches that folder.
 3. PAGE & ENTITY LINKING RULE:
    - When referencing, creating, or editing any entity (note, task, skill, asset, file, event), format it as a clean Markdown link with search or ID parameters:
      - Vault Note: [Note Title](/vault?noteId=ID) or [Note Title](/vault?search=NoteTitle)
@@ -91,23 +91,20 @@ RULES:
      - General App Pages: [Second Brain Vault](/vault), [Task Omni-Kanban](/tasks), [Master Calendar](/calendar), [Finance Hub](/finance), [Asset Vault](/inventory), [Skill Matrix](/skills), [Local Drive](/drive), [TMDB Watchlist](/watchlist), [System Settings](/settings), [Zen Timer](/zen), [Daily AI Briefing](/ai-briefing).
    - APP LAUNCHER SPECIFIC RULE:
      - For specific registered apps in App Launcher (e.g., TMDB, Google News, n8n, etc.), ALWAYS format them as direct external Markdown links using their target URL: "[App Name](https://target-app-url.com)".
-     - Clicking an App Launcher link MUST directly open the app's URL in a new tab! Do NOT use "/apps?search=..." for specific registered apps!
    - IMAGE ATTACHMENT & PREVIEW RULE:
      - When referencing or returning an image or photo attachment (from Local Drive, Asset Vault, or external web link), format it as "![Image Title](url)" or "[Image Title](url)" so that a visual image preview renders directly inside the chat bubble!
-     - Include the interactive navigation button right below the image so the user can open its target location ("/drive?search=...", "/inventory?search=...", or external URL).
-   - External links (http:// or https://) will directly open in a new tab.
-4. DELETION & REMOVAL CONFIRMATION RULE:
-   - When the user requests to delete or remove any item (task, note, calendar event, transaction, asset, skill, folder, project):
-   - If the user has NOT explicitly confirmed, ask for confirmation first detailing the item title/name and target path.
-   - Execute deletion ONLY when user confirms.
+4. SMART FLEXIBLE CONFIRMATION & DELETION RULE:
+   - When the user asks to delete or remove an item (task, note, calendar event, transaction, asset, skill, folder, project):
+   - If the user has NOT confirmed yet, ask simply in 1 short natural sentence (e.g. "Apakah kamu yakin ingin menghapus proyek **[testing](/tasks)** beserta semua tugasnya?").
+   - If the user responds with ANY affirmative intent (such as "tolong hapus", "hapus aja", "ya", "ya hapus", "yes", "ok", "lanjutkan", "bisa"), IMMEDIATELY EXECUTE THE DELETION TOOL (delete_project, delete_task, delete_note, etc.)!
+   - NEVER demand an exact rigid literal phrase (like requiring strictly 'Ya, hapus'). Understand natural human language flexibly!
 5. LINKED REFERENCES FORMAT:
-   - References in Tasks and Skills use standard markers in the description:
-     - Asset Vault: [REF:asset:Title]
-     - Drive Storage: [REF:drive:Title]
-     - Second Brain Note: [REF:note:Title]
-     - External Link: [REF:link:https://...]
-   - Use add_task_reference or add_skill_reference to attach these easily.
-6. Always answer concisely, politely, and clearly.
+   - References in Tasks and Skills use standard markers in the description: [REF:asset:Title], [REF:drive:Title], [REF:note:Title], [REF:link:https://...]. Use add_task_reference or add_skill_reference to attach these easily.
+6. NATURAL, INTELLIGENT & ADAPTIVE VOICE STYLE:
+   - Be smart, adaptive, and human-like! Balance conciseness with helpfulness.
+   - For simple tasks and actions, answer directly in 1-2 natural sentences without stiff scripts or repeating robotic templates.
+   - For multi-item results (listing tasks, news, movies), format them clearly with bullet points.
+   - Match the user's tone and language naturally in a warm, competent, and fluid voice.
 `.trim();
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -119,9 +116,20 @@ function getMessageText(m: any): string {
   if (Array.isArray(m?.parts)) {
     const texts: string[] = [];
     for (const part of m.parts) {
-      if (part?.type === "text" && typeof part.text === "string") texts.push(part.text);
-      else if (typeof part?.text === "string") texts.push(part.text);
-      else if (typeof part === "string") texts.push(part);
+      if (part?.type === "text" && typeof part.text === "string" && part.text.trim()) {
+        texts.push(part.text.trim());
+      } else if (typeof part?.text === "string" && part.text.trim()) {
+        texts.push(part.text.trim());
+      } else if (typeof part === "string" && part.trim()) {
+        texts.push(part.trim());
+      } else if (part?.type?.startsWith("tool-") || part?.type === "dynamic-tool" || part?.toolName) {
+        const toolName = part.toolName || (typeof part.type === "string" ? part.type.replace(/^tool-/, "") : "tool");
+        const rawOutput = part.output ?? part.result;
+        const outStr = typeof rawOutput === "string" ? rawOutput : (rawOutput?.message || JSON.stringify(rawOutput || {}));
+        if (outStr) {
+          texts.push(`[Executed tool ${toolName}: ${outStr}]`);
+        }
+      }
     }
     const joined = texts.join("\n").trim();
     if (joined) return joined;
@@ -1884,11 +1892,17 @@ export async function POST(req: Request) {
               };
             });
 
+            const listStr = result
+              .map((p) => `• **[${p.name}](/tasks)** — Status: ${p.status} (${p.completedTasks}/${p.totalTasks} tasks completed)`)
+              .join("\n");
+
             return {
               success: true,
               count: result.length,
               projects: result,
-              message: `Found ${result.length} projects in [Task Omni-Kanban](/tasks).`,
+              message: result.length
+                ? `📁 **Task Omni-Kanban Projects** (${result.length}):\n\n${listStr}`
+                : "No projects found in [Task Omni-Kanban](/tasks).",
               pageUrl: "/tasks",
             };
           } catch (e: any) {
@@ -2122,17 +2136,19 @@ export async function POST(req: Request) {
 
       // ── EXTERNAL INTELLIGENCE SKILLS (NEWS, STOCKS, SENTIMENT, MOVIES) ─────
       fetch_news_articles: makeTool({
-        description: "Fetches real-time news headlines on any topic (technology, market, world news). Execute ONLY when user explicitly asks for news, headlines, or current events.",
+        description: "Fetches real-time news headlines on any topic. Execute ONLY when user explicitly asks for news, headlines, or current events. Accept limit parameter for number of items (e.g. 1 for 'top 1 berita').",
         inputSchema: jsonSchema({
           type: "object",
           properties: {
             query: { type: "string", description: "Search term e.g. 'artificial intelligence', 'technology', 'markets'" },
+            limit: { type: "number", description: "Number of articles to fetch (default 5, e.g. 1 if user asks for 1 news item)" },
           },
           required: ["query"],
         }),
         execute: async (args: any) => {
           try {
             const query = String(args?.query || "technology").trim();
+            const limit = Math.min(Math.max(Number(args?.limit || 5), 1), 10);
             const [newsRow] = await db
               .select()
               .from(systemSettings)
@@ -2147,7 +2163,7 @@ export async function POST(req: Request) {
               };
             }
 
-            const gnewsUrl = `https://gnews.io/api/v4/search?q=${encodeURIComponent(query)}&max=5&apikey=${newsApiKey}`;
+            const gnewsUrl = `https://gnews.io/api/v4/search?q=${encodeURIComponent(query)}&max=${limit}&apikey=${newsApiKey}`;
             const res = await fetch(gnewsUrl, { next: { revalidate: 1800 } });
             if (!res.ok) {
               return { success: false, message: `News API request failed with status ${res.status}.` };
@@ -2253,17 +2269,19 @@ export async function POST(req: Request) {
       }),
 
       search_tmdb_movies: makeTool({
-        description: "Searches movies on TMDB with posters, rating, overview, and release date. Execute ONLY when user explicitly asks for movie search, film details, or movie info.",
+        description: "Searches movies on TMDB with posters, rating, overview, and release date. Execute ONLY when user explicitly asks for movie search, film details, or movie info. Accept limit parameter for number of results.",
         inputSchema: jsonSchema({
           type: "object",
           properties: {
             query: { type: "string", description: "Movie title e.g. 'Inception', 'Interstellar', 'Batman'" },
+            limit: { type: "number", description: "Number of search results to return (default 5, e.g. 1 if user asks for 1 movie)" },
           },
           required: ["query"],
         }),
         execute: async (args: any) => {
           try {
             const query = String(args?.query || "").trim();
+            const limit = Math.min(Math.max(Number(args?.limit || 5), 1), 10);
             const res = await searchTmdbMovies(query);
             if (res.missingKey) {
               return { success: false, message: "TMDB API key is missing. Please configure TMDB key in System Settings (/settings)." };
@@ -2273,7 +2291,7 @@ export async function POST(req: Request) {
             }
 
             const listStr = (res.results || [])
-              .slice(0, 5)
+              .slice(0, limit)
               .map((m: any) => {
                 const poster = m.posterPath ? `![${m.title}](${m.posterPath})\n` : "";
                 return `${poster}🎬 **[${m.title}](/watchlist?search=${encodeURIComponent(m.title)})** (Rating: ${m.rating})\nRelease: ${m.releaseDate}\n${m.overview}`;
@@ -2282,8 +2300,8 @@ export async function POST(req: Request) {
 
             return {
               success: true,
-              message: `🎥 TMDB Movie Search Results for "${query}" (${res.results.length}):\n\n${listStr}`,
-              data: res.results,
+              message: `🎥 TMDB Movie Search Results for "${query}" (${Math.min(res.results.length, limit)}):\n\n${listStr}`,
+              data: res.results.slice(0, limit),
             };
           } catch (e: any) {
             return { success: false, message: `Failed to search TMDB movies: ${e.message}` };
@@ -2292,14 +2310,17 @@ export async function POST(req: Request) {
       }),
 
       get_trending_movies: makeTool({
-        description: "Fetches top 10 trending movies of the week on TMDB. Execute ONLY when user explicitly asks for trending movies, film recommendations, or popular movies.",
+        description: "Fetches trending movies of the week on TMDB. Execute ONLY when user explicitly asks for trending movies, film recommendations, or popular movies. Accept limit parameter for number of items (e.g. 1 for 'top 1 film').",
         inputSchema: jsonSchema({
           type: "object",
-          properties: {},
+          properties: {
+            limit: { type: "number", description: "Number of trending movies to return (default 6, e.g. 1 if user asks for 1 movie)" },
+          },
           required: [],
         }),
-        execute: async () => {
+        execute: async (args: any) => {
           try {
+            const limit = Math.min(Math.max(Number(args?.limit || 6), 1), 10);
             const res = await getTrendingMovies();
             if (res.missingKey) {
               return { success: false, message: "TMDB API key is missing. Please configure TMDB key in System Settings (/settings)." };
@@ -2309,7 +2330,7 @@ export async function POST(req: Request) {
             }
 
             const listStr = (res.results || [])
-              .slice(0, 6)
+              .slice(0, limit)
               .map((m: any, i: number) => {
                 const poster = m.posterPath ? `![${m.title}](${m.posterPath})\n` : "";
                 return `${i + 1}. ${poster}🎬 **[${m.title}](/watchlist?search=${encodeURIComponent(m.title)})** (Rating: ${m.rating})\nRelease: ${m.releaseDate}\n${m.overview}`;
@@ -2319,7 +2340,7 @@ export async function POST(req: Request) {
             return {
               success: true,
               message: `🔥 Top Trending Movies of the Week on TMDB:\n\n${listStr}`,
-              data: res.results,
+              data: res.results.slice(0, limit),
             };
           } catch (e: any) {
             return { success: false, message: `Failed to fetch trending movies: ${e.message}` };

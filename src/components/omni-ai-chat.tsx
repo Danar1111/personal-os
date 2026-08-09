@@ -50,16 +50,21 @@ function extractText(m: any): string {
   return "";
 }
 
-/** Extract all tool invocations from ai v7 UIMessage parts */
+/** Extract all tool invocations from ai v7 UIMessage parts or legacy toolInvocations */
 function extractToolInvocations(m: any): any[] {
-  if (!Array.isArray(m?.parts)) return [];
+  if (Array.isArray(m?.parts)) {
+    const partsTools = m.parts.filter((p: any) => {
+      if (!p?.type) return false;
+      return p.type === "dynamic-tool" || (typeof p.type === "string" && p.type.startsWith("tool-"));
+    });
+    if (partsTools.length > 0) return partsTools;
+  }
 
-  // In ai v7, tool parts have type "tool-{toolName}" or "dynamic-tool"
-  // They contain toolCallId, toolName, state, input, output
-  return m.parts.filter((p: any) => {
-    if (!p?.type) return false;
-    return p.type === "dynamic-tool" || (typeof p.type === "string" && p.type.startsWith("tool-"));
-  });
+  if (Array.isArray(m?.toolInvocations)) {
+    return m.toolInvocations;
+  }
+
+  return [];
 }
 
 
@@ -321,24 +326,51 @@ function renderFormattedText(text: string, onInternalLinkClick: () => void, zenR
   return <>{parts}</>;
 }
 
+function safeSerializeMessages(msgs: any[]): string {
+  return JSON.stringify(msgs, (key, value) => {
+    if (typeof value === "bigint") return value.toString();
+    if (value instanceof Error) return value.message;
+    if (typeof value === "function") return undefined;
+    return value;
+  });
+}
+
 export function OmniAIChat() {
   const [chatKey, setChatKey] = useState(0);
+  const [initialMsgs, setInitialMsgs] = useState<any[]>([]);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(CHAT_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setInitialMsgs(parsed);
+        }
+      }
+    } catch (e) {}
+    setIsLoaded(true);
+  }, [chatKey]);
 
   useEffect(() => {
     const onClear = () => {
       try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch (e) {}
+      setInitialMsgs([]);
       setChatKey((k) => k + 1);
     };
     window.addEventListener("omni-ai-clear" as any, onClear);
     return () => window.removeEventListener("omni-ai-clear" as any, onClear);
   }, []);
 
-  return <ChatCore key={chatKey} />;
+  if (!isLoaded) return null;
+
+  return <ChatCore key={chatKey} initialMsgs={initialMsgs} />;
 }
 
 // ChatCore lives outside DialogContent so useChat state survives modal open/close.
 // Only replaced (via key) when user explicitly clears chat.
-function ChatCore() {
+function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeModel, setActiveModel] = useState("gpt-4o-mini");
@@ -351,7 +383,13 @@ function ChatCore() {
   useEffect(() => {
     const handleOpen = () => setIsOpen(true);
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "j") {
+      // Ctrl + Shift + J -> Toggle Expand / Fullscreen
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        setIsExpanded((p) => !p);
+      }
+      // Ctrl + J -> Toggle Open / Close
+      else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "j") {
         e.preventDefault();
         setIsOpen((p) => !p);
       }
@@ -367,24 +405,21 @@ function ChatCore() {
   // useChat lives HERE — outside DialogContent — so messages persist across open/close
   const { messages, sendMessage, status } = useChat({
     maxSteps: 5,
-    initialMessages: (() => {
-      try {
-        const saved = localStorage.getItem(CHAT_STORAGE_KEY);
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        }
-      } catch (e) {}
-      return [];
-    })(),
+    messages: initialMsgs,
+    initialMessages: initialMsgs,
   } as any);
 
   const isLoading = status === "submitted" || status === "streaming";
 
-  // Persist every update to localStorage
+  // Persist every update to localStorage using safeSerializeMessages
   useEffect(() => {
     if (messages && messages.length > 0) {
-      try { localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages)); } catch (e) {}
+      try {
+        const serialized = safeSerializeMessages(messages);
+        localStorage.setItem(CHAT_STORAGE_KEY, serialized);
+      } catch (e) {
+        console.error("[OmniAI] LocalStorage save error:", e);
+      }
     }
   }, [messages]);
 
@@ -484,7 +519,7 @@ function ChatDialogContent({
                 {activeModel}
               </Badge>
             </h3>
-            <p className="text-[10px] text-slate-400 font-mono">Control Center AI • Press Ctrl+J anytime</p>
+            <p className="text-[10px] text-slate-400 font-mono">Control Center AI • Ctrl+J (toggle) • Ctrl+Shift+J (fullscreen)</p>
           </div>
         </div>
 
@@ -501,7 +536,7 @@ function ChatDialogContent({
               <span className="hidden sm:inline">Clear</span>
             </Button>
           )}
-          <Button variant="ghost" size="icon" onClick={() => setIsExpanded(!isExpanded)} className="w-8 h-8 rounded-xl text-slate-400 hover:text-white hover:bg-white/10" title={isExpanded ? "Collapse View" : "Expand Fullscreen View"}>
+          <Button variant="ghost" size="icon" onClick={() => setIsExpanded(!isExpanded)} className="w-8 h-8 rounded-xl text-slate-400 hover:text-white hover:bg-white/10" title={isExpanded ? "Collapse View (Ctrl+Shift+J)" : "Expand Fullscreen View (Ctrl+Shift+J)"}>
             {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </Button>
           <Button variant="ghost" size="icon" onClick={() => setIsOpen(false)} className="w-8 h-8 rounded-xl text-slate-400 hover:text-white hover:bg-white/10">
@@ -598,8 +633,8 @@ function ChatDialogContent({
           </Button>
         </div>
         <div className="flex items-center justify-between px-2 text-[10px] font-mono text-slate-500">
-          <span>Press <kbd className="px-1.5 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300 font-bold">Enter</kbd> to send, <kbd className="px-1.5 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300 font-bold">Shift + Enter</kbd> for newline</span>
-          <span>{activeModel} Multiline</span>
+          <span><kbd className="px-1 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300 font-bold">Enter</kbd> send • <kbd className="px-1 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300 font-bold">Ctrl+J</kbd> open • <kbd className="px-1 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300 font-bold">Ctrl+Shift+J</kbd> fullscreen</span>
+          <span>{activeModel}</span>
         </div>
       </form>
     </>

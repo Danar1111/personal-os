@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Film,
   Search,
@@ -32,16 +33,53 @@ import { cn } from "@/lib/utils";
 interface WatchlistClientProps {
   initialWatchlist: WatchlistMovie[];
   trendingMovies: any[];
+  initialSearchQuery?: string;
+  initialSearchResults?: any[];
+  initialMissingKey?: boolean;
+  initialSearchError?: string | null;
 }
 
-export function WatchlistClient({ initialWatchlist, trendingMovies }: WatchlistClientProps) {
+export function WatchlistClient({
+  initialWatchlist,
+  trendingMovies,
+  initialSearchQuery = "",
+  initialSearchResults = [],
+  initialMissingKey = false,
+  initialSearchError = null,
+}: WatchlistClientProps) {
+  const searchParams = useSearchParams();
+  const urlQuery = searchParams?.get("search") || initialSearchQuery;
+
   const [watchlistItems, setWatchlistItems] = useState<WatchlistMovie[]>(initialWatchlist);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState(urlQuery);
+  const [searchResults, setSearchResults] = useState<any[]>(initialSearchResults);
   const [isSearching, setIsSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [missingKey, setMissingKey] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(initialSearchError);
+  const [missingKey, setMissingKey] = useState(initialMissingKey);
   const [watchlistVisibleLimit, setWatchlistVisibleLimit] = useState<number>(6);
+
+  // Sync search when URL query param changes (e.g. from Omni AI link)
+  useEffect(() => {
+    const q = (searchParams?.get("search") || "").trim();
+    if (q && q !== searchQuery) {
+      setSearchQuery(q);
+      setIsSearching(true);
+      setSearchError(null);
+      setMissingKey(false);
+      searchTmdbMovies(q).then((res) => {
+        if (res.missingKey) {
+          setMissingKey(true);
+          setSearchResults([]);
+        } else if (res.error) {
+          setSearchError(res.error);
+          setSearchResults([]);
+        } else {
+          setSearchResults(res.results || []);
+        }
+        setIsSearching(false);
+      });
+    }
+  }, [searchParams]);
 
   // Selected Movie for Detail Modal
   const [selectedMovie, setSelectedMovie] = useState<any | null>(null);
