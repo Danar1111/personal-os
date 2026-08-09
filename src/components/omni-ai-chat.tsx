@@ -322,10 +322,26 @@ function renderFormattedText(text: string, onInternalLinkClick: () => void, zenR
 }
 
 export function OmniAIChat() {
+  const [chatKey, setChatKey] = useState(0);
+
+  useEffect(() => {
+    const onClear = () => {
+      try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch (e) {}
+      setChatKey((k) => k + 1);
+    };
+    window.addEventListener("omni-ai-clear" as any, onClear);
+    return () => window.removeEventListener("omni-ai-clear" as any, onClear);
+  }, []);
+
+  return <ChatCore key={chatKey} />;
+}
+
+// ChatCore lives outside DialogContent so useChat state survives modal open/close.
+// Only replaced (via key) when user explicitly clears chat.
+function ChatCore() {
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeModel, setActiveModel] = useState("gpt-4o-mini");
-  const [chatKey, setChatKey] = useState(0);
   const zenRunning = useZenRunning();
 
   useEffect(() => {
@@ -334,10 +350,6 @@ export function OmniAIChat() {
 
   useEffect(() => {
     const handleOpen = () => setIsOpen(true);
-    const onClear = () => {
-      try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch (e) {}
-      setChatKey((k) => k + 1);
-    };
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "j") {
         e.preventDefault();
@@ -345,58 +357,14 @@ export function OmniAIChat() {
       }
     };
     window.addEventListener("open-omni-ai" as any, handleOpen);
-    window.addEventListener("omni-ai-clear" as any, onClear);
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("open-omni-ai" as any, handleOpen);
-      window.removeEventListener("omni-ai-clear" as any, onClear);
       window.removeEventListener("keydown", onKey);
     };
   }, []);
 
-  return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogContent
-        showCloseButton={false}
-        className={cn(
-          "flex flex-col flex-nowrap bg-[#0e0e12]/95 border-white/15 text-slate-100 rounded-3xl p-0 overflow-hidden shadow-2xl backdrop-blur-2xl transition-all duration-300",
-          isExpanded
-            ? "sm:max-w-6xl w-[96vw] h-[88vh] max-h-[900px]"
-            : "sm:max-w-2xl w-[92vw] h-[680px] max-h-[85vh]"
-        )}
-      >
-        <DialogTitle className="sr-only">Omni AI Control Assistant</DialogTitle>
-        <ChatDialogContent
-          key={chatKey}
-          isExpanded={isExpanded}
-          setIsExpanded={setIsExpanded}
-          activeModel={activeModel}
-          setIsOpen={setIsOpen}
-          zenRunning={zenRunning}
-        />
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ChatDialogContent({
-  isExpanded,
-  setIsExpanded,
-  activeModel,
-  setIsOpen,
-  zenRunning,
-}: {
-  isExpanded: boolean;
-  setIsExpanded: (v: boolean) => void;
-  activeModel: string;
-  setIsOpen: (v: boolean) => void;
-  zenRunning: boolean;
-}) {
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [input, setInput] = useState("");
-
+  // useChat lives HERE — outside DialogContent — so messages persist across open/close
   const { messages, sendMessage, status } = useChat({
     maxSteps: 5,
     initialMessages: (() => {
@@ -413,17 +381,72 @@ function ChatDialogContent({
 
   const isLoading = status === "submitted" || status === "streaming";
 
+  // Persist every update to localStorage
   useEffect(() => {
     if (messages && messages.length > 0) {
       try { localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages)); } catch (e) {}
     }
   }, [messages]);
 
+  return (
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogContent
+        showCloseButton={false}
+        className={cn(
+          "flex flex-col flex-nowrap bg-[#0e0e12] border-white/15 text-slate-100 rounded-3xl p-0 overflow-hidden shadow-2xl",
+          isExpanded
+            ? "sm:max-w-6xl w-[96vw] h-[88vh] max-h-[900px]"
+            : "sm:max-w-2xl w-[92vw] h-[680px] max-h-[85vh]"
+        )}
+      >
+        <DialogTitle className="sr-only">Omni AI Control Assistant</DialogTitle>
+        <ChatDialogContent
+          isExpanded={isExpanded}
+          setIsExpanded={setIsExpanded}
+          activeModel={activeModel}
+          setIsOpen={setIsOpen}
+          zenRunning={zenRunning}
+          messages={messages}
+          sendMessage={sendMessage}
+          isLoading={isLoading}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Pure display/input component — no useChat hook here, receives everything as props
+function ChatDialogContent({
+  isExpanded,
+  setIsExpanded,
+  activeModel,
+  setIsOpen,
+  zenRunning,
+  messages,
+  sendMessage,
+  isLoading,
+}: {
+  isExpanded: boolean;
+  setIsExpanded: (v: boolean) => void;
+  activeModel: string;
+  setIsOpen: (v: boolean) => void;
+  zenRunning: boolean;
+  messages: any[];
+  sendMessage: (opts: { text: string }) => void;
+  isLoading: boolean;
+}) {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [input, setInput] = useState("");
+
+  // Focus input when modal opens (component mounts = dialog opened)
   useEffect(() => {
     const timer = setTimeout(() => inputRef.current?.focus(), 50);
     return () => clearTimeout(timer);
   }, []);
 
+  // Scroll to bottom on mount
   useEffect(() => {
     const timer = setTimeout(() => {
       if (scrollContainerRef.current) {
@@ -433,8 +456,9 @@ function ChatDialogContent({
     return () => clearTimeout(timer);
   }, []);
 
+  // Scroll to bottom on new messages / loading state
   useEffect(() => {
-    if (messages.length > 0 && scrollContainerRef.current) {
+    if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
     }
   }, [messages, isLoading]);
