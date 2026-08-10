@@ -134,8 +134,11 @@ RULES:
    - For multi-item results (listing tasks, news, movies), format them clearly with bullet points.
    - Match the user's tone and language naturally in a warm, competent, and fluid voice.
 7. PLAN-AND-EXECUTE ARCHITECTURE:
-   - If the user's prompt contains multiple chained tasks (e.g. "search for X THEN send an email about it", or "analyze X and create a task for it"), YOU MUST call the \`create_execution_plan\` tool first to generate a structured step-by-step plan.
-   - Do NOT execute the actual tools immediately if you are calling \`create_execution_plan\`. The frontend will orchestrate the execution step-by-step based on your plan.
+   - If the user's prompt contains multiple chained tasks (e.g. "search for X THEN send an email about it", or "search movie THEN add to watchlist THEN create task"), YOU MUST call the \`create_execution_plan\` tool first to generate the structured plan JSON.
+   - CRITICAL: Each step instruction in \`execution_plan\` MUST be a direct action command for THAT step specifically. Do NOT write conditional or prelude phrases like "Setelah memperoleh X..." or "First get X...". Specify the exact target_tool for each step.
+   - CRITICAL: When you call \`create_execution_plan\`, YOU MUST STOP IMMEDIATELY. Do NOT call any other tool or generate action text in the same turn!
+   - STEPPER INSTRUCTIONS: When you receive a step prompt starting with \`[SYSTEM_STEPPER]\` (e.g. \`[SYSTEM_STEPPER] Langkah X dari Y: ...\`), execute ONLY the tool required for that specific step. Read outputs of previous steps from chat history to extract any needed titles, IDs, or text. Do NOT re-run tools from previous steps!
+   - FINAL JARVIS SYNTHESIS STEP: For the final step (target_tool: 'final_response'), DO NOT call any tools! Respond in a warm, friendly, intelligent executive assistant voice (like JARVIS) summarizing what was accomplished and offering further assistance.
 `.trim();
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -317,28 +320,39 @@ export async function POST(req: Request) {
     tools: {
       // ── ORCHESTRATION ────────────────────────────────────────────────────────────
       create_execution_plan: makeTool({
-        description: "Creates an execution plan for multi-step or chained user requests. ALWAYS call this tool first if the user asks for multiple tasks (e.g., search then email).",
+        description: "Creates a structured execution plan for multi-step or chained user requests. MUST be called first when a user asks for 2 or more sequential tasks. DO NOT call any other tools in the same response turn.",
         inputSchema: jsonSchema({
           type: "object",
           properties: {
-            isChain: { type: "boolean", description: "True if tasks are sequential (e.g., A then B)" },
-            steps: {
+            is_chain: { type: "boolean", description: "Set true if request requires multiple steps" },
+            total_steps: { type: "number", description: "Total number of steps" },
+            execution_plan: {
               type: "array",
-              description: "List of steps to execute in order",
+              description: "Array of step objects",
               items: {
                 type: "object",
                 properties: {
-                  instruction: { type: "string", description: "Clear instruction for this step (e.g., 'Search TMDB for action movies')" },
-                  tool_to_use: { type: "string", description: "The primary tool name expected to be used for this step" }
+                  step_id: { type: "number", description: "Step number starting from 1" },
+                  action_type: { type: "string", description: "Type of action (e.g. tool_call, reasoning)" },
+                  target_tool: { type: "string", description: "Name of target tool for this step" },
+                  instruction: { type: "string", description: "Clear, detailed instruction for executing this step" },
+                  requires_previous_context: { type: "boolean", description: "True if this step relies on outputs of previous steps" }
                 },
-                required: ["instruction"]
+                required: ["step_id", "instruction"]
               }
             }
           },
-          required: ["isChain", "steps"],
+          required: ["is_chain", "total_steps", "execution_plan"],
         }),
         execute: async (args: any) => {
-          return { success: true, message: "Execution plan accepted by frontend engine. The frontend will now automatically prompt you to execute each step sequentially." };
+          const planList = args.execution_plan || args.steps || [];
+          return {
+            success: true,
+            is_chain: args.is_chain ?? true,
+            total_steps: args.total_steps || planList.length,
+            execution_plan: planList,
+            message: `Structured execution plan generated with ${planList.length} steps. Frontend engine will now orchestrate execution step-by-step.`
+          };
         },
       }),
 

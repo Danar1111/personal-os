@@ -53,11 +53,70 @@ function extractText(m: any): string {
 /** Extract all tool invocations from ai v7 UIMessage parts or legacy toolInvocations */
 function extractToolInvocations(m: any): any[] {
   if (Array.isArray(m?.parts)) {
-    const partsTools = m.parts.filter((p: any) => {
-      if (!p?.type) return false;
-      return p.type === "dynamic-tool" || (typeof p.type === "string" && p.type.startsWith("tool-"));
-    });
-    if (partsTools.length > 0) return partsTools;
+    const toolMap = new Map<string, any>();
+    const toolOrder: string[] = [];
+
+    for (const part of m.parts) {
+      const isToolCall = part?.type === "tool-call" || part?.type === "dynamic-tool" || (typeof part?.type === "string" && part.type.startsWith("tool-") && !part.type.includes("result"));
+      const isToolResult = typeof part?.type === "string" && part.type.includes("result");
+
+      if (isToolCall) {
+        const callId = part.toolCallId ?? part.id ?? `tool-${toolOrder.length}`;
+        if (!toolMap.has(callId)) {
+          const toolName = part.toolName || (typeof part.type === "string" ? part.type.replace(/^tool-/, "") : "tool");
+          toolMap.set(callId, {
+            toolCallId: callId,
+            toolName,
+            args: part.args || part.input || {},
+            state: "executing",
+            ...part
+          });
+          toolOrder.push(callId);
+        } else {
+          const existing = toolMap.get(callId);
+          toolMap.set(callId, {
+            ...existing,
+            ...part,
+            args: part.args || part.input || existing.args,
+          });
+        }
+      } else if (isToolResult) {
+        const callId = part.toolCallId ?? part.id;
+        if (callId && toolMap.has(callId)) {
+          const existing = toolMap.get(callId);
+          toolMap.set(callId, {
+            ...existing,
+            output: part.output ?? part.result,
+            result: part.output ?? part.result,
+            state: "result",
+          });
+        }
+      } else if (part?.toolName || part?.toolCallId) {
+        const callId = part.toolCallId ?? part.id ?? `tool-${toolOrder.length}`;
+        const hasResult = part.result !== undefined || part.output !== undefined || part.state === "result" || part.state === "output-available";
+        if (!toolMap.has(callId)) {
+          toolMap.set(callId, {
+            ...part,
+            toolCallId: callId,
+            toolName: part.toolName || "tool",
+            args: part.args || part.input || {},
+            state: hasResult ? "result" : "executing",
+          });
+          toolOrder.push(callId);
+        } else {
+          const existing = toolMap.get(callId);
+          toolMap.set(callId, {
+            ...existing,
+            ...part,
+            state: hasResult ? "result" : existing.state,
+          });
+        }
+      }
+    }
+
+    if (toolOrder.length > 0) {
+      return toolOrder.map((id) => toolMap.get(id));
+    }
   }
 
   if (Array.isArray(m?.toolInvocations)) {
@@ -377,6 +436,7 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
 
   // --- PLAN & EXECUTE ENGINE ---
   const [engineState, setEngineState] = useState<{ planId: string, steps: any[], currentIndex: number, status: 'idle'|'running'|'failed'|'done' } | null>(null);
+  const isDispatchingRef = useRef(false);
 
   // 1. Detect Plan Creation
   useEffect(() => {
@@ -384,16 +444,33 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
     const lastMsg = messages[messages.length - 1];
     if (lastMsg.role === 'assistant') {
       const toolInvocations = extractToolInvocations(lastMsg);
-      const planTool = toolInvocations.find((t: any) => t.toolName === 'create_execution_plan' && t.state === 'result');
-      if (planTool && planTool.args && planTool.args.steps) {
-        const planId = planTool.toolCallId;
-        if (!engineState || engineState.planId !== planId) {
-          setEngineState({
-            planId,
-            steps: planTool.args.steps,
-            currentIndex: 0,
-            status: 'running'
-          });
+      const planTool = toolInvocations.find((t: any) => t.toolName === 'create_execution_plan');
+      if (planTool && (planTool.state === 'result' || planTool.result || planTool.output)) {
+        const rawSteps = planTool.args?.execution_plan || planTool.input?.execution_plan || planTool.result?.execution_plan || planTool.args?.steps || planTool.input?.steps || planTool.result?.steps;
+        if (Array.isArray(rawSteps) && rawSteps.length > 0) {
+          const planId = planTool.toolCallId || planTool.id || `plan-${messages.length}`;
+          if (!engineState || engineState.planId !== planId) {
+            // Automatically append a final JARVIS synthesis step (N+1) if not already present
+            const hasFinalStep = rawSteps.some((s: any) => s.action_type === 'final_response' || s.target_tool === 'final_response');
+            const fullSteps = hasFinalStep ? rawSteps : [
+              ...rawSteps,
+              {
+                step_id: rawSteps.length + 1,
+                action_type: 'final_response',
+                target_tool: 'final_response',
+                instruction: 'Berikan tanggapan dan konfirmasi ringkas secara alami, hangat, dan profesional layaknya asisten pribadi JARVIS yang cerdas untuk menginformasikan hasil kerja di atas kepada pengguna.',
+                requires_previous_context: true
+              }
+            ];
+
+            setEngineState({
+              planId,
+              steps: fullSteps,
+              currentIndex: 0,
+              status: 'running'
+            });
+            isDispatchingRef.current = false;
+          }
         }
       }
     }
@@ -401,12 +478,13 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
 
   // 2. Drive the Engine & Self-Healing
   useEffect(() => {
-    if (engineState?.status === 'running' && status === 'ready') {
+    if (engineState?.status === 'running' && status === 'ready' && !isDispatchingRef.current) {
       const lastMsg = messages[messages.length - 1];
-      
-      // If we just sent a system command, wait for AI response
+      if (!lastMsg) return;
+
       const lastText = extractText(lastMsg);
-      if (lastMsg.role === 'user' && lastText.includes("![SYSTEM_ENGINE]!")) return;
+      // If we just sent a system command, wait for AI response
+      if (lastMsg.role === 'user' && (lastText.includes("![SYSTEM_ENGINE]!") || lastText.includes("[SYSTEM_STEPPER]"))) return;
 
       if (lastMsg.role === 'assistant') {
         // Check for errors in the last step for self-healing
@@ -416,17 +494,53 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
         const hadError = actionTools.some((t: any) => t.state === 'result' && (t.result?.success === false || t.result?.error));
 
         if (hadError) {
+          isDispatchingRef.current = true;
           setEngineState(prev => prev ? { ...prev, status: 'failed' } : null);
-          const healMsg = `![SYSTEM_ENGINE]! Step ${engineState.currentIndex} encountered an error. Please review the tool output and attempt a self-healing alternative. If unrecoverable, notify the user.`;
-          setTimeout(() => (sendMessage as any)({ text: healMsg }), 500);
+          const healMsg = `[SYSTEM_STEPPER] Step ${engineState.currentIndex} encountered an error. Please review the tool output and attempt a self-healing alternative. If unrecoverable, notify the user.`;
+          setTimeout(() => {
+            (sendMessage as any)({ text: healMsg });
+            setTimeout(() => { isDispatchingRef.current = false; }, 1000);
+          }, 300);
           return;
         }
 
         const step = engineState.steps[engineState.currentIndex];
         if (step) {
-          const stepMsg = `![SYSTEM_ENGINE]! Execute Step ${engineState.currentIndex + 1}: ${step.instruction}`;
+          const stepNum = step.step_id || (engineState.currentIndex + 1);
+          const rawToolName = step.target_tool || step.action_type || "";
+          const toolName = rawToolName.replace(/^functions\./, "").replace(/^tools?\./, "").trim();
+          const instruction = step.instruction || (typeof step === "string" ? step : JSON.stringify(step));
+
+          // Summarize previous assistant message text/tool outputs to pass as direct context
+          let prevContextSummary = "";
+          if (engineState.currentIndex > 0) {
+            const prevText = extractText(lastMsg);
+            const prevTools = extractToolInvocations(lastMsg).filter((t: any) => t.toolName !== 'create_execution_plan');
+            const toolResults = prevTools.map((t: any) => {
+              const res = t.output ?? t.result;
+              return typeof res === "string" ? res : (res?.message || JSON.stringify(res || {}));
+            }).join(" ");
+
+            const combined = (prevText + " " + toolResults).replace(/\s+/g, " ").trim();
+            if (combined) {
+              prevContextSummary = combined.length > 350 ? combined.substring(0, 350) + "..." : combined;
+            }
+          }
+
+          let stepMsg = `[SYSTEM_STEPPER] Langkah ${stepNum} dari ${engineState.steps.length}: ${instruction}`;
+          if (toolName && toolName !== "tool_call" && toolName !== "reasoning") {
+            stepMsg += ` (MUST use tool: ${toolName})`;
+          }
+          if (prevContextSummary) {
+            stepMsg += ` [Data/Result dari Langkah Sebelumnya: "${prevContextSummary}"]`;
+          }
+
+          isDispatchingRef.current = true;
           setEngineState(prev => prev ? { ...prev, currentIndex: prev.currentIndex + 1 } : null);
-          setTimeout(() => (sendMessage as any)({ text: stepMsg }), 500);
+          setTimeout(() => {
+            (sendMessage as any)({ text: stepMsg });
+            setTimeout(() => { isDispatchingRef.current = false; }, 1000);
+          }, 300);
         } else {
           setEngineState(prev => prev ? { ...prev, status: 'done' } : null);
         }
@@ -657,7 +771,7 @@ function ChatDialogContent({
 
             if (isUser) {
               const textContent = extractText(m);
-              if (!textContent || textContent.includes("![SYSTEM_ENGINE]!")) return [];
+              if (!textContent || textContent.includes("![SYSTEM_ENGINE]!") || textContent.includes("[SYSTEM_STEPPER]")) return [];
               return [
                 <div key={m.id} className="flex gap-3 text-xs font-mono justify-end">
                   <div className="space-y-2 max-w-[85%]">
@@ -777,6 +891,36 @@ function ChatDialogContent({
                         executingLabel = `Searching TMDB for movies...`;
                       }
 
+                      if (toolNameDisplay === "create_execution_plan") {
+                        const planSteps = args?.execution_plan || args?.steps || rawOutput?.execution_plan || rawOutput?.steps || [];
+                        return (
+                          <div key={callId} className="p-3.5 rounded-2xl bg-indigo-950/30 border border-indigo-500/30 text-slate-200 font-sans text-xs space-y-2 shadow-lg">
+                            <div className="flex items-center gap-2 font-mono font-bold text-indigo-300 text-[11px] border-b border-indigo-500/20 pb-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                              <span>Multi-Step Execution Plan ({planSteps.length} Steps)</span>
+                            </div>
+                            <div className="space-y-1.5 pt-1 font-mono text-[11px]">
+                              {planSteps.map((s: any, idx: number) => {
+                                const stepNum = s.step_id || (idx + 1);
+                                const toolName = s.target_tool || s.action_type || "";
+                                const instruction = s.instruction || (typeof s === "string" ? s : "");
+                                return (
+                                  <div key={idx} className="flex items-start gap-2 text-slate-300 bg-white/[0.03] p-2 rounded-xl border border-white/5">
+                                    <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-bold text-[10px] shrink-0 mt-0.5">
+                                      Step {stepNum}
+                                    </span>
+                                    <div className="flex-1 space-y-0.5">
+                                      <div className="text-slate-200 font-semibold">{instruction}</div>
+                                      {toolName && <div className="text-[10px] text-indigo-400">Target Tool: <code className="bg-black/30 px-1 rounded text-indigo-300">{toolName}</code></div>}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      }
+
                       return (
                         <div key={callId} className="space-y-1.5">
                           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.02] border border-white/10 text-[11px] font-mono text-slate-300">
@@ -802,15 +946,21 @@ function ChatDialogContent({
               ));
           })
         )}
-        {isLoading && (() => {
-          // Check if AI has already executed tools in the last assistant message (mid-chain)
-          const lastMsg = messages[messages.length - 1];
-          const lastTools = lastMsg?.role === "assistant" ? extractToolInvocations(lastMsg) : [];
-          const isChaining = lastTools.length > 0 || engineState?.status === 'running';
+        {(() => {
+          const isEngineActive = engineState?.status === 'running';
+          const isBusy = isLoading || isEngineActive;
+          if (!isBusy) return null;
+
+          const currentStepNum = Math.min(Math.max(engineState?.currentIndex || 1, 1), engineState?.steps?.length || 1);
+          const totalStepsNum = engineState?.steps?.length || 1;
+          const loadingText = isEngineActive
+            ? `Omni AI is executing Step ${currentStepNum} of ${totalStepsNum}...`
+            : "Omni AI is analyzing...";
+
           return (
             <div className="flex items-center gap-2 text-xs font-mono text-indigo-400 bg-indigo-500/10 p-3 rounded-2xl border border-indigo-500/20 w-fit">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>{isChaining ? `Omni AI is executing step ${Math.max(1, engineState?.currentIndex || 1)}...` : "Omni AI is analyzing..."}</span>
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+              <span>{loadingText}</span>
             </div>
           );
         })()}
@@ -820,19 +970,34 @@ function ChatDialogContent({
       {/* Input */}
       <form onSubmit={(e) => { e.preventDefault(); sendMsg(); }} className="p-3 border-t border-white/10 bg-white/[0.01] flex flex-col gap-2 shrink-0">
         <div className="flex items-end gap-2">
-          <Textarea
-            ref={inputRef}
-            autoFocus
-            rows={1}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); } }}
-            placeholder={isLoading ? "Omni AI is responding... (Type message here)" : "Ask Omni AI assistant... (Enter to send, Shift+Enter for new line)"}
-            className="flex-1 bg-white/[0.04] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-2xl min-h-[44px] max-h-[140px] py-3 px-4 font-mono focus-visible:ring-indigo-500/40 resize-none scrollbar-thin"
-          />
-          <Button type="submit" disabled={isLoading || !input.trim()} className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl h-11 px-4 cursor-pointer shadow-lg shadow-indigo-600/30 shrink-0">
-            <Send className="w-4 h-4" />
-          </Button>
+          {(() => {
+            const isEngineActive = engineState?.status === 'running';
+            const isBusy = isLoading || isEngineActive;
+            const currentStepNum = Math.min(Math.max(engineState?.currentIndex || 1, 1), engineState?.steps?.length || 1);
+            const totalStepsNum = engineState?.steps?.length || 1;
+            const placeholderText = isBusy
+              ? `Omni AI is executing multi-step plan (Step ${currentStepNum}/${totalStepsNum})...`
+              : "Ask Omni AI assistant... (Enter to send, Shift+Enter for new line)";
+
+            return (
+              <>
+                <Textarea
+                  ref={inputRef}
+                  autoFocus
+                  rows={1}
+                  value={input}
+                  disabled={isBusy}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); } }}
+                  placeholder={placeholderText}
+                  className="flex-1 bg-white/[0.04] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-2xl min-h-[44px] max-h-[140px] py-3 px-4 font-mono focus-visible:ring-indigo-500/40 resize-none scrollbar-thin disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                <Button type="submit" disabled={isBusy || !input.trim()} className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl h-11 px-4 cursor-pointer shadow-lg shadow-indigo-600/30 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed">
+                  <Send className="w-4 h-4" />
+                </Button>
+              </>
+            );
+          })()}
         </div>
         <div className="flex items-center justify-between px-2 text-[10px] font-mono text-slate-500">
           <span><kbd className="px-1 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300 font-bold">Enter</kbd> send • <kbd className="px-1 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300 font-bold">Ctrl+J</kbd> open • <kbd className="px-1 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300 font-bold">Ctrl+Shift+J</kbd> fullscreen</span>
