@@ -375,52 +375,6 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
     initialMessages: initialMsgs,
   } as any);
 
-  const isAutoRecalling = useRef(false);
-
-  // Auto-recall continuation hook for multi-context requests (e.g. search movie -> send email)
-  useEffect(() => {
-    if (status === "ready" && messages && messages.length >= 2 && !isAutoRecalling.current) {
-      const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
-      const lastAssistantMsg = messages[messages.length - 1];
-
-      if (lastUserMsg && lastAssistantMsg && lastAssistantMsg.role === "assistant") {
-        const userText = extractText(lastUserMsg).toLowerCase();
-        const needsEmail =
-          userText.includes("email") ||
-          userText.includes("kirim ke email") ||
-          userText.includes("kirim email") ||
-          userText.includes("send email") ||
-          userText.includes("surel");
-
-        if (needsEmail) {
-          const toolsRan = extractToolInvocations(lastAssistantMsg);
-          const ranFetch = toolsRan.some((t: any) => {
-            const name = (t.toolName || (typeof t.type === "string" && t.type.replace(/^tool-/, "")) || t.type || "").toLowerCase();
-            return ["get_trending_movies", "search_tmdb_movies", "fetch_news_articles", "get_stock_quote", "analyze_market_sentiment", "list_tasks", "search_vault"].includes(name);
-          });
-          const ranEmail = toolsRan.some((t: any) => {
-            const name = (t.toolName || (typeof t.type === "string" && t.type.replace(/^tool-/, "")) || t.type || "").toLowerCase();
-            return name === "send_email";
-          });
-
-          if (ranFetch && !ranEmail) {
-            isAutoRecalling.current = true;
-            const timer = setTimeout(() => {
-              const recallMsg = "Lanjutkan langkah berikutnya: Kirimkan hasil ringkasan data di atas ke email saya priyambodo02@gmail.com sekarang.";
-              if (typeof sendMessage === "function") {
-                (sendMessage as any)({ text: recallMsg });
-              }
-              setTimeout(() => {
-                isAutoRecalling.current = false;
-              }, 4000);
-            }, 600);
-            return () => clearTimeout(timer);
-          }
-        }
-      }
-    }
-  }, [status, messages, sendMessage]);
-
   useEffect(() => {
     const onClear = () => {
       try {
@@ -635,78 +589,119 @@ function ChatDialogContent({
             </div>
           </div>
         ) : (
-          messages.map((m: any) => {
-            const textContent = extractText(m);
-            const toolInvocations = extractToolInvocations(m);
+          messages.flatMap((m: any) => {
             const isUser = m.role === "user";
-            if (!textContent && toolInvocations.length === 0) return null;
-            return (
-              <div key={m.id} className={cn("flex gap-3 text-xs font-mono", isUser ? "justify-end" : "justify-start")}>
-                {!isUser && (
-                  <div className="w-7 h-7 rounded-xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-indigo-300 shrink-0 mt-0.5">
-                    <Bot className="w-4 h-4" />
-                  </div>
-                )}
-                <div className="space-y-2 max-w-[85%]">
-                  {textContent && (
-                    <div className={cn("p-3.5 rounded-2xl leading-relaxed whitespace-pre-wrap font-sans text-xs shadow-md", isUser ? "bg-indigo-600 text-white rounded-tr-none font-mono" : "bg-white/[0.04] border border-white/10 text-slate-200 rounded-tl-none")}>
-                      {isUser ? textContent : renderFormattedText(textContent, () => setIsOpen(false), zenRunning)}
+
+            if (isUser) {
+              const textContent = extractText(m);
+              if (!textContent) return [];
+              return [
+                <div key={m.id} className="flex gap-3 text-xs font-mono justify-end">
+                  <div className="space-y-2 max-w-[85%]">
+                    <div className="p-3.5 rounded-2xl leading-relaxed whitespace-pre-wrap font-sans text-xs shadow-md bg-indigo-600 text-white rounded-tr-none font-mono">
+                      {textContent}
                     </div>
-                  )}
-                  {toolInvocations.map((t: any, stepIdx: number) => {
-                    const isComplete = t.state === "output-available" || t.state === "result" || !!t.result || !!t.output;
-                    const callId = t.toolCallId ?? t.id ?? Math.random().toString();
-                    const rawOutput = t.output ?? t.result;
-                    const resultMsg = typeof rawOutput === "string" ? rawOutput : rawOutput?.message;
-                    const toolNameDisplay = t.toolName ?? (typeof t.type === "string" && t.type.startsWith("tool-") ? t.type.replace(/^tool-/, "") : t.type) ?? "tool";
-                    const args = t.args || t.input;
-                    const stepNum = stepIdx + 1;
-                    const isMultiStep = toolInvocations.length > 1;
-
-                    let executingLabel = `Step ${stepNum}: Running ${toolNameDisplay}...`;
-                    if (toolNameDisplay === "send_email" && args?.to) {
-                      executingLabel = `Step ${stepNum}: Sending email to ${args.to}...`;
-                    } else if (toolNameDisplay === "get_trending_movies") {
-                      executingLabel = `Step ${stepNum}: Fetching trending movies from TMDB...`;
-                    } else if (toolNameDisplay === "fetch_news_articles") {
-                      executingLabel = `Step ${stepNum}: Fetching latest news...`;
-                    } else if (toolNameDisplay === "get_stock_quote") {
-                      executingLabel = `Step ${stepNum}: Fetching stock quote...`;
-                    }
-
-                    return (
-                      <div key={callId} className="space-y-1.5">
-                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.02] border border-white/10 text-[11px] font-mono text-slate-300">
-                          {isComplete
-                            ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                            : <Loader2 className="w-3.5 h-3.5 text-indigo-400 animate-spin shrink-0" />
-                          }
-                          {isMultiStep && (
-                            <span className="px-1.5 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 text-[10px] font-bold shrink-0">
-                              {stepNum}/{toolInvocations.length}
-                            </span>
-                          )}
-                          <span>
-                            {isComplete ? `Executed Tool: ` : executingLabel}
-                            {isComplete && <strong className="text-indigo-300">{toolNameDisplay}</strong>}
-                          </span>
-                        </div>
-                        {resultMsg && (
-                          <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 text-slate-200 leading-relaxed whitespace-pre-wrap font-sans text-xs shadow-md">
-                            {renderFormattedText(resultMsg, () => setIsOpen(false), zenRunning)}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                {isUser && (
+                  </div>
                   <div className="w-7 h-7 rounded-xl bg-purple-600/30 border border-purple-500/40 flex items-center justify-center text-purple-300 shrink-0 mt-0.5">
                     <User className="w-4 h-4" />
                   </div>
-                )}
-              </div>
-            );
+                </div>
+              ];
+            }
+
+            // For assistant messages: split parts into natural "rounds"
+            // Each round = [text?] + [tool+result?]* grouped until next text
+            const parts: any[] = Array.isArray(m?.parts) ? m.parts : [];
+
+            // Build rounds: a new round starts at each text part (after the first)
+            type Round = { text?: string; tools: any[] };
+            const rounds: Round[] = [];
+            let currentRound: Round = { tools: [] };
+            let seenFirstText = false;
+
+            if (parts.length === 0) {
+              // Fallback for legacy format
+              const textContent = extractText(m);
+              const toolInvocations = extractToolInvocations(m);
+              if (!textContent && toolInvocations.length === 0) return [];
+              rounds.push({ text: textContent || undefined, tools: toolInvocations });
+            } else {
+              for (const part of parts) {
+                const isText = part?.type === "text";
+                const isTool = part?.type === "dynamic-tool" || (typeof part?.type === "string" && part.type.startsWith("tool-"));
+
+                if (isText) {
+                  if (seenFirstText) {
+                    // Start a new round
+                    rounds.push(currentRound);
+                    currentRound = { tools: [] };
+                  }
+                  currentRound.text = part.text || "";
+                  seenFirstText = true;
+                } else if (isTool) {
+                  currentRound.tools.push(part);
+                }
+              }
+              rounds.push(currentRound);
+            }
+
+            return rounds
+              .filter((r) => r.text || r.tools.length > 0)
+              .map((round, roundIdx) => (
+                <div key={`${m.id}-round-${roundIdx}`} className="flex gap-3 text-xs font-mono justify-start">
+                  <div className="w-7 h-7 rounded-xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-indigo-300 shrink-0 mt-0.5">
+                    <Bot className="w-4 h-4" />
+                  </div>
+                  <div className="space-y-2 max-w-[85%]">
+                    {round.text && (
+                      <div className="p-3.5 rounded-2xl leading-relaxed whitespace-pre-wrap font-sans text-xs shadow-md bg-white/[0.04] border border-white/10 text-slate-200 rounded-tl-none">
+                        {renderFormattedText(round.text, () => setIsOpen(false), zenRunning)}
+                      </div>
+                    )}
+                    {round.tools.map((t: any, stepIdx: number) => {
+                      const isComplete = t.state === "output-available" || t.state === "result" || !!t.result || !!t.output;
+                      const callId = t.toolCallId ?? t.id ?? `${m.id}-${roundIdx}-${stepIdx}`;
+                      const rawOutput = t.output ?? t.result;
+                      const resultMsg = typeof rawOutput === "string" ? rawOutput : rawOutput?.message;
+                      const toolNameDisplay = t.toolName ?? (typeof t.type === "string" && t.type.startsWith("tool-") ? t.type.replace(/^tool-/, "") : t.type) ?? "tool";
+                      const args = t.args || t.input;
+
+                      let executingLabel = `Running ${toolNameDisplay}...`;
+                      if (toolNameDisplay === "send_email" && args?.to) {
+                        executingLabel = `Sending email to ${args.to}...`;
+                      } else if (toolNameDisplay === "get_trending_movies") {
+                        executingLabel = `Fetching trending movies from TMDB...`;
+                      } else if (toolNameDisplay === "fetch_news_articles") {
+                        executingLabel = `Fetching latest news...`;
+                      } else if (toolNameDisplay === "get_stock_quote") {
+                        executingLabel = `Fetching stock quote...`;
+                      } else if (toolNameDisplay === "search_tmdb_movies") {
+                        executingLabel = `Searching TMDB for movies...`;
+                      }
+
+                      return (
+                        <div key={callId} className="space-y-1.5">
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.02] border border-white/10 text-[11px] font-mono text-slate-300">
+                            {isComplete
+                              ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              : <Loader2 className="w-3.5 h-3.5 text-indigo-400 animate-spin shrink-0" />
+                            }
+                            <span>
+                              {isComplete ? `Executed Tool: ` : executingLabel}
+                              {isComplete && <strong className="text-indigo-300">{toolNameDisplay}</strong>}
+                            </span>
+                          </div>
+                          {resultMsg && (
+                            <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 text-slate-200 leading-relaxed whitespace-pre-wrap font-sans text-xs shadow-md">
+                              {renderFormattedText(resultMsg, () => setIsOpen(false), zenRunning)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ));
           })
         )}
         {isLoading && (() => {
