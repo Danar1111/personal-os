@@ -14,6 +14,7 @@ import {
   applications,
   watchlist,
   systemSettings,
+  knowledgeVault,
 } from "@/db/schema";
 import { like, or, eq, desc, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -69,6 +70,11 @@ EXACT SYSTEM MODULE DOMAINS & TOOLS MAPPING:
   → Tools: list_watchlist, add_to_watchlist, delete_watchlist_item, search_tmdb_movies, get_trending_movies
   → Watchlist: Use add_to_watchlist to save movies and delete_watchlist_item to remove saved movies.
 
+• Personal Knowledge Vault (/knowledge)
+  → Tools: save_knowledge, search_knowledge, update_knowledge, delete_knowledge
+  → Save & Search: Use save_knowledge to record user bio, brand guidelines, work preferences, or sensitive credentials. Use search_knowledge to query saved entries.
+  → STRICT SENSITIVE DATA RULE: If a knowledge entry is marked as sensitive (isSensitive = true), NEVER output or leak the raw content string in your chat response text. Instead, state: "Data **[Title](/knowledge?search=Title)** bersifat sensitif. Silakan klik link tersebut untuk melihat atau menyalin nilainya secara aman di Knowledge Vault."
+
 • Real-time External Intelligence (News, Stocks & Market Analysis)
   → Tools: fetch_news_articles, get_stock_quote, analyze_market_sentiment
   → Execution Constraint: Execute external API tools (news, stocks, sentiment, TMDB) ONLY when the user explicitly asks for real-time news, stock prices, market analysis, or movie info/recommendations.
@@ -81,14 +87,15 @@ RULES:
    - When user asks to find or list notes in a specific folder (e.g. "carikan notes di folder Work"), call search_vault with folderPath parameter or call list_folders.
    - STRICT ACCURACY RULE FOR FOLDERS: NEVER guess or assume which folder a note belongs to! Only report a note as belonging to a folder if its actual Folder path in the tool output matches that folder.
 3. PAGE & ENTITY LINKING RULE:
-   - When referencing, creating, or editing any entity (note, task, skill, asset, file, event), format it as a clean Markdown link with search or ID parameters:
+   - When referencing, creating, or editing any entity (note, task, skill, asset, file, event, knowledge entry), format it as a clean Markdown link with search or ID parameters:
      - Vault Note: [Note Title](/vault?noteId=ID) or [Note Title](/vault?search=NoteTitle)
      - Task: [Task Title](/tasks?search=TaskTitle)
      - Skill: [Skill Title](/skills?search=SkillTitle)
      - Asset: [Asset Title](/inventory?search=AssetTitle)
      - Local Drive File: [File Name](/drive?search=FileName)
      - Calendar Event: [Event Title](/calendar?search=EventTitle)
-     - General App Pages: [Second Brain Vault](/vault), [Task Omni-Kanban](/tasks), [Master Calendar](/calendar), [Finance Hub](/finance), [Asset Vault](/inventory), [Skill Matrix](/skills), [Local Drive](/drive), [TMDB Watchlist](/watchlist), [System Settings](/settings), [Zen Timer](/zen), [Daily AI Briefing](/ai-briefing).
+     - Knowledge Entry: [Knowledge Title](/knowledge?search=KnowledgeTitle)
+     - General App Pages: [Second Brain Vault](/vault), [Task Omni-Kanban](/tasks), [Master Calendar](/calendar), [Finance Hub](/finance), [Asset Vault](/inventory), [Skill Matrix](/skills), [Local Drive](/drive font), [Personal Knowledge Vault](/knowledge), [TMDB Watchlist](/watchlist), [System Settings](/settings), [Zen Timer](/zen), [Daily AI Briefing](/ai-briefing).
    - APP LAUNCHER SPECIFIC RULE:
      - For specific registered apps in App Launcher (e.g., TMDB, Google News, n8n, etc.), ALWAYS format them as direct external Markdown links using their target URL: "[App Name](https://target-app-url.com)".
    - IMAGE ATTACHMENT & PREVIEW RULE:
@@ -252,6 +259,20 @@ export async function POST(req: Request) {
       ) {
         dbOpenaiKey = item.value.trim();
       }
+    }
+
+    // Dynamic Context Injection from Knowledge Vault (Non-Sensitive Only)
+    const kvEntries = await db
+      .select()
+      .from(knowledgeVault)
+      .where(eq(knowledgeVault.isSensitive, false))
+      .orderBy(desc(knowledgeVault.createdAt));
+
+    if (kvEntries.length > 0) {
+      const kvLines = kvEntries.map(
+        (k) => `• [${k.category}] ${k.title}: ${k.content}`
+      );
+      systemPrompt += `\n\n=== USER PERSONAL KNOWLEDGE VAULT (PREFERENCES & BIO) ===\n${kvLines.join("\n")}\n=== END KNOWLEDGE VAULT ===`;
     }
   } catch (e) {
     console.warn("[CHAT] Using default settings:", e);
@@ -2344,6 +2365,187 @@ export async function POST(req: Request) {
             };
           } catch (e: any) {
             return { success: false, message: `Failed to fetch trending movies: ${e.message}` };
+          }
+        },
+      }),
+
+      // ── KNOWLEDGE VAULT ──────────────────────────────────────────────────
+      save_knowledge: makeTool({
+        description: "Saves a new knowledge entry (bio, brand voice, preferences, guidelines, or sensitive credentials) into Personal Knowledge Vault.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Title of entry (e.g. National ID (NIK), Forge25 Brand Voice)" },
+            content: { type: "string", description: "Body/value of the entry" },
+            category: { type: "string", description: "Category (e.g. Bio, Work, Finance, Preferences)" },
+            isSensitive: { type: "boolean", description: "Set true if entry contains sensitive secret/key/ID that must be masked in UI and excluded from bulk AI prompt injection" },
+          },
+          required: ["title", "content"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const title = String(args?.title || "").trim();
+            const content = String(args?.content || "").trim();
+            const category = String(args?.category || "Preferences").trim();
+            const isSensitive = Boolean(args?.isSensitive);
+
+            if (!title || !content) {
+              return { success: false, message: "Title and content are required." };
+            }
+
+            const id = crypto.randomUUID();
+            await db.insert(knowledgeVault).values({ id, title, category, content, isSensitive });
+            revalidatePath("/knowledge");
+            revalidatePath("/");
+
+            return {
+              success: true,
+              message: `✓ Entri **[${title}](/knowledge?search=${encodeURIComponent(title)})** berhasil disimpan di Personal Knowledge Vault (${isSensitive ? "Sensitif & Terkunci" : "Biasa - Auto AI Context"}).`,
+            };
+          } catch (e: any) {
+            return { success: false, message: `Gagal menyimpan entri Knowledge Vault: ${e.message}` };
+          }
+        },
+      }),
+
+      search_knowledge: makeTool({
+        description: "Searches or lists entries stored in Personal Knowledge Vault.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Search query for title, category, or non-sensitive content" },
+            category: { type: "string", description: "Filter by category" },
+          },
+          required: [],
+        }),
+        execute: async (args: any) => {
+          try {
+            const q = String(args?.query || "").trim().toLowerCase();
+            const cat = String(args?.category || "").trim().toLowerCase();
+
+            const allEntries = await db.select().from(knowledgeVault).orderBy(desc(knowledgeVault.createdAt));
+            const filtered = allEntries.filter((item) => {
+              const matchesSearch =
+                !q ||
+                item.title.toLowerCase().includes(q) ||
+                item.category.toLowerCase().includes(q) ||
+                (!item.isSensitive && item.content.toLowerCase().includes(q));
+              const matchesCat = !cat || item.category.toLowerCase() === cat;
+              return matchesSearch && matchesCat;
+            });
+
+            if (filtered.length === 0) {
+              return { success: true, message: `Tidak ada entri Knowledge Vault yang cocok dengan "${q || cat}".` };
+            }
+
+            const itemsStr = filtered
+              .map((k) => {
+                if (k.isSensitive) {
+                  return `• **[${k.title}](/knowledge?search=${encodeURIComponent(k.title)})** [Category: ${k.category}] 🔒 *Sensitive Data* — Nilai dirahasiakan di AI chat. Silakan klik link tersebut untuk melihat/menyalin di Knowledge Vault.`;
+                }
+                return `• **[${k.title}](/knowledge?search=${encodeURIComponent(k.title)})** [Category: ${k.category}]:\n  ${k.content}`;
+              })
+              .join("\n\n");
+
+            return {
+              success: true,
+              message: `🧠 Found ${filtered.length} Knowledge Vault entries:\n\n${itemsStr}`,
+            };
+          } catch (e: any) {
+            return { success: false, message: `Gagal mencari Knowledge Vault: ${e.message}` };
+          }
+        },
+      }),
+
+      update_knowledge: makeTool({
+        description: "Updates an existing entry in Personal Knowledge Vault.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            id: { type: "string", description: "ID of knowledge entry" },
+            title: { type: "string", description: "Title or existing title of knowledge entry to match" },
+            newTitle: { type: "string", description: "New title" },
+            content: { type: "string", description: "New content/value" },
+            category: { type: "string", description: "New category" },
+            isSensitive: { type: "boolean", description: "New sensitive status" },
+          },
+          required: [],
+        }),
+        execute: async (args: any) => {
+          try {
+            const id = String(args?.id || "").trim();
+            const searchTitle = String(args?.title || "").trim();
+
+            let targetId = id;
+            if (!targetId && searchTitle) {
+              const matches = await db.select().from(knowledgeVault).where(like(knowledgeVault.title, `%${searchTitle}%`));
+              if (matches.length > 0) targetId = matches[0].id;
+            }
+
+            if (!targetId) {
+              return { success: false, message: "Entri Knowledge Vault tidak ditemukan." };
+            }
+
+            const updatePayload: any = {};
+            if (args?.newTitle) updatePayload.title = String(args.newTitle).trim();
+            if (args?.content) updatePayload.content = String(args.content).trim();
+            if (args?.category) updatePayload.category = String(args.category).trim();
+            if (args?.isSensitive !== undefined) updatePayload.isSensitive = Boolean(args.isSensitive);
+
+            await db.update(knowledgeVault).set(updatePayload).where(eq(knowledgeVault.id, targetId));
+            revalidatePath("/knowledge");
+            revalidatePath("/");
+
+            return {
+              success: true,
+              message: `✓ Entri Knowledge Vault berhasil diperbarui.`,
+            };
+          } catch (e: any) {
+            return { success: false, message: `Gagal memperbarui Knowledge Vault: ${e.message}` };
+          }
+        },
+      }),
+
+      delete_knowledge: makeTool({
+        description: "Deletes an entry from Personal Knowledge Vault.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            id: { type: "string", description: "ID of knowledge entry" },
+            title: { type: "string", description: "Title or partial title of knowledge entry to delete" },
+          },
+          required: [],
+        }),
+        execute: async (args: any) => {
+          try {
+            const id = String(args?.id || "").trim();
+            const searchTitle = String(args?.title || "").trim();
+
+            let targetId = id;
+            let targetTitle = searchTitle;
+
+            if (!targetId && searchTitle) {
+              const matches = await db.select().from(knowledgeVault).where(like(knowledgeVault.title, `%${searchTitle}%`));
+              if (matches.length > 0) {
+                targetId = matches[0].id;
+                targetTitle = matches[0].title;
+              }
+            }
+
+            if (!targetId) {
+              return { success: false, message: "Entri Knowledge Vault tidak ditemukan." };
+            }
+
+            await db.delete(knowledgeVault).where(eq(knowledgeVault.id, targetId));
+            revalidatePath("/knowledge");
+            revalidatePath("/");
+
+            return {
+              success: true,
+              message: `🗑️ Entri Knowledge Vault **${targetTitle}** telah berhasil dihapus.`,
+            };
+          } catch (e: any) {
+            return { success: false, message: `Gagal menghapus entri Knowledge Vault: ${e.message}` };
           }
         },
       }),

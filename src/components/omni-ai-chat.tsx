@@ -99,12 +99,13 @@ function renderFormattedText(text: string, onInternalLinkClick: () => void, zenR
     "/inventory": "Asset Vault",
     "/drive": "Local Drive",
     "/watchlist": "TMDB Watchlist",
+    "/knowledge": "Personal Knowledge Vault",
     "/settings": "System Settings",
     "/zen": "Zen Time-Blocker",
     "/ai-briefing": "Daily AI Briefing",
   };
 
-  const combinedRegex = /!\[([^\]]*)\]\(([^)]+)\)|\[([^\]]+)\]\(([^)]+)\)|(https?:\/\/[^\s<>"'\)]+)|(\/(?:apps|tasks|vault|calendar|finance|skills|inventory|drive|watchlist|settings|zen|ai-briefing)(?:\?[^\s<>"'\)]*)?)/gi;
+  const combinedRegex = /!\[([^\]]*)\]\(([^)]+)\)|\[([^\]]+)\]\(([^)]+)\)|(https?:\/\/[^\s<>"'\)]+)|(\/(?:apps|tasks|vault|calendar|finance|skills|inventory|drive|watchlist|knowledge|settings|zen|ai-briefing)(?:\?[^\s<>"'\)]*)?)/gi;
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let match;

@@ -353,4 +353,30 @@ export const OMNI_AI_SKILLS_REGISTRY: RegisteredAISkill[] = [
     description: "Analyzes real-time market sentiment and financial headlines for a stock ticker.",
     examplePrompt: "Analisa sentimen pasar untuk saham NVDA",
   },
+
+  // ── PERSONAL KNOWLEDGE VAULT ─────────────────────────────────────────
+  {
+    name: "save_knowledge",
+    module: "Personal Knowledge Vault",
+    description: "Saves a new entry (bio, brand voice, preferences, guidelines, or sensitive secrets) into Knowledge Vault.",
+    examplePrompt: "Simpan di Knowledge Vault preferensi UI saya selalu Dark Mode",
+  },
+  {
+    name: "search_knowledge",
+    module: "Personal Knowledge Vault",
+    description: "Searches or lists entries stored in Personal Knowledge Vault.",
+    examplePrompt: "Carikan entri NIK atau preferensi UI saya di Knowledge Vault",
+  },
+  {
+    name: "update_knowledge",
+    module: "Personal Knowledge Vault",
+    description: "Updates an existing entry in Personal Knowledge Vault.",
+    examplePrompt: "Ubah entri Brand Voice di Knowledge Vault menjadi 'Forge25 Warm Voice'",
+  },
+  {
+    name: "delete_knowledge",
+    module: "Personal Knowledge Vault",
+    description: "Deletes an entry from Personal Knowledge Vault after user confirmation.",
+    examplePrompt: "Hapus entri WiFi Password dari Knowledge Vault",
+  },
 ];

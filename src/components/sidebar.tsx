@@ -25,9 +25,12 @@ import {
   Flame,
   Lock,
   Wand2,
+  BrainCircuit,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+
+import { getUserNicknameAction } from "@/app/knowledge/actions";
 
 const navItems = [
   { name: "Overview", href: "/", icon: LayoutDashboard },
@@ -43,19 +46,32 @@ const navItems = [
   { name: "AI Image Analyzer", href: "/apps/image-analyzer", icon: Wand2 },
   { name: "App Launcher", href: "/apps", icon: AppWindow },
   { name: "TMDB Watchlist", href: "/watchlist", icon: Film },
+  { name: "Knowledge Vault", href: "/knowledge", icon: BrainCircuit },
   { name: "System Settings", href: "/settings", icon: Settings },
 ];
 
 export function Sidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [zenWarning, setZenWarning] = useState(false);
+  const [userNickname, setUserNickname] = useState<string | null>(null);
   const pathname = usePathname();
   const zenRunning = useZenRunning();
+
+  React.useEffect(() => {
+    getUserNicknameAction().then((name) => {
+      if (name) setUserNickname(name);
+    });
+  }, [pathname]);
 
   const handleLockedNav = () => {
     setZenWarning(true);
     setTimeout(() => setZenWarning(false), 2200);
   };
+
+  const displayName = userNickname || "Admin Architect";
+  const avatarInitials = userNickname
+    ? userNickname.slice(0, 2).toUpperCase()
+    : "AD";
 
   return (
     <aside
@@ -199,16 +215,16 @@ export function Sidebar() {
           )}
         >
           <div className="relative">
-            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-900/50 border border-indigo-500/40 text-indigo-200 font-bold text-xs">
-              AD
+            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-900/50 border border-indigo-500/40 text-indigo-200 font-bold text-xs font-mono">
+              {avatarInitials}
             </div>
             <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-[#0a0a0b] rounded-full"></span>
           </div>
 
           {!isCollapsed && (
             <div className="flex flex-col min-w-0 flex-1">
-              <span className="text-xs font-semibold text-white truncate">
-                Admin Architect
+              <span className="text-xs font-semibold text-white truncate" title={displayName}>
+                {displayName}
               </span>
               <span className="text-[10px] text-slate-400 truncate flex items-center gap-1 font-mono">
                 <ShieldCheck className="w-3 h-3 text-indigo-400 inline" />

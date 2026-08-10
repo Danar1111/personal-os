@@ -78,8 +78,10 @@ async function fetchTopThreeMovies() {
 }
 
 import { OMNI_AI_SKILLS_REGISTRY } from "@/lib/ai-skills-registry";
+import { getUserNicknameAction } from "@/app/knowledge/actions";
 
 export default async function DashboardPage() {
+  const userNickname = await getUserNicknameAction();
   // Fetch Tasks for Kanban Widget
   let recentTasks: Task[] = [];
   let totalTasks = 0;
@@ -152,6 +154,7 @@ export default async function DashboardPage() {
         {/* ----------------------------------------------------------------------- */}
         <div className="col-span-12 md:col-span-8">
           <DailyBriefingWidget
+            userNickname={userNickname}
             pendingTasksCount={totalTasks - completedTasks}
             totalTasksCount={totalTasks}
             completionRate={completionRate}

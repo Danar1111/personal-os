@@ -168,6 +168,16 @@ export const notesRelations = relations(notes, ({ one }) => ({
   }),
 }));
 
+export const knowledgeVault = mysqlTable('knowledge_vault', {
+  id: varchar('id', { length: 36 }).primaryKey(),
+  category: varchar('category', { length: 50 }).notNull().default('Preferences'),
+  title: varchar('title', { length: 255 }).notNull(),
+  content: text('content').notNull(),
+  isSensitive: boolean('is_sensitive').notNull().default(false),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => new Date()),
+});
+
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type Task = typeof tasks.$inferSelect;
@@ -196,3 +206,5 @@ export type WatchlistMovie = typeof watchlist.$inferSelect;
 export type NewWatchlistMovie = typeof watchlist.$inferInsert;
 export type PinnedTicker = typeof pinnedTickers.$inferSelect;
 export type NewPinnedTicker = typeof pinnedTickers.$inferInsert;
+export type KnowledgeEntry = typeof knowledgeVault.$inferSelect;
+export type NewKnowledgeEntry = typeof knowledgeVault.$inferInsert;
