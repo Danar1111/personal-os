@@ -458,7 +458,7 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
                 step_id: rawSteps.length + 1,
                 action_type: 'final_response',
                 target_tool: 'final_response',
-                instruction: 'Berikan tanggapan dan konfirmasi ringkas secara alami, hangat, dan profesional layaknya asisten pribadi JARVIS yang cerdas untuk menginformasikan hasil kerja di atas kepada pengguna.',
+                instruction: 'Berikan konfirmasi akhir dalam 1-2 kalimat percakapan yang alami, hangat, dan mengalir (tanpa poin-poin/bullet list, tanpa judul laporan, dan tanpa kata-kata meta). Langsung katakan konfirmasi hasil ke pengguna secara singkat.',
                 requires_previous_context: true
               }
             ];
