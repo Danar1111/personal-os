@@ -375,6 +375,52 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
     initialMessages: initialMsgs,
   } as any);
 
+  const isAutoRecalling = useRef(false);
+
+  // Auto-recall continuation hook for multi-context requests (e.g. search movie -> send email)
+  useEffect(() => {
+    if (status === "ready" && messages && messages.length >= 2 && !isAutoRecalling.current) {
+      const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
+      const lastAssistantMsg = messages[messages.length - 1];
+
+      if (lastUserMsg && lastAssistantMsg && lastAssistantMsg.role === "assistant") {
+        const userText = extractText(lastUserMsg).toLowerCase();
+        const needsEmail =
+          userText.includes("email") ||
+          userText.includes("kirim ke email") ||
+          userText.includes("kirim email") ||
+          userText.includes("send email") ||
+          userText.includes("surel");
+
+        if (needsEmail) {
+          const toolsRan = extractToolInvocations(lastAssistantMsg);
+          const ranFetch = toolsRan.some((t: any) => {
+            const name = (t.toolName || (typeof t.type === "string" && t.type.replace(/^tool-/, "")) || t.type || "").toLowerCase();
+            return ["get_trending_movies", "search_tmdb_movies", "fetch_news_articles", "get_stock_quote", "analyze_market_sentiment", "list_tasks", "search_vault"].includes(name);
+          });
+          const ranEmail = toolsRan.some((t: any) => {
+            const name = (t.toolName || (typeof t.type === "string" && t.type.replace(/^tool-/, "")) || t.type || "").toLowerCase();
+            return name === "send_email";
+          });
+
+          if (ranFetch && !ranEmail) {
+            isAutoRecalling.current = true;
+            const timer = setTimeout(() => {
+              const recallMsg = "Lanjutkan langkah berikutnya: Kirimkan hasil ringkasan data di atas ke email saya priyambodo02@gmail.com sekarang.";
+              if (typeof sendMessage === "function") {
+                (sendMessage as any)({ text: recallMsg });
+              }
+              setTimeout(() => {
+                isAutoRecalling.current = false;
+              }, 4000);
+            }, 600);
+            return () => clearTimeout(timer);
+          }
+        }
+      }
+    }
+  }, [status, messages, sendMessage]);
+
   useEffect(() => {
     const onClear = () => {
       try {
