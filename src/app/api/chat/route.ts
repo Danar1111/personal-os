@@ -86,6 +86,18 @@ EXACT SYSTEM MODULE DOMAINS & TOOLS MAPPING:
   → Tools: fetch_news_articles, get_stock_quote, analyze_market_sentiment
   → Execution Constraint: Execute external API tools (news, stocks, sentiment, TMDB) ONLY when the user explicitly asks for real-time news, stock prices, market analysis, or movie info/recommendations.
 
+AGENTIC MULTI-STEP REASONING:
+• You are allowed to call multiple tools sequentially within a single response, without waiting for the user to send another message.
+• If a user's request logically requires multiple steps (e.g. "fetch trending movies and email them to me"), you MUST execute ALL steps autonomously: first call the relevant fetch tool, then immediately call send_email with the result — all in one turn.
+• After each tool result, evaluate if another tool call or a final answer is needed. If the task is complete, give a concise final reply. Do not keep calling tools unnecessarily.
+• Limit to a maximum of 5 autonomous tool calls per turn to keep response quality high.
+• Example agentic chains you can execute in one turn:
+  - get_trending_movies → send_email
+  - fetch_news_articles → send_email
+  - list_tasks → send_email
+  - search_knowledge_vault → summarize context → reply
+  - get_stock_quote → analyze_market_sentiment → reply
+
 RULES:
 1. ALWAYS call the correct tool for the specific domain module.
 2. FOLDER & NESTED PATH RULE:
@@ -292,7 +304,7 @@ export async function POST(req: Request) {
     model: customOpenAI(activeModel as any),
     system: systemPrompt,
     messages: modelMessages,
-    maxSteps: 5,
+    maxSteps: 10,
 
     tools: {
       // ── TASKS ────────────────────────────────────────────────────────────

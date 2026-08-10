@@ -602,22 +602,41 @@ function ChatDialogContent({
                       {isUser ? textContent : renderFormattedText(textContent, () => setIsOpen(false), zenRunning)}
                     </div>
                   )}
-                  {toolInvocations.map((t: any) => {
+                  {toolInvocations.map((t: any, stepIdx: number) => {
                     const isComplete = t.state === "output-available" || t.state === "result" || !!t.result || !!t.output;
                     const callId = t.toolCallId ?? t.id ?? Math.random().toString();
                     const rawOutput = t.output ?? t.result;
                     const resultMsg = typeof rawOutput === "string" ? rawOutput : rawOutput?.message;
                     const toolNameDisplay = t.toolName ?? (typeof t.type === "string" && t.type.startsWith("tool-") ? t.type.replace(/^tool-/, "") : t.type) ?? "tool";
                     const args = t.args || t.input;
-                    let executingLabel = `Omni AI is executing ${toolNameDisplay}...`;
+                    const stepNum = stepIdx + 1;
+                    const isMultiStep = toolInvocations.length > 1;
+
+                    let executingLabel = `Step ${stepNum}: Running ${toolNameDisplay}...`;
                     if (toolNameDisplay === "send_email" && args?.to) {
-                      executingLabel = `Omni AI is sending an email to ${args.to}...`;
+                      executingLabel = `Step ${stepNum}: Sending email to ${args.to}...`;
+                    } else if (toolNameDisplay === "get_trending_movies") {
+                      executingLabel = `Step ${stepNum}: Fetching trending movies from TMDB...`;
+                    } else if (toolNameDisplay === "fetch_news_articles") {
+                      executingLabel = `Step ${stepNum}: Fetching latest news...`;
+                    } else if (toolNameDisplay === "get_stock_quote") {
+                      executingLabel = `Step ${stepNum}: Fetching stock quote...`;
                     }
+
                     return (
                       <div key={callId} className="space-y-1.5">
                         <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.02] border border-white/10 text-[11px] font-mono text-slate-300">
-                          {isComplete ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" /> : <Loader2 className="w-3.5 h-3.5 text-indigo-400 animate-spin shrink-0" />}
-                          <span>{isComplete ? `Executed Tool: ` : executingLabel}
+                          {isComplete
+                            ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                            : <Loader2 className="w-3.5 h-3.5 text-indigo-400 animate-spin shrink-0" />
+                          }
+                          {isMultiStep && (
+                            <span className="px-1.5 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 text-[10px] font-bold shrink-0">
+                              {stepNum}/{toolInvocations.length}
+                            </span>
+                          )}
+                          <span>
+                            {isComplete ? `Executed Tool: ` : executingLabel}
                             {isComplete && <strong className="text-indigo-300">{toolNameDisplay}</strong>}
                           </span>
                         </div>
@@ -639,12 +658,18 @@ function ChatDialogContent({
             );
           })
         )}
-        {isLoading && (
-          <div className="flex items-center gap-2 text-xs font-mono text-indigo-400 bg-indigo-500/10 p-3 rounded-2xl border border-indigo-500/20 w-fit">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span>Omni AI is analyzing...</span>
-          </div>
-        )}
+        {isLoading && (() => {
+          // Check if AI has already executed tools in the last assistant message (mid-chain)
+          const lastMsg = messages[messages.length - 1];
+          const lastTools = lastMsg?.role === "assistant" ? extractToolInvocations(lastMsg) : [];
+          const isChaining = lastTools.length > 0;
+          return (
+            <div className="flex items-center gap-2 text-xs font-mono text-indigo-400 bg-indigo-500/10 p-3 rounded-2xl border border-indigo-500/20 w-fit">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>{isChaining ? "Omni AI is chaining next step..." : "Omni AI is analyzing..."}</span>
+            </div>
+          );
+        })()}
         <div ref={messagesEndRef} />
       </div>
 
