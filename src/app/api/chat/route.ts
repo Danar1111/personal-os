@@ -80,7 +80,7 @@ EXACT SYSTEM MODULE DOMAINS & TOOLS MAPPING:
 
 • Omni-Emailer System (/emailer)
   → Tools: send_email, list_email_templates, create_email_template
-  → Emailing Rule: You have access to a send_email tool. If the user asks you to send an email, email someone, send an invoice, or send a notification, gather necessary context (recipient email, subject, message body) and execute the tool. You can draft the email body dynamically based on the user's prompt or use a templateId.
+  → Emailing Rule: You have access to a send_email tool. If the user asks you to send an email, email someone, send an invoice, or send a notification, gather necessary context (recipient email, subject, message body) and execute the tool. The send_email tool automatically applies the saved "Universal Omni Default" HTML template from Template Studio or a sleek executive HTML template. You can also specify a templateId if a specific template exists.
 
 • Real-time External Intelligence (News, Stocks & Market Analysis)
   → Tools: fetch_news_articles, get_stock_quote, analyze_market_sentiment
@@ -2586,33 +2586,85 @@ export async function POST(req: Request) {
               return { success: false, message: "A valid recipient email address ('to') is required." };
             }
 
-            // If templateId is provided, fetch template from DB
+            const allTemplates = await getEmailTemplates();
+
+            // 1. If templateId is provided, find matching template
+            let targetTemplate = null;
             if (templateId) {
-              const allTemplates = await getEmailTemplates();
-              const matched = allTemplates.find(
+              targetTemplate = allTemplates.find(
                 (t) => t.id === templateId || t.name.toLowerCase().includes(templateId.toLowerCase())
               );
+            }
 
-              if (matched) {
-                if (!subject) subject = matched.subject;
-                body = matched.bodyHtml;
+            // 2. If no templateId specified, check if "Universal Omni Default" or any template exists
+            if (!targetTemplate && !args?.bodyHtml) {
+              targetTemplate = allTemplates.find(
+                (t) => t.name.toLowerCase() === "universal omni default" || t.name.toLowerCase().includes("default")
+              );
+            }
+
+            if (targetTemplate) {
+              if (!subject) subject = targetTemplate.subject;
+              body = targetTemplate.bodyHtml;
+
+              // Populate default template variables if not explicitly provided
+              const mergedVars = {
+                subject: subject,
+                recipient_name: recipientName || to.split("@")[0],
+                main_message: String(args?.body || args?.message || "").replace(/\n/g, "<br/>"),
+                call_to_action_text: args?.callToActionText || "Open Personal OS",
+                call_to_action_url: args?.callToActionUrl || "https://personal-os.local",
+                ...variables,
+              };
+
+              subject = interpolateHandlebars(subject, mergedVars);
+              body = interpolateHandlebars(body, mergedVars);
+            } else {
+              // 3. Fallback: Wrap raw body or plain text in Sleek Executive HTML Template
+              if (Object.keys(variables).length > 0) {
+                subject = interpolateHandlebars(subject, variables);
+                body = interpolateHandlebars(body, variables);
               }
-            }
 
-            // Interpolate variables if provided
-            if (Object.keys(variables).length > 0) {
-              subject = interpolateHandlebars(subject, variables);
-              body = interpolateHandlebars(body, variables);
-            }
+              if (!body) {
+                body = subject;
+              }
 
-            // Fallback for body if empty
-            if (!body) {
-              body = `<html><body><p>${subject}</p></body></html>`;
-            } else if (!body.toLowerCase().includes("<html")) {
-              // Wrap plain text in clean HTML
-              body = `<html><body style="font-family: sans-serif; line-height: 1.6; color: #1e293b;">
-                ${body.replace(/\n/g, "<br/>")}
-              </body></html>`;
+              const formattedText = body.toLowerCase().includes("<p") || body.toLowerCase().includes("<div") || body.toLowerCase().includes("<table")
+                ? body
+                : body.replace(/\n/g, "<br/>");
+
+              body = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f4f4f5; margin: 0; padding: 40px 0; color: #3f3f46; -webkit-font-smoothing: antialiased;">
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.08); overflow: hidden; border: 1px solid #e4e4e7;">
+    <!-- HEADER -->
+    <tr>
+      <td style="padding: 28px 36px; background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); text-align: left;">
+        <h1 style="margin: 0; color: #ffffff; font-size: 18px; font-weight: 700; letter-spacing: -0.5px; font-family: monospace;">⚡ PERSONAL OS</h1>
+        <p style="margin: 4px 0 0 0; color: #c7d2fe; font-size: 11px; font-family: monospace; text-transform: uppercase;">Omni AI Executive Notification</p>
+      </td>
+    </tr>
+    <!-- BODY CONTENT -->
+    <tr>
+      <td style="padding: 32px 36px; font-size: 14px; line-height: 1.7; color: #27272a;">
+        ${formattedText}
+      </td>
+    </tr>
+    <!-- FOOTER -->
+    <tr>
+      <td style="padding: 20px 36px; background-color: #fafafa; border-top: 1px solid #f4f4f5; font-size: 11px; color: #a1a1aa; font-family: monospace; text-align: center;">
+        Sent automatically by <strong>Personal OS Omni AI Assistant</strong> via Brevo SMTP.<br/>
+        © ${new Date().getFullYear()} Personal OS Executive System.
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
             }
 
             const sendRes = await sendBrevoEmail({
