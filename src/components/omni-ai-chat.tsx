@@ -339,7 +339,6 @@ function safeSerializeMessages(msgs: any[]): string {
 }
 
 export function OmniAIChat() {
-  const [chatKey, setChatKey] = useState(0);
   const [initialMsgs, setInitialMsgs] = useState<any[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -354,31 +353,40 @@ export function OmniAIChat() {
       }
     } catch (e) {}
     setIsLoaded(true);
-  }, [chatKey]);
-
-  useEffect(() => {
-    const onClear = () => {
-      try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch (e) {}
-      setInitialMsgs([]);
-      setChatKey((k) => k + 1);
-    };
-    window.addEventListener("omni-ai-clear" as any, onClear);
-    return () => window.removeEventListener("omni-ai-clear" as any, onClear);
   }, []);
 
   if (!isLoaded) return null;
 
-  return <ChatCore key={chatKey} initialMsgs={initialMsgs} />;
+  return <ChatCore initialMsgs={initialMsgs} />;
 }
 
 // ChatCore lives outside DialogContent so useChat state survives modal open/close.
-// Only replaced (via key) when user explicitly clears chat.
 function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeModel, setActiveModel] = useState("gpt-4o-mini");
   const [initialPrompt, setInitialPrompt] = useState("");
   const zenRunning = useZenRunning();
+
+  // useChat lives HERE — outside DialogContent — so messages persist across open/close
+  const { messages, sendMessage, status, setMessages } = useChat({
+    maxSteps: 5,
+    messages: initialMsgs,
+    initialMessages: initialMsgs,
+  } as any);
+
+  useEffect(() => {
+    const onClear = () => {
+      try {
+        localStorage.removeItem(CHAT_STORAGE_KEY);
+      } catch (e) {}
+      if (typeof setMessages === "function") {
+        setMessages([]);
+      }
+    };
+    window.addEventListener("omni-ai-clear" as any, onClear);
+    return () => window.removeEventListener("omni-ai-clear" as any, onClear);
+  }, [setMessages]);
 
   useEffect(() => {
     getActiveModelAction().then((m) => { if (m) setActiveModel(m); });
@@ -412,13 +420,6 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
     };
   }, []);
 
-  // useChat lives HERE — outside DialogContent — so messages persist across open/close
-  const { messages, sendMessage, status } = useChat({
-    maxSteps: 5,
-    messages: initialMsgs,
-    initialMessages: initialMsgs,
-  } as any);
-
   const isLoading = status === "submitted" || status === "streaming";
 
   // Persist every update to localStorage using safeSerializeMessages
@@ -430,6 +431,10 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
       } catch (e) {
         console.error("[OmniAI] LocalStorage save error:", e);
       }
+    } else if (messages && messages.length === 0) {
+      try {
+        localStorage.removeItem(CHAT_STORAGE_KEY);
+      } catch (e) {}
     }
   }, [messages]);
 

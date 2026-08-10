@@ -80,23 +80,23 @@ EXACT SYSTEM MODULE DOMAINS & TOOLS MAPPING:
 
 • Omni-Emailer System (/emailer)
   → Tools: send_email, list_email_templates, create_email_template
-  → Emailing Rule: You have access to a send_email tool. If the user asks you to send an email, email someone, send an invoice, or send a notification, gather necessary context (recipient email, subject, message body) and execute the tool. The send_email tool automatically applies the saved "Universal Omni Default" HTML template from Template Studio or a sleek executive HTML template. You can also specify a templateId if a specific template exists.
+  → Emailing Rule: You have access to a send_email tool. The user's default recipient email is priyambodo02@gmail.com (Danar). If the user says "kirim ke email saya", "email me", "kirim report ke email", or similar without specifying an email address, ALWAYS default to priyambodo02@gmail.com! The send_email tool automatically applies the saved "Universal Omni Default" HTML template from Template Studio or a sleek executive HTML template. You can also specify a templateId if a specific template exists.
 
 • Real-time External Intelligence (News, Stocks & Market Analysis)
   → Tools: fetch_news_articles, get_stock_quote, analyze_market_sentiment
   → Execution Constraint: Execute external API tools (news, stocks, sentiment, TMDB) ONLY when the user explicitly asks for real-time news, stock prices, market analysis, or movie info/recommendations.
 
-AGENTIC MULTI-STEP REASONING:
-• You are allowed to call multiple tools sequentially within a single response, without waiting for the user to send another message.
-• If a user's request logically requires multiple steps (e.g. "fetch trending movies and email them to me"), you MUST execute ALL steps autonomously: first call the relevant fetch tool, then immediately call send_email with the result — all in one turn.
-• After each tool result, evaluate if another tool call or a final answer is needed. If the task is complete, give a concise final reply. Do not keep calling tools unnecessarily.
+AGENTIC MULTI-STEP & MULTI-CONTEXT REASONING:
+• You MUST execute multiple tools sequentially in a SINGLE turn whenever a user prompt contains multi-intent commands (e.g. "carikan 1 film terbaik di TMDB kemudian reportnya kirim ke email saya", "cek berita hari ini dan email ke saya", "buat task X dan kirim email konfirmasi").
+• DO NOT STOP MIDWAY! In a multi-intent request, after the first tool finishes (e.g., search_tmdb_movies or get_trending_movies), you MUST IMMEDIATELY call the next tool (e.g., send_email to priyambodo02@gmail.com with the retrieved content) in the SAME turn.
+• Never stop after fetching data if the user prompt asked to send, email, save, or create something with that data.
 • Limit to a maximum of 5 autonomous tool calls per turn to keep response quality high.
-• Example agentic chains you can execute in one turn:
-  - get_trending_movies → send_email
-  - fetch_news_articles → send_email
-  - list_tasks → send_email
-  - search_knowledge_vault → summarize context → reply
-  - get_stock_quote → analyze_market_sentiment → reply
+• Example autonomous chains to execute in one turn:
+  - search_tmdb_movies / get_trending_movies → send_email(to: "priyambodo02@gmail.com")
+  - fetch_news_articles → send_email(to: "priyambodo02@gmail.com")
+  - get_stock_quote → analyze_market_sentiment → send_email(to: "priyambodo02@gmail.com")
+  - list_tasks → send_email(to: "priyambodo02@gmail.com")
+  - search_knowledge_vault → summarize → reply
 
 RULES:
 1. ALWAYS call the correct tool for the specific domain module.
@@ -2177,7 +2177,7 @@ export async function POST(req: Request) {
 
       // ── EXTERNAL INTELLIGENCE SKILLS (NEWS, STOCKS, SENTIMENT, MOVIES) ─────
       fetch_news_articles: makeTool({
-        description: "Fetches real-time news headlines on any topic. Execute ONLY when user explicitly asks for news, headlines, or current events. Accept limit parameter for number of items (e.g. 1 for 'top 1 berita').",
+        description: "Fetches real-time news headlines on any topic. Can be chained with send_email or create_task. Accepts limit parameter for number of items (e.g. 1 for 'top 1 berita').",
         inputSchema: jsonSchema({
           type: "object",
           properties: {
@@ -2233,7 +2233,7 @@ export async function POST(req: Request) {
       }),
 
       get_stock_quote: makeTool({
-        description: "Fetches real-time stock price or crypto ticker quote (e.g. AAPL, NVDA, TSLA, BTC, ETH, BBCA). Execute ONLY when user explicitly asks for stock price, ticker quote, or crypto price.",
+        description: "Fetches real-time stock price or crypto ticker quote (e.g. AAPL, NVDA, TSLA, BTC, ETH, BBCA). Can be chained with analyze_market_sentiment or send_email.",
         inputSchema: jsonSchema({
           type: "object",
           properties: {
@@ -2290,7 +2290,7 @@ export async function POST(req: Request) {
       }),
 
       analyze_market_sentiment: makeTool({
-        description: "Analyzes real-time market sentiment (BULLISH/BEARISH/NEUTRAL) and synthesizes news for any stock, sector, or company. Execute ONLY when user explicitly asks for market analysis, sentiment, or stock analysis.",
+        description: "Analyzes real-time market sentiment (BULLISH/BEARISH/NEUTRAL) and synthesizes news for any stock, sector, or company. Can be chained with send_email.",
         inputSchema: jsonSchema({
           type: "object",
           properties: {
@@ -2310,7 +2310,7 @@ export async function POST(req: Request) {
       }),
 
       search_tmdb_movies: makeTool({
-        description: "Searches movies on TMDB with posters, rating, overview, and release date. Execute ONLY when user explicitly asks for movie search, film details, or movie info. Accept limit parameter for number of results.",
+        description: "Searches movies on TMDB with posters, rating, overview, and release date. Can be chained with send_email, add_to_watchlist, or create_task. Accepts limit parameter for number of results.",
         inputSchema: jsonSchema({
           type: "object",
           properties: {
@@ -2351,7 +2351,7 @@ export async function POST(req: Request) {
       }),
 
       get_trending_movies: makeTool({
-        description: "Fetches trending movies of the week on TMDB. Execute ONLY when user explicitly asks for trending movies, film recommendations, or popular movies. Accept limit parameter for number of items (e.g. 1 for 'top 1 film').",
+        description: "Fetches trending movies of the week on TMDB. Can be chained with send_email, add_to_watchlist, or create_task. Accepts limit parameter for number of items (e.g. 1 for 'top 1 film').",
         inputSchema: jsonSchema({
           type: "object",
           properties: {
@@ -2572,7 +2572,7 @@ export async function POST(req: Request) {
 
       // ── OMNI-EMAILER SYSTEM ─────────────────────────────────────────────
       send_email: makeTool({
-        description: "Sends an email to a specified recipient via Brevo SMTP API. Use this when the user asks you to email someone, send an invoice, send a notification, or send a draft email.",
+        description: "Sends an email to a specified recipient via Brevo SMTP API. If recipient email is omitted or user says 'kirim ke email saya', defaults to priyambodo02@gmail.com.",
         inputSchema: jsonSchema({
           type: "object",
           properties: {
@@ -2583,20 +2583,19 @@ export async function POST(req: Request) {
             templateId: { type: "string", description: "Optional template ID or template name to use" },
             variables: { type: "object", description: "Optional key-value record of template variables (e.g. { client_name: 'Danar' })" },
           },
-          required: ["to", "subject"],
+          required: ["subject"],
         }),
         execute: async (args: any) => {
           try {
-            const to = String(args?.to || "").trim();
+            let to = String(args?.to || "").trim();
+            if (!to || !to.includes("@")) {
+              to = "priyambodo02@gmail.com";
+            }
             let subject = String(args?.subject || "").trim();
             let body = String(args?.body || "").trim();
-            const recipientName = args?.recipientName ? String(args.recipientName).trim() : undefined;
+            const recipientName = args?.recipientName ? String(args.recipientName).trim() : "Danar";
             const templateId = args?.templateId ? String(args.templateId).trim() : undefined;
             const variables = args?.variables && typeof args.variables === "object" ? args.variables : {};
-
-            if (!to || !to.includes("@")) {
-              return { success: false, message: "A valid recipient email address ('to') is required." };
-            }
 
             const allTemplates = await getEmailTemplates();
 
