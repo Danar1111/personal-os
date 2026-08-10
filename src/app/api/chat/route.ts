@@ -133,6 +133,9 @@ RULES:
    - For simple tasks and actions, answer directly in 1-2 natural sentences without stiff scripts or repeating robotic templates.
    - For multi-item results (listing tasks, news, movies), format them clearly with bullet points.
    - Match the user's tone and language naturally in a warm, competent, and fluid voice.
+7. PLAN-AND-EXECUTE ARCHITECTURE:
+   - If the user's prompt contains multiple chained tasks (e.g. "search for X THEN send an email about it", or "analyze X and create a task for it"), YOU MUST call the \`create_execution_plan\` tool first to generate a structured step-by-step plan.
+   - Do NOT execute the actual tools immediately if you are calling \`create_execution_plan\`. The frontend will orchestrate the execution step-by-step based on your plan.
 `.trim();
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -312,6 +315,33 @@ export async function POST(req: Request) {
     },
 
     tools: {
+      // ── ORCHESTRATION ────────────────────────────────────────────────────────────
+      create_execution_plan: makeTool({
+        description: "Creates an execution plan for multi-step or chained user requests. ALWAYS call this tool first if the user asks for multiple tasks (e.g., search then email).",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            isChain: { type: "boolean", description: "True if tasks are sequential (e.g., A then B)" },
+            steps: {
+              type: "array",
+              description: "List of steps to execute in order",
+              items: {
+                type: "object",
+                properties: {
+                  instruction: { type: "string", description: "Clear instruction for this step (e.g., 'Search TMDB for action movies')" },
+                  tool_to_use: { type: "string", description: "The primary tool name expected to be used for this step" }
+                },
+                required: ["instruction"]
+              }
+            }
+          },
+          required: ["isChain", "steps"],
+        }),
+        execute: async (args: any) => {
+          return { success: true, message: "Execution plan accepted by frontend engine. The frontend will now automatically prompt you to execute each step sequentially." };
+        },
+      }),
+
       // ── TASKS ────────────────────────────────────────────────────────────
       create_task: makeTool({
         description: "Creates a new task in Omni-Kanban. Accepts optional projectName or category to assign task.",

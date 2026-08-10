@@ -375,6 +375,66 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
     initialMessages: initialMsgs,
   } as any);
 
+  // --- PLAN & EXECUTE ENGINE ---
+  const [engineState, setEngineState] = useState<{ planId: string, steps: any[], currentIndex: number, status: 'idle'|'running'|'failed'|'done' } | null>(null);
+
+  // 1. Detect Plan Creation
+  useEffect(() => {
+    if (status !== 'ready' || messages.length === 0) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg.role === 'assistant') {
+      const toolInvocations = extractToolInvocations(lastMsg);
+      const planTool = toolInvocations.find((t: any) => t.toolName === 'create_execution_plan' && t.state === 'result');
+      if (planTool && planTool.args && planTool.args.steps) {
+        const planId = planTool.toolCallId;
+        if (!engineState || engineState.planId !== planId) {
+          setEngineState({
+            planId,
+            steps: planTool.args.steps,
+            currentIndex: 0,
+            status: 'running'
+          });
+        }
+      }
+    }
+  }, [messages, status, engineState]);
+
+  // 2. Drive the Engine & Self-Healing
+  useEffect(() => {
+    if (engineState?.status === 'running' && status === 'ready') {
+      const lastMsg = messages[messages.length - 1];
+      
+      // If we just sent a system command, wait for AI response
+      const lastText = extractText(lastMsg);
+      if (lastMsg.role === 'user' && lastText.includes("![SYSTEM_ENGINE]!")) return;
+
+      if (lastMsg.role === 'assistant') {
+        // Check for errors in the last step for self-healing
+        const toolInvocations = extractToolInvocations(lastMsg);
+        // exclude create_execution_plan from error checking since that just finished
+        const actionTools = toolInvocations.filter((t: any) => t.toolName !== 'create_execution_plan');
+        const hadError = actionTools.some((t: any) => t.state === 'result' && (t.result?.success === false || t.result?.error));
+
+        if (hadError) {
+          setEngineState(prev => prev ? { ...prev, status: 'failed' } : null);
+          const healMsg = `![SYSTEM_ENGINE]! Step ${engineState.currentIndex} encountered an error. Please review the tool output and attempt a self-healing alternative. If unrecoverable, notify the user.`;
+          setTimeout(() => (sendMessage as any)({ text: healMsg }), 500);
+          return;
+        }
+
+        const step = engineState.steps[engineState.currentIndex];
+        if (step) {
+          const stepMsg = `![SYSTEM_ENGINE]! Execute Step ${engineState.currentIndex + 1}: ${step.instruction}`;
+          setEngineState(prev => prev ? { ...prev, currentIndex: prev.currentIndex + 1 } : null);
+          setTimeout(() => (sendMessage as any)({ text: stepMsg }), 500);
+        } else {
+          setEngineState(prev => prev ? { ...prev, status: 'done' } : null);
+        }
+      }
+    }
+  }, [engineState, status, messages, sendMessage]);
+  // --- END ENGINE ---
+
   useEffect(() => {
     const onClear = () => {
       try {
@@ -461,6 +521,7 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
           isLoading={isLoading}
           initialPrompt={initialPrompt}
           clearInitialPrompt={() => setInitialPrompt("")}
+          engineState={engineState}
         />
       </DialogContent>
     </Dialog>
@@ -479,6 +540,7 @@ function ChatDialogContent({
   isLoading,
   initialPrompt,
   clearInitialPrompt,
+  engineState,
 }: {
   isExpanded: boolean;
   setIsExpanded: (v: boolean) => void;
@@ -490,6 +552,7 @@ function ChatDialogContent({
   isLoading: boolean;
   initialPrompt: string;
   clearInitialPrompt: () => void;
+  engineState: { planId: string, steps: any[], currentIndex: number, status: 'idle'|'running'|'failed'|'done' } | null;
 }) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -594,7 +657,7 @@ function ChatDialogContent({
 
             if (isUser) {
               const textContent = extractText(m);
-              if (!textContent) return [];
+              if (!textContent || textContent.includes("![SYSTEM_ENGINE]!")) return [];
               return [
                 <div key={m.id} className="flex gap-3 text-xs font-mono justify-end">
                   <div className="space-y-2 max-w-[85%]">
@@ -743,11 +806,11 @@ function ChatDialogContent({
           // Check if AI has already executed tools in the last assistant message (mid-chain)
           const lastMsg = messages[messages.length - 1];
           const lastTools = lastMsg?.role === "assistant" ? extractToolInvocations(lastMsg) : [];
-          const isChaining = lastTools.length > 0;
+          const isChaining = lastTools.length > 0 || engineState?.status === 'running';
           return (
             <div className="flex items-center gap-2 text-xs font-mono text-indigo-400 bg-indigo-500/10 p-3 rounded-2xl border border-indigo-500/20 w-fit">
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>{isChaining ? "Omni AI is chaining next step..." : "Omni AI is analyzing..."}</span>
+              <span>{isChaining ? `Omni AI is executing step ${Math.max(1, engineState?.currentIndex || 1)}...` : "Omni AI is analyzing..."}</span>
             </div>
           );
         })()}
