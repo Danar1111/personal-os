@@ -81,6 +81,7 @@ EXACT SYSTEM MODULE DOMAINS & TOOLS MAPPING:
 • Omni-Emailer System (/emailer)
   → Tools: send_email, list_email_templates, create_email_template
   → Emailing Rule: You have access to a send_email tool. The user's default recipient email is priyambodo02@gmail.com (Danar). If the user says "kirim ke email saya", "email me", "kirim report ke email", or similar without specifying an email address, ALWAYS default to priyambodo02@gmail.com! The send_email tool automatically applies the saved "Universal Omni Default" HTML template from Template Studio or a sleek executive HTML template. You can also specify a templateId if a specific template exists.
+  → Email Body Rule: When calling send_email, the body parameter must contain the clean text or HTML content to send. Do NOT wrap body in curly braces. Write content directly: e.g. body: "Halo Danar,\n\nBerikut laporan film: Spider-Man\nRating: 7.9\n\nSalam,\nOmni AI"
 
 • Real-time External Intelligence (News, Stocks & Market Analysis)
   → Tools: fetch_news_articles, get_stock_quote, analyze_market_sentiment
@@ -304,7 +305,11 @@ export async function POST(req: Request) {
     model: customOpenAI(activeModel as any),
     system: systemPrompt,
     messages: modelMessages,
-    maxSteps: 10,
+    maxSteps: 6,
+
+    onError: (err: any) => {
+      console.error("[CHAT] streamText error:", err?.message || err);
+    },
 
     tools: {
       // ── TASKS ────────────────────────────────────────────────────────────
@@ -2641,6 +2646,21 @@ export async function POST(req: Request) {
                 body = subject;
               }
 
+              // Clean stray curly braces the AI might accidentally include
+              body = body.replace(/^\s*\{/, "").replace(/\}\s*$/, "").trim();
+
+              // Convert markdown images ![alt](url) → <img> tags for email rendering
+              body = body.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_: string, alt: string, url: string) => {
+                if (!url.startsWith("http")) return "";
+                return `<div style="text-align:center;margin:16px 0;"><img src="${url}" alt="${alt}" style="max-width:220px;border-radius:10px;display:block;margin:0 auto;" /></div>`;
+              });
+
+              // Convert markdown links [text](url) → <a> tags
+              body = body.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" style="color:#4f46e5;">$1</a>');
+
+              // Convert **bold** → <strong>
+              body = body.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+
               const formattedText = body.toLowerCase().includes("<p") || body.toLowerCase().includes("<div") || body.toLowerCase().includes("<table")
                 ? body
                 : body.replace(/\n/g, "<br/>");
@@ -2670,7 +2690,7 @@ export async function POST(req: Request) {
     <tr>
       <td style="padding: 20px 36px; background-color: #fafafa; border-top: 1px solid #f4f4f5; font-size: 11px; color: #a1a1aa; font-family: monospace; text-align: center;">
         Sent automatically by <strong>Personal OS Omni AI Assistant</strong> via Brevo SMTP.<br/>
-        © ${new Date().getFullYear()} Personal OS Executive System.
+        &copy; ${new Date().getFullYear()} Personal OS Executive System.
       </td>
     </tr>
   </table>

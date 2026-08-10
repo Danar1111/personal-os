@@ -610,39 +610,74 @@ function ChatDialogContent({
             }
 
             // For assistant messages: split parts into natural "rounds"
-            // Each round = [text?] + [tool+result?]* grouped until next text
+            // AI SDK v7 pattern: [tool1-call, tool1-result, tool2-call, tool2-result, ..., text]
+            // We render each tool as its own bubble + final text as its own bubble
             const parts: any[] = Array.isArray(m?.parts) ? m.parts : [];
 
-            // Build rounds: a new round starts at each text part (after the first)
             type Round = { text?: string; tools: any[] };
             const rounds: Round[] = [];
-            let currentRound: Round = { tools: [] };
-            let seenFirstText = false;
 
             if (parts.length === 0) {
               // Fallback for legacy format
               const textContent = extractText(m);
               const toolInvocations = extractToolInvocations(m);
               if (!textContent && toolInvocations.length === 0) return [];
-              rounds.push({ text: textContent || undefined, tools: toolInvocations });
+              // Each tool gets its own round, text gets final round
+              toolInvocations.forEach((t: any) => rounds.push({ tools: [t] }));
+              if (textContent) rounds.push({ text: textContent, tools: [] });
+              if (rounds.length === 0) rounds.push({ text: textContent || undefined, tools: toolInvocations });
             } else {
+              // Group paired tool-call + tool-result parts by toolCallId
+              const toolMap = new Map<string, any>();
+              const toolOrder: string[] = [];
+              let finalText = "";
+
               for (const part of parts) {
                 const isText = part?.type === "text";
-                const isTool = part?.type === "dynamic-tool" || (typeof part?.type === "string" && part.type.startsWith("tool-"));
+                const isToolCall = typeof part?.type === "string" && (part.type === "tool-call" || part.type === "dynamic-tool" || (part.type.startsWith("tool-") && !part.type.includes("result")));
+                const isToolResult = typeof part?.type === "string" && part.type.includes("result");
 
-                if (isText) {
-                  if (seenFirstText) {
-                    // Start a new round
-                    rounds.push(currentRound);
-                    currentRound = { tools: [] };
+                if (isText && part.text?.trim()) {
+                  finalText = part.text.trim();
+                } else if (isToolCall) {
+                  const callId = part.toolCallId ?? part.id ?? `tool-${toolOrder.length}`;
+                  if (!toolMap.has(callId)) {
+                    toolMap.set(callId, { ...part });
+                    toolOrder.push(callId);
                   }
-                  currentRound.text = part.text || "";
-                  seenFirstText = true;
-                } else if (isTool) {
-                  currentRound.tools.push(part);
+                } else if (isToolResult) {
+                  const callId = part.toolCallId ?? part.id;
+                  if (callId && toolMap.has(callId)) {
+                    const existing = toolMap.get(callId);
+                    toolMap.set(callId, { ...existing, output: part.output ?? part.result, result: part.output ?? part.result, state: "result" });
+                  }
+                } else if (part?.toolName || part?.toolCallId) {
+                  // unified part (tool-invocation with all data)
+                  const callId = part.toolCallId ?? part.id ?? `tool-${toolOrder.length}`;
+                  if (!toolMap.has(callId)) {
+                    toolMap.set(callId, part);
+                    toolOrder.push(callId);
+                  } else {
+                    toolMap.set(callId, { ...toolMap.get(callId), ...part });
+                  }
                 }
               }
-              rounds.push(currentRound);
+
+              // Build rounds: each tool = one round, final text = one round
+              for (const callId of toolOrder) {
+                rounds.push({ tools: [toolMap.get(callId)] });
+              }
+              if (finalText) {
+                rounds.push({ text: finalText, tools: [] });
+              }
+
+              // Fallback: if nothing parsed, use extractors
+              if (rounds.length === 0) {
+                const textContent = extractText(m);
+                const toolInvocations = extractToolInvocations(m);
+                toolInvocations.forEach((t: any) => rounds.push({ tools: [t] }));
+                if (textContent) rounds.push({ text: textContent, tools: [] });
+              }
             }
 
             return rounds
