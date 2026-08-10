@@ -379,4 +379,24 @@ export const OMNI_AI_SKILLS_REGISTRY: RegisteredAISkill[] = [
     description: "Deletes an entry from Personal Knowledge Vault after user confirmation.",
     examplePrompt: "Hapus entri WiFi Password dari Knowledge Vault",
   },
+
+  // ── OMNI-EMAILER SYSTEM ─────────────────────────────────────────────
+  {
+    name: "send_email",
+    module: "Omni-Emailer System",
+    description: "Sends an email to a recipient via Brevo SMTP API with optional handlebars variables or templateId.",
+    examplePrompt: "Kirimkan email ke priyambodo02@gmail.com dengan subjek 'Test Email' dan isi 'Halo Danar, sistem online!'",
+  },
+  {
+    name: "list_email_templates",
+    module: "Omni-Emailer System",
+    description: "Lists all saved email templates in Omni-Emailer Studio.",
+    examplePrompt: "Tunjukkan daftar template email yang tersimpan di Omni-Emailer",
+  },
+  {
+    name: "create_email_template",
+    module: "Omni-Emailer System",
+    description: "Creates a new email template in Omni-Emailer Studio.",
+    examplePrompt: "Buat template email baru 'Invoice Notification' dengan subjek 'Tagihan {{invoice_number}}'",
+  },
 ];

@@ -15,7 +15,10 @@ import {
   watchlist,
   systemSettings,
   knowledgeVault,
+  emailTemplates,
 } from "@/db/schema";
+import { sendBrevoEmail, interpolateHandlebars } from "@/lib/brevo";
+import { getEmailTemplates, createEmailTemplate } from "@/app/emailer/actions";
 import { like, or, eq, desc, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { analyzeMarketSentiment } from "@/app/finance/actions";
@@ -75,6 +78,10 @@ EXACT SYSTEM MODULE DOMAINS & TOOLS MAPPING:
   → Save & Search: Use save_knowledge to record user bio, brand guidelines, work preferences, or sensitive credentials. Use search_knowledge to query saved entries.
   → STRICT SENSITIVE DATA RULE: If a knowledge entry is marked as sensitive (isSensitive = true), NEVER output or leak the raw content string in your chat response text. Instead, state: "Data **[Title](/knowledge?search=Title)** bersifat sensitif. Silakan klik link tersebut untuk melihat atau menyalin nilainya secara aman di Knowledge Vault."
 
+• Omni-Emailer System (/emailer)
+  → Tools: send_email, list_email_templates, create_email_template
+  → Emailing Rule: You have access to a send_email tool. If the user asks you to send an email, email someone, send an invoice, or send a notification, gather necessary context (recipient email, subject, message body) and execute the tool. You can draft the email body dynamically based on the user's prompt or use a templateId.
+
 • Real-time External Intelligence (News, Stocks & Market Analysis)
   → Tools: fetch_news_articles, get_stock_quote, analyze_market_sentiment
   → Execution Constraint: Execute external API tools (news, stocks, sentiment, TMDB) ONLY when the user explicitly asks for real-time news, stock prices, market analysis, or movie info/recommendations.
@@ -95,7 +102,8 @@ RULES:
      - Local Drive File: [File Name](/drive?search=FileName)
      - Calendar Event: [Event Title](/calendar?search=EventTitle)
      - Knowledge Entry: [Knowledge Title](/knowledge?search=KnowledgeTitle)
-     - General App Pages: [Second Brain Vault](/vault), [Task Omni-Kanban](/tasks), [Master Calendar](/calendar), [Finance Hub](/finance), [Asset Vault](/inventory), [Skill Matrix](/skills), [Local Drive](/drive font), [Personal Knowledge Vault](/knowledge), [TMDB Watchlist](/watchlist), [System Settings](/settings), [Zen Timer](/zen), [Daily AI Briefing](/ai-briefing).
+     - Email Template: [Template Title](/emailer/templates?search=TemplateTitle)
+     - General App Pages: [Second Brain Vault](/vault), [Task Omni-Kanban](/tasks), [Master Calendar](/calendar), [Finance Hub](/finance), [Asset Vault](/inventory), [Skill Matrix](/skills), [Local Drive](/drive), [Personal Knowledge Vault](/knowledge), [Omni-Emailer Studio](/emailer), [TMDB Watchlist](/watchlist), [System Settings](/settings), [Zen Timer](/zen), [Daily AI Briefing](/ai-briefing).
    - APP LAUNCHER SPECIFIC RULE:
      - For specific registered apps in App Launcher (e.g., TMDB, Google News, n8n, etc.), ALWAYS format them as direct external Markdown links using their target URL: "[App Name](https://target-app-url.com)".
    - IMAGE ATTACHMENT & PREVIEW RULE:
@@ -2546,6 +2554,135 @@ export async function POST(req: Request) {
             };
           } catch (e: any) {
             return { success: false, message: `Gagal menghapus entri Knowledge Vault: ${e.message}` };
+          }
+        },
+      }),
+
+      // ── OMNI-EMAILER SYSTEM ─────────────────────────────────────────────
+      send_email: makeTool({
+        description: "Sends an email to a specified recipient via Brevo SMTP API. Use this when the user asks you to email someone, send an invoice, send a notification, or send a draft email.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            to: { type: "string", description: "Recipient email address (e.g. priyambodo02@gmail.com)" },
+            subject: { type: "string", description: "Email subject line" },
+            body: { type: "string", description: "Email message body in HTML or plain text" },
+            recipientName: { type: "string", description: "Optional name of recipient" },
+            templateId: { type: "string", description: "Optional template ID or template name to use" },
+            variables: { type: "object", description: "Optional key-value record of template variables (e.g. { client_name: 'Danar' })" },
+          },
+          required: ["to", "subject"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const to = String(args?.to || "").trim();
+            let subject = String(args?.subject || "").trim();
+            let body = String(args?.body || "").trim();
+            const recipientName = args?.recipientName ? String(args.recipientName).trim() : undefined;
+            const templateId = args?.templateId ? String(args.templateId).trim() : undefined;
+            const variables = args?.variables && typeof args.variables === "object" ? args.variables : {};
+
+            if (!to || !to.includes("@")) {
+              return { success: false, message: "A valid recipient email address ('to') is required." };
+            }
+
+            // If templateId is provided, fetch template from DB
+            if (templateId) {
+              const allTemplates = await getEmailTemplates();
+              const matched = allTemplates.find(
+                (t) => t.id === templateId || t.name.toLowerCase().includes(templateId.toLowerCase())
+              );
+
+              if (matched) {
+                if (!subject) subject = matched.subject;
+                body = matched.bodyHtml;
+              }
+            }
+
+            // Interpolate variables if provided
+            if (Object.keys(variables).length > 0) {
+              subject = interpolateHandlebars(subject, variables);
+              body = interpolateHandlebars(body, variables);
+            }
+
+            // Fallback for body if empty
+            if (!body) {
+              body = `<html><body><p>${subject}</p></body></html>`;
+            } else if (!body.toLowerCase().includes("<html")) {
+              // Wrap plain text in clean HTML
+              body = `<html><body style="font-family: sans-serif; line-height: 1.6; color: #1e293b;">
+                ${body.replace(/\n/g, "<br/>")}
+              </body></html>`;
+            }
+
+            const sendRes = await sendBrevoEmail({
+              to,
+              name: recipientName,
+              subject,
+              htmlContent: body,
+            });
+
+            return sendRes;
+          } catch (e: any) {
+            return { success: false, message: `Gagal mengirim email via Brevo: ${e.message}` };
+          }
+        },
+      }),
+
+      list_email_templates: makeTool({
+        description: "Lists all saved email templates in Omni-Emailer Studio.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {},
+          required: [],
+        }),
+        execute: async () => {
+          try {
+            const templates = await getEmailTemplates();
+            if (templates.length === 0) {
+              return { success: true, message: "Belum ada template email yang tersimpan di [Omni-Emailer Studio](/emailer/templates)." };
+            }
+
+            const listStr = templates
+              .map((t) => {
+                const vars = t.variables ? JSON.parse(t.variables) : [];
+                const varStr = vars.length > 0 ? ` (Variables: ${vars.map((v: string) => `{{${v}}}`).join(", ")})` : "";
+                return `• **[${t.name}](/emailer/templates)** — Subject: "${t.subject}"${varStr}`;
+              })
+              .join("\n");
+
+            return {
+              success: true,
+              message: `✉️ Saved Email Templates (${templates.length}):\n\n${listStr}`,
+              data: templates,
+            };
+          } catch (e: any) {
+            return { success: false, message: `Gagal mengambil daftar template email: ${e.message}` };
+          }
+        },
+      }),
+
+      create_email_template: makeTool({
+        description: "Creates a new email template in Omni-Emailer Studio.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            name: { type: "string", description: "Template name" },
+            subject: { type: "string", description: "Subject line (supports {{variables}})" },
+            bodyHtml: { type: "string", description: "Body HTML (supports {{variables}})" },
+          },
+          required: ["name", "subject", "bodyHtml"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const name = String(args?.name || "").trim();
+            const subject = String(args?.subject || "").trim();
+            const bodyHtml = String(args?.bodyHtml || "").trim();
+
+            const res = await createEmailTemplate({ name, subject, bodyHtml });
+            return res;
+          } catch (e: any) {
+            return { success: false, message: `Gagal membuat template email: ${e.message}` };
           }
         },
       }),

@@ -25,6 +25,7 @@ import {
   Loader2,
   Wand2,
   BrainCircuit,
+  Mail,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -47,6 +48,7 @@ const PAGE_ITEMS = [
   { id: "page-apps", group: "Pages & Apps", title: "App Launcher", subtitle: "Installed Web & System Tools", url: "/apps", icon: AppWindow },
   { id: "page-watchlist", group: "Pages & Apps", title: "TMDB Watchlist", subtitle: "Movies & Series Watchlist", url: "/watchlist", icon: Film },
   { id: "page-knowledge", group: "Pages & Apps", title: "Personal Knowledge Vault", subtitle: "Brand Guidelines, Bio & Secure Keys", url: "/knowledge", icon: BrainCircuit },
+  { id: "page-emailer", group: "Pages & Apps", title: "Omni-Emailer Studio", subtitle: "Brevo Transactional Email & Templates", url: "/emailer/templates", icon: Mail },
   { id: "page-settings", group: "Pages & Apps", title: "System Settings", subtitle: "Control Center & Security Configuration", url: "/settings", icon: Settings },
 ];
 

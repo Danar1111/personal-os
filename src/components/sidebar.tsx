@@ -26,6 +26,7 @@ import {
   Lock,
   Wand2,
   BrainCircuit,
+  Mail,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,7 @@ const navItems = [
   { name: "App Launcher", href: "/apps", icon: AppWindow },
   { name: "TMDB Watchlist", href: "/watchlist", icon: Film },
   { name: "Knowledge Vault", href: "/knowledge", icon: BrainCircuit },
+  { name: "Omni-Emailer", href: "/emailer", icon: Mail },
   { name: "System Settings", href: "/settings", icon: Settings },
 ];
 

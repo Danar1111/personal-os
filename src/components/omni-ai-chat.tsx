@@ -100,12 +100,14 @@ function renderFormattedText(text: string, onInternalLinkClick: () => void, zenR
     "/drive": "Local Drive",
     "/watchlist": "TMDB Watchlist",
     "/knowledge": "Personal Knowledge Vault",
+    "/emailer": "Omni-Emailer Studio",
+    "/emailer/templates": "Omni-Emailer Studio",
     "/settings": "System Settings",
     "/zen": "Zen Time-Blocker",
     "/ai-briefing": "Daily AI Briefing",
   };
 
-  const combinedRegex = /!\[([^\]]*)\]\(([^)]+)\)|\[([^\]]+)\]\(([^)]+)\)|(https?:\/\/[^\s<>"'\)]+)|(\/(?:apps|tasks|vault|calendar|finance|skills|inventory|drive|watchlist|knowledge|settings|zen|ai-briefing)(?:\?[^\s<>"'\)]*)?)/gi;
+  const combinedRegex = /!\[([^\]]*)\]\(([^)]+)\)|\[([^\]]+)\]\(([^)]+)\)|(https?:\/\/[^\s<>"'\)]+)|(\/(?:apps|tasks|vault|calendar|finance|skills|inventory|drive|watchlist|knowledge|emailer|settings|zen|ai-briefing)(?:\?[^\s<>"'\)]*)?)/gi;
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let match;
@@ -606,11 +608,18 @@ function ChatDialogContent({
                     const rawOutput = t.output ?? t.result;
                     const resultMsg = typeof rawOutput === "string" ? rawOutput : rawOutput?.message;
                     const toolNameDisplay = t.toolName ?? (typeof t.type === "string" && t.type.startsWith("tool-") ? t.type.replace(/^tool-/, "") : t.type) ?? "tool";
+                    const args = t.args || t.input;
+                    let executingLabel = `Omni AI is executing ${toolNameDisplay}...`;
+                    if (toolNameDisplay === "send_email" && args?.to) {
+                      executingLabel = `Omni AI is sending an email to ${args.to}...`;
+                    }
                     return (
                       <div key={callId} className="space-y-1.5">
                         <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.02] border border-white/10 text-[11px] font-mono text-slate-300">
                           {isComplete ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" /> : <Loader2 className="w-3.5 h-3.5 text-indigo-400 animate-spin shrink-0" />}
-                          <span>Tool: <strong className="text-indigo-300">{toolNameDisplay}</strong></span>
+                          <span>{isComplete ? `Executed Tool: ` : executingLabel}
+                            {isComplete && <strong className="text-indigo-300">{toolNameDisplay}</strong>}
+                          </span>
                         </div>
                         {resultMsg && (
                           <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 text-slate-200 leading-relaxed whitespace-pre-wrap font-sans text-xs shadow-md">

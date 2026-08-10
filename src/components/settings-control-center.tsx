@@ -27,6 +27,7 @@ import {
   AlertTriangle,
   X,
   RefreshCw,
+  Mail,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,6 +65,11 @@ export function SettingsControlCenter({
   const [finnhubKey, setFinnhubKey] = useState(initialSettings["finnhub_api_key"] || "");
   const [tmdbKey, setTmdbKey] = useState(initialSettings["tmdb_api_key"] || "");
   const [newsapiKey, setNewsapiKey] = useState(initialSettings["newsapi_key"] || "");
+
+  // Brevo Transactional Emailer state
+  const [brevoKey, setBrevoKey] = useState(initialSettings["brevo_api_key"] || "");
+  const [brevoSenderEmail, setBrevoSenderEmail] = useState(initialSettings["brevo_sender_email"] || "assistant@danar.site");
+  const [brevoSenderName, setBrevoSenderName] = useState(initialSettings["brevo_sender_name"] || "Personal OS Assistant");
 
   // Free-form LLM Model state
   const [customModel, setCustomModel] = useState(
@@ -307,6 +313,92 @@ export function SettingsControlCenter({
                 className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs rounded-2xl h-11 px-5 gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer"
               >
                 <Save className="w-3.5 h-3.5" /> Save External Pipeline Keys
+              </Button>
+            </form>
+
+            {/* Brevo SMTP Emailer Integration */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                startTransition(async () => {
+                  await saveMultipleSettingsAction({
+                    brevo_api_key: brevoKey,
+                    brevo_sender_email: brevoSenderEmail,
+                    brevo_sender_name: brevoSenderName,
+                  });
+                  triggerSavedFeedback("✓ Brevo SMTP Emailer settings saved successfully!");
+                });
+              }}
+              className="space-y-4 pt-4 border-t border-white/10"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <div>
+                  <h3 className="text-sm font-bold text-white font-mono flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-purple-400" /> BREVO TRANSACTIONAL EMAILER INTEGRATION
+                  </h3>
+                  <p className="text-xs text-slate-400 font-mono mt-0.5">
+                    Configure Brevo SMTP API Key for Omni-Emailer &amp; Automated Notifications
+                  </p>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.location.href = "/emailer/templates"}
+                  className="border-purple-500/30 text-purple-300 hover:bg-purple-500/10 font-mono text-xs rounded-xl h-8 px-3 gap-1"
+                >
+                  <Sparkles className="w-3 h-3 text-purple-400" /> Template Studio →
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300 flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-purple-400" /> Brevo API Key
+                  </label>
+                  <Input
+                    type="password"
+                    placeholder="xkeysib-..."
+                    value={brevoKey}
+                    onChange={(e) => setBrevoKey(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono focus:border-purple-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300 flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-indigo-400" /> Sender Email
+                  </label>
+                  <Input
+                    type="email"
+                    placeholder="assistant@danar.site"
+                    value={brevoSenderEmail}
+                    onChange={(e) => setBrevoSenderEmail(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300 flex items-center gap-1.5">
+                    <Bot className="w-3.5 h-3.5 text-emerald-400" /> Sender Name
+                  </label>
+                  <Input
+                    type="text"
+                    placeholder="Personal OS Assistant"
+                    value={brevoSenderName}
+                    onChange={(e) => setBrevoSenderName(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <Button
+                type="submit"
+                disabled={isPending}
+                className="bg-purple-600 hover:bg-purple-500 text-white font-mono text-xs rounded-2xl h-11 px-5 gap-2 shadow-lg shadow-purple-600/20 cursor-pointer"
+              >
+                <Save className="w-3.5 h-3.5" /> Save Brevo Emailer Settings
               </Button>
             </form>
           </div>

@@ -88,7 +88,18 @@ export const systemSettings = mysqlTable('system_settings', {
   id: int('id').autoincrement().primaryKey(),
   key: varchar('key', { length: 100 }).notNull().unique(),
   value: text('value').notNull(),
+  isSecret: boolean('is_secret').notNull().default(false),
   updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const emailTemplates = mysqlTable('email_templates', {
+  id: varchar('id', { length: 36 }).primaryKey(),
+  name: varchar('name', { length: 255 }).notNull(),
+  subject: varchar('subject', { length: 255 }).notNull(),
+  bodyHtml: text('body_html').notNull(),
+  variables: text('variables'), // JSON string array e.g. ["client_name", "invoice_link"]
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => new Date()),
 });
 
 export const aiSkills = mysqlTable('ai_skills', {
@@ -208,3 +219,5 @@ export type PinnedTicker = typeof pinnedTickers.$inferSelect;
 export type NewPinnedTicker = typeof pinnedTickers.$inferInsert;
 export type KnowledgeEntry = typeof knowledgeVault.$inferSelect;
 export type NewKnowledgeEntry = typeof knowledgeVault.$inferInsert;
+export type EmailTemplate = typeof emailTemplates.$inferSelect;
+export type NewEmailTemplate = typeof emailTemplates.$inferInsert;
