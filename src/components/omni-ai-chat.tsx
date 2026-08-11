@@ -446,9 +446,10 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
     if (lastMsg.role === 'assistant') {
       const toolInvocations = extractToolInvocations(lastMsg);
       const planTool = toolInvocations.find((t: any) => t.toolName === 'create_execution_plan');
-      if (planTool && (planTool.state === 'result' || planTool.result || planTool.output)) {
+      if (planTool) {
         const rawSteps = planTool.args?.execution_plan || planTool.input?.execution_plan || planTool.result?.execution_plan || planTool.args?.steps || planTool.input?.steps || planTool.result?.steps;
         if (Array.isArray(rawSteps) && rawSteps.length > 0) {
+
           const validSteps = rawSteps.filter((s: any) => s.target_tool !== 'none' && s.action_type !== 'none');
           const stepsToUse = validSteps.length > 0 ? validSteps : rawSteps;
 

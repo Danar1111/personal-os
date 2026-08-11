@@ -421,7 +421,8 @@ export async function POST(req: Request) {
     tools: {
       // ── ORCHESTRATION ────────────────────────────────────────────────────────────
       create_execution_plan: makeTool({
-        description: "Creates a structured execution plan for initial user requests requiring tool actions. MUST ONLY be called once on the initial user turn. DO NOT call this tool if responding to [SYSTEM_STEPPER] or when executing individual plan steps.",
+        description: "Creates a structured execution plan for initial user requests requiring tool actions. MUST be called first before executing ANY tool on the initial turn. Single tool requests MUST generate 2 steps (Step 1: target tool, Step 2: final_response). Multi-tool requests MUST generate N+1 steps (Step 1: tool A, Step 2: tool B, Step N+1: final_response). DO NOT call this tool when responding to [SYSTEM_STEPPER] or when executing individual plan steps.",
+
 
         inputSchema: jsonSchema({
           type: "object",
