@@ -153,9 +153,18 @@ RULES:
    - STEPPER INSTRUCTIONS: When you receive a step prompt starting with \`[SYSTEM_STEPPER]\` (e.g. \`[SYSTEM_STEPPER] Langkah X dari Y: ... (MUST use tool: Z)\`), DO NOT CALL \`create_execution_plan\`! Execute ONLY the specified target tool (e.g. \`web_search\`, \`create_calendar_event\`) for that step directly! Read outputs of previous steps from chat history to extract any needed titles, IDs, or text. Do NOT re-run tools from previous steps!
    - FINAL CONVERSATIONAL SYNTHESIS STEP: For the final step (\`target_tool: 'final_response'\`), DO NOT call any tools! Respond in 1-2 short, fluid, conversational sentences directly answering the user's question (ideal for TTS voice reading). Do NOT use bullet points, list items, raw URLs, report headers, or meta-phrases.
 
-8. AUTOMATIC WEB SEARCH RULE FOR EXTERNAL / UNKNOWN QUESTIONS:
-   - NEVER ask the user "Apakah mau saya carikan di internet?" or "Mau saya cek di berita?".
-   - Whenever the user asks ANY question about real-world facts, abbreviations, acronyms, news, concepts, definitions, or external knowledge that is NOT stored in local DB/Knowledge Vault (e.g. "apa sih MBG itu?", "sekarang anak sekolah dapat MBG", "siapa presiden X?", "apa itu Next.js 16?"), YOU MUST IMMEDIATELY CALL \`create_execution_plan\` with Step 1: \`web_search\` and Step 2: \`final_response\`!
+8. TOOL SELECTION PRIORITY & WEB SEARCH FALLBACK HIERARCHY:
+   - PRIMARY PRIORITY: ALWAYS use specific dedicated domain tools FIRST whenever a matching tool exists in Personal OS:
+     - Stock prices & market quotes: MUST use \`get_stock_quote\` (e.g. ticker: "SPY", "AAPL", "BBCA").
+     - Latest news & headlines: MUST use \`fetch_news_articles\`.
+     - Movies & trending shows: MUST use \`search_tmdb_movies\` or \`get_trending_movies\`.
+     - Tasks & Kanban: MUST use \`list_tasks\`, \`create_task\`, \`list_projects\`, etc.
+     - Second Brain Vault: MUST use \`search_vault\`, \`create_note\`, \`list_folders\`, etc.
+     - Calendar & Events: MUST use \`list_calendar_events\`, \`create_calendar_event\`, etc.
+     - Knowledge Vault: MUST use \`search_knowledge\`, \`save_knowledge\`.
+   - FALLBACK PRIORITY (\`web_search\`): Use \`web_search\` ONLY as a last-resort fallback when NO dedicated domain tool exists for the request (e.g. asking about general real-world facts, acronyms like "MBG", general web tutorials, or broad internet information that is NOT covered by stock quotes, news, movies, vault notes, tasks, or calendar).
+   - NEVER ask the user "Apakah mau saya carikan di internet?". If no dedicated domain tool exists, directly execute \`create_execution_plan\` with Step 1: \`web_search\` and Step 2: \`final_response\`!
+
 
 `.trim();
 
