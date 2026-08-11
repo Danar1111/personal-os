@@ -1570,8 +1570,9 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
                       code({ node, inline, className, children, ...props }: any) {
                         const match = /language-(\w+)/.exec(className || "");
                         const codeString = String(children).replace(/\n$/, "");
-                        return !inline && match ? (
-                          <CodeBlockWithCopy language={match[1]} code={codeString} style={vscDarkPlus as any} />
+                        const lang = match ? match[1] : "text";
+                        return !inline ? (
+                          <CodeBlockWithCopy language={lang} code={codeString} style={vscDarkPlus as any} />
                         ) : (
                           <code className="bg-white/10 text-indigo-300 font-mono text-xs px-1.5 py-0.5 rounded-lg border border-white/10" {...props}>
                             {children}
@@ -1958,8 +1959,9 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
                       code({ node, inline, className, children, ...props }: any) {
                         const match = /language-(\w+)/.exec(className || "");
                         const codeString = String(children).replace(/\n$/, "");
-                        return !inline && match ? (
-                          <CodeBlockWithCopy language={match[1]} code={codeString} style={vscDarkPlus as any} />
+                        const lang = match ? match[1] : "text";
+                        return !inline ? (
+                          <CodeBlockWithCopy language={lang} code={codeString} style={vscDarkPlus as any} />
                         ) : (
                           <code className="bg-white/10 text-indigo-300 font-mono text-xs px-2 py-0.5 rounded-lg border border-white/10" {...props}>
                             {children}
