@@ -293,10 +293,10 @@ function renderFormattedText(text: string, onInternalLinkClick: () => void, zenR
             key={`link-${matchIndex}`}
             href={rawUrl}
             onClick={onInternalLinkClick}
-            className="inline-flex items-center gap-1 font-semibold text-indigo-400 hover:text-indigo-300 underline font-mono mx-1 px-2 py-0.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 transition-all hover:bg-indigo-500/20"
+            className="inline-flex items-center gap-1 font-semibold text-indigo-400 hover:text-indigo-300 underline font-mono my-0.5 px-2 py-0.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 transition-all hover:bg-indigo-500/20 max-w-full min-w-0 overflow-hidden align-middle"
           >
-            <span>{label}</span>
-            <ExternalLink className="w-3 h-3 inline shrink-0 text-indigo-400" />
+            <span className="truncate max-w-full">{label}</span>
+            <ExternalLink className="w-3 h-3 inline shrink-0 text-indigo-400 ml-0.5" />
           </a>
         );
       } else {
@@ -306,10 +306,10 @@ function renderFormattedText(text: string, onInternalLinkClick: () => void, zenR
             href={rawUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 underline font-mono mx-1"
+            className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 underline font-mono my-0.5 max-w-full min-w-0 overflow-hidden align-middle"
           >
-            <span>{label}</span>
-            <ExternalLink className="w-3 h-3 inline shrink-0" />
+            <span className="truncate max-w-full">{label}</span>
+            <ExternalLink className="w-3 h-3 inline shrink-0 ml-0.5" />
           </a>
         );
       }
@@ -322,8 +322,8 @@ function renderFormattedText(text: string, onInternalLinkClick: () => void, zenR
         parts.push(zenPill(`url-${matchIndex}`, rawUrl));
       } else if (isImage) {
         parts.push(
-          <span key={`url-img-${matchIndex}`} className="block my-2 space-y-1">
-            <a href={rawUrl} target="_blank" rel="noopener noreferrer" className="block w-fit">
+          <span key={`url-img-${matchIndex}`} className="block my-2 space-y-1 max-w-full overflow-hidden">
+            <a href={rawUrl} target="_blank" rel="noopener noreferrer" className="block w-fit max-w-full">
               <img
                 src={rawUrl}
                 alt="Image"
@@ -334,10 +334,10 @@ function renderFormattedText(text: string, onInternalLinkClick: () => void, zenR
               href={rawUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 underline font-mono text-[11px] px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20"
+              className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 underline font-mono text-[11px] px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 max-w-full min-w-0 overflow-hidden"
             >
-              <span className="truncate max-w-md">{rawUrl}</span>
-              <ExternalLink className="w-3 h-3 inline shrink-0" />
+              <span className="truncate max-w-full">{rawUrl}</span>
+              <ExternalLink className="w-3 h-3 inline shrink-0 ml-0.5" />
             </a>
           </span>
         );
@@ -348,10 +348,10 @@ function renderFormattedText(text: string, onInternalLinkClick: () => void, zenR
             href={rawUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 underline font-mono mx-1 break-all"
+            className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 underline font-mono my-0.5 max-w-full min-w-0 overflow-hidden align-middle"
           >
-            <span className="truncate max-w-md">{rawUrl}</span>
-            <ExternalLink className="w-3.5 h-3.5 inline shrink-0" />
+            <span className="truncate max-w-full">{rawUrl}</span>
+            <ExternalLink className="w-3.5 h-3.5 inline shrink-0 ml-0.5" />
           </a>
         );
       }
@@ -369,14 +369,15 @@ function renderFormattedText(text: string, onInternalLinkClick: () => void, zenR
             key={`route-${matchIndex}`}
             href={rawRoute}
             onClick={onInternalLinkClick}
-            className="inline-flex items-center gap-1 font-semibold text-indigo-400 hover:text-indigo-300 underline font-mono mx-1 px-2 py-0.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 transition-all hover:bg-indigo-500/20"
+            className="inline-flex items-center gap-1 font-semibold text-indigo-400 hover:text-indigo-300 underline font-mono my-0.5 px-2 py-0.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 transition-all hover:bg-indigo-500/20 max-w-full min-w-0 overflow-hidden align-middle"
           >
-            <span>Open {pageTitle} ({rawRoute})</span>
-            <ExternalLink className="w-3 h-3 inline shrink-0 text-indigo-400" />
+            <span className="truncate max-w-full">Open {pageTitle} ({rawRoute})</span>
+            <ExternalLink className="w-3 h-3 inline shrink-0 text-indigo-400 ml-0.5" />
           </a>
         );
       }
     }
+
 
     lastIndex = combinedRegex.lastIndex;
   }
@@ -864,12 +865,13 @@ function ChatDialogContent({
                   <div className="w-7 h-7 rounded-xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-indigo-300 shrink-0 mt-0.5">
                     <Bot className="w-4 h-4" />
                   </div>
-                  <div className="space-y-2 max-w-[85%]">
+                  <div className="space-y-2 max-w-[85%] min-w-0 overflow-hidden">
                     {round.text && (
-                      <div className="p-3.5 rounded-2xl leading-relaxed whitespace-pre-wrap font-sans text-xs shadow-md bg-white/[0.04] border border-white/10 text-slate-200 rounded-tl-none">
+                      <div className="p-3.5 rounded-2xl leading-relaxed whitespace-pre-wrap font-sans text-xs shadow-md bg-white/[0.04] border border-white/10 text-slate-200 rounded-tl-none break-words overflow-hidden min-w-0 max-w-full">
                         {renderFormattedText(round.text, () => setIsOpen(false), zenRunning)}
                       </div>
                     )}
+
                     {round.tools.map((t: any, stepIdx: number) => {
                       const isComplete = t.state === "output-available" || t.state === "result" || !!t.result || !!t.output;
                       const callId = t.toolCallId ?? t.id ?? `${m.id}-${roundIdx}-${stepIdx}`;
