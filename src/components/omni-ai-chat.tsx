@@ -449,14 +449,18 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
       if (planTool && (planTool.state === 'result' || planTool.result || planTool.output)) {
         const rawSteps = planTool.args?.execution_plan || planTool.input?.execution_plan || planTool.result?.execution_plan || planTool.args?.steps || planTool.input?.steps || planTool.result?.steps;
         if (Array.isArray(rawSteps) && rawSteps.length > 0) {
+          const validSteps = rawSteps.filter((s: any) => s.target_tool !== 'none' && s.action_type !== 'none');
+          const stepsToUse = validSteps.length > 0 ? validSteps : rawSteps;
+
           const planId = planTool.toolCallId || planTool.id || `plan-${messages.length}`;
-          if (!engineState || engineState.planId !== planId) {
+          if (!engineState || (engineState.status !== 'running' && engineState.planId !== planId)) {
+
             // Automatically append a final JARVIS synthesis step (N+1) if not already present
-            const hasFinalStep = rawSteps.some((s: any) => s.action_type === 'final_response' || s.target_tool === 'final_response');
-            const fullSteps = hasFinalStep ? rawSteps : [
-              ...rawSteps,
+            const hasFinalStep = stepsToUse.some((s: any) => s.action_type === 'final_response' || s.target_tool === 'final_response');
+            const fullSteps = hasFinalStep ? stepsToUse : [
+              ...stepsToUse,
               {
-                step_id: rawSteps.length + 1,
+                step_id: stepsToUse.length + 1,
                 action_type: 'final_response',
                 target_tool: 'final_response',
                 instruction: 'Berikan konfirmasi akhir dalam 1-2 kalimat percakapan yang alami, hangat, dan mengalir (tanpa poin-poin/bullet list, tanpa judul laporan, dan tanpa kata-kata meta). Langsung katakan konfirmasi hasil ke pengguna secara singkat.',
@@ -473,6 +477,7 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
             isDispatchingRef.current = false;
           }
         }
+
       }
     }
   }, [messages, status, engineState]);
@@ -529,12 +534,15 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
           }
 
           let stepMsg = `[SYSTEM_STEPPER] Langkah ${stepNum} dari ${engineState.steps.length}: ${instruction}`;
-          if (toolName && toolName !== "tool_call" && toolName !== "reasoning") {
+          if (toolName === "final_response" || toolName === "final_response_step") {
+            stepMsg = `[SYSTEM_STEPPER] Langkah ${stepNum} dari ${engineState.steps.length} (LANGKAH TERAKHIR / SINTESIS HASIL): ${instruction}. JANGAN memanggil tool apa pun! Berikan konfirmasi hasil 1-2 kalimat percakapan yang alami dan ramah kepada pengguna secara langsung.`;
+          } else if (toolName && toolName !== "tool_call" && toolName !== "reasoning") {
             stepMsg += ` (MUST use tool: ${toolName})`;
           }
           if (prevContextSummary) {
             stepMsg += ` [Data/Result dari Langkah Sebelumnya: "${prevContextSummary}"]`;
           }
+
 
           isDispatchingRef.current = true;
           setEngineState(prev => prev ? { ...prev, currentIndex: prev.currentIndex + 1 } : null);
@@ -988,17 +996,22 @@ function ChatDialogContent({
                   autoFocus
                   rows={1}
                   value={input}
-                  disabled={isBusy}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); } }}
-                  placeholder={placeholderText}
-                  className="flex-1 bg-white/[0.04] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-2xl min-h-[44px] max-h-[140px] py-3 px-4 font-mono focus-visible:ring-indigo-500/40 resize-none scrollbar-thin disabled:opacity-50 disabled:cursor-not-allowed"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      if (!isBusy) sendMsg();
+                    }
+                  }}
+                  placeholder="Ask Omni AI assistant... (Enter to send, Shift+Enter for new line)"
+                  className="flex-1 bg-white/[0.04] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-2xl min-h-[44px] max-h-[140px] py-3 px-4 font-mono focus-visible:ring-indigo-500/40 resize-none scrollbar-thin"
                 />
                 <Button type="submit" disabled={isBusy || !input.trim()} className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl h-11 px-4 cursor-pointer shadow-lg shadow-indigo-600/30 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed">
                   <Send className="w-4 h-4" />
                 </Button>
               </>
             );
+
           })()}
         </div>
         <div className="flex items-center justify-between px-2 text-[10px] font-mono text-slate-500">

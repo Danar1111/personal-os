@@ -121,29 +121,126 @@ RULES:
      - For specific registered apps in App Launcher (e.g., TMDB, Google News, n8n, etc.), ALWAYS format them as direct external Markdown links using their target URL: "[App Name](https://target-app-url.com)".
    - IMAGE ATTACHMENT & PREVIEW RULE:
      - When referencing or returning an image or photo attachment (from Local Drive, Asset Vault, or external web link), format it as "![Image Title](url)" or "[Image Title](url)" so that a visual image preview renders directly inside the chat bubble!
-4. SMART FLEXIBLE CONFIRMATION & DELETION RULE:
-   - When the user asks to delete or remove an item (task, note, calendar event, transaction, asset, skill, folder, project):
-   - If the user has NOT confirmed yet, ask simply in 1 short natural sentence (e.g. "Apakah kamu yakin ingin menghapus proyek **[testing](/tasks)** beserta semua tugasnya?").
-   - If the user responds with ANY affirmative intent (such as "tolong hapus", "hapus aja", "ya", "ya hapus", "yes", "ok", "lanjutkan", "bisa"), IMMEDIATELY EXECUTE THE DELETION TOOL (delete_project, delete_task, delete_note, etc.)!
-   - NEVER demand an exact rigid literal phrase (like requiring strictly 'Ya, hapus'). Understand natural human language flexibly!
+4. MANDATORY CONFIRMATION FOR DELETIONS:
+   - CRITICAL DELETION RULE: BEFORE executing ANY deletion tool (\`delete_calendar_event\`, \`delete_task\`, \`delete_note\`, \`delete_project\`, \`delete_folder\`, \`delete_transaction\`, \`delete_asset\`), YOU MUST ASK FOR CONFIRMATION FIRST!
+   - If the user asks to delete or remove an item (e.g. "hapus event X", "hapus tugas Y"), DO NOT call any delete tool and DO NOT create a "none" or "ask confirmation" step in \`execution_plan\`!
+   - Instead, on the first turn, respond directly with 1 short natural confirmation question: "Apakah Anda yakin ingin menghapus [item] **[Nama]**?" and STOP!
+   - ONLY IF the user's latest message is an affirmative confirmation (e.g. "ya", "ya hapus", "lanjutkan", "yes", "ok", "hapus aja", "konfirmasi"), THEN execute the delete tool (or generate the deletion plan).
 5. LINKED REFERENCES FORMAT:
    - References in Tasks and Skills use standard markers in the description: [REF:asset:Title], [REF:drive:Title], [REF:note:Title], [REF:link:https://...]. Use add_task_reference or add_skill_reference to attach these easily.
-6. NATURAL, INTELLIGENT & ADAPTIVE VOICE STYLE:
-   - Be smart, adaptive, and human-like! Balance conciseness with helpfulness.
-   - For simple tasks and actions, answer directly in 1-2 natural sentences without stiff scripts or repeating robotic templates.
-   - For multi-item results (listing tasks, news, movies), format them clearly with bullet points.
-   - Match the user's tone and language naturally in a warm, competent, and fluid voice.
-7. PLAN-AND-EXECUTE ARCHITECTURE:
-   - If the user's prompt contains multiple chained tasks (e.g. "search for X THEN send an email about it", or "search movie THEN add to watchlist THEN create task"), YOU MUST call the \`create_execution_plan\` tool first to generate the structured plan JSON.
-   - CRITICAL: Each step instruction in \`execution_plan\` MUST be a direct action command for THAT step specifically. Do NOT write conditional or prelude phrases like "Setelah memperoleh X..." or "First get X...". Specify the exact target_tool for each step.
-   - CRITICAL: When you call \`create_execution_plan\`, YOU MUST STOP IMMEDIATELY. Do NOT call any other tool or generate action text in the same turn!
-   - STEPPER INSTRUCTIONS: When you receive a step prompt starting with \`[SYSTEM_STEPPER]\` (e.g. \`[SYSTEM_STEPPER] Langkah X dari Y: ...\`), execute ONLY the tool required for that specific step. Read outputs of previous steps from chat history to extract any needed titles, IDs, or text. Do NOT re-run tools from previous steps!
-   - FINAL CONVERSATIONAL SYNTHESIS STEP: For the final step (target_tool: 'final_response'), DO NOT call any tools! Respond in 1-2 fluid, conversational sentences speaking directly to the user (ideal for TTS). Do NOT use bullet points, list items, report headers, or meta-phrases (e.g. NEVER say "berikut konfirmasi...", "dengan nuansa...", or "jika Anda ingin saya bisa..."). Speak naturally like a real human assistant!
+6. MANDATORY CONVERSATIONAL RESPONSE (+1) RULE (TTS FRIENDLY):
+   - MANDATORY: AFTER executing ANY tool (such as \`create_calendar_event\`, \`create_task\`, \`send_email\`, \`web_search\`, \`delete_calendar_event\`), YOU MUST ALWAYS GENERATE A FINAL CONVERSATIONAL TEXT RESPONSE in 1-2 fluid, short, warm sentences speaking directly to the user!
+   - STRICT TTS CONSTRAINTS:
+     - Keep the final response SHORT (strictly 1-2 sentences directly answering the question).
+     - NEVER output long essays, bullet point lists, or long raw URLs (e.g. NEVER list "https://djpb.kemenkeu.go.id/...") in the final text response!
+     - The tool output bubble already displays the search sources/links above. Your final text is meant for TTS voice reading, so make it concise, natural, and direct to the point!
+7. MANDATORY PLAN-AND-EXECUTE ARCHITECTURE FOR ALL TOOL REQUESTS:
+   - MANDATORY EXECUTION PLAN RULE: Whenever the user's prompt requires calling ANY tool (even just 1 tool like \`create_calendar_event\`, \`create_task\`, \`web_search\`, \`send_email\`, \`add_to_watchlist\`, \`list_tasks\`, etc.), YOU MUST ALWAYS CALL \`create_execution_plan\` FIRST!
+   - CRITICAL EXCEPTIONS:
+     1. Only skip \`create_execution_plan\` if the user is having casual conversation without any tool actions (e.g. "Halo", "Siapa kamu?", "Terima kasih").
+     2. NEVER call \`create_execution_plan\` if you are currently responding to a prompt starting with \`[SYSTEM_STEPPER]\`!
+   - FOR SINGLE-TOOL REQUESTS (e.g. "buatkan event jam 3 lari sore" or "apa sih MBG itu?"):
+     - You MUST call \`create_execution_plan\` with exactly 2 steps:
+       - Step 1: \`create_calendar_event\` or \`web_search\` (Target Tool: target tool name)
+       - Step 2 (+1): \`final_response\` (Target Tool: \`final_response\`)
+   - FOR MULTI-TOOL REQUESTS (e.g. "buat event X kemudian kirim email Y"):
+     - You MUST call \`create_execution_plan\` with N+1 steps:
+       - Step 1: \`create_calendar_event\` (Target Tool: \`create_calendar_event\`)
+       - Step 2: \`send_email\` (Target Tool: \`send_email\`)
+       - Step 3 (+1): \`final_response\` (Target Tool: \`final_response\`)
+   - DO NOT CREATE A STEP FOR ASKING DELETION CONFIRMATION! \`execution_plan\` steps MUST only be direct tool actions or \`final_response\`. If deletion confirmation is needed, ask for confirmation BEFORE generating \`create_execution_plan\`!
+   - CRITICAL: When calling \`create_execution_plan\`, YOU MUST STOP IMMEDIATELY. Do NOT call any other tool or generate action text in the same turn!
+   - STEPPER INSTRUCTIONS: When you receive a step prompt starting with \`[SYSTEM_STEPPER]\` (e.g. \`[SYSTEM_STEPPER] Langkah X dari Y: ... (MUST use tool: Z)\`), DO NOT CALL \`create_execution_plan\`! Execute ONLY the specified target tool (e.g. \`web_search\`, \`create_calendar_event\`) for that step directly! Read outputs of previous steps from chat history to extract any needed titles, IDs, or text. Do NOT re-run tools from previous steps!
+   - FINAL CONVERSATIONAL SYNTHESIS STEP: For the final step (\`target_tool: 'final_response'\`), DO NOT call any tools! Respond in 1-2 short, fluid, conversational sentences directly answering the user's question (ideal for TTS voice reading). Do NOT use bullet points, list items, raw URLs, report headers, or meta-phrases.
+
+8. AUTOMATIC WEB SEARCH RULE FOR EXTERNAL / UNKNOWN QUESTIONS:
+   - NEVER ask the user "Apakah mau saya carikan di internet?" or "Mau saya cek di berita?".
+   - Whenever the user asks ANY question about real-world facts, abbreviations, acronyms, news, concepts, definitions, or external knowledge that is NOT stored in local DB/Knowledge Vault (e.g. "apa sih MBG itu?", "sekarang anak sekolah dapat MBG", "siapa presiden X?", "apa itu Next.js 16?"), YOU MUST IMMEDIATELY CALL \`create_execution_plan\` with Step 1: \`web_search\` and Step 2: \`final_response\`!
+
 `.trim();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Scrape web search results using DuckDuckGo HTML endpoint (free, no API key required) */
+async function searchDuckDuckGo(query: string, limit = 5) {
+  try {
+    const res = await fetch("https://html.duckduckgo.com/html/", {
+      method: "POST",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+      },
+      body: new URLSearchParams({ q: query, b: "" }).toString(),
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP error ${res.status}`);
+    }
+
+    const html = await res.text();
+    const results: { title: string; url: string; snippet: string }[] = [];
+
+    // Match result blocks in DuckDuckGo HTML structure
+    const resultBlockRegex = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
+
+    let match;
+    while ((match = resultBlockRegex.exec(html)) !== null && results.length < limit) {
+      let rawUrl = match[1];
+      const rawTitle = match[2];
+      const rawSnippet = match[3];
+
+      // Decode DDG redirected URL (uddg=...)
+      if (rawUrl.includes("uddg=")) {
+        const uddgMatch = rawUrl.match(/uddg=([^&]+)/);
+        if (uddgMatch && uddgMatch[1]) {
+          rawUrl = decodeURIComponent(uddgMatch[1]);
+        }
+      } else if (rawUrl.startsWith("//")) {
+        rawUrl = "https:" + rawUrl;
+      }
+
+      // Clean HTML tags from title and snippet
+      const cleanTitle = rawTitle.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+      const cleanSnippet = rawSnippet.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+
+      if (cleanTitle && rawUrl.startsWith("http")) {
+        results.push({
+          title: cleanTitle,
+          url: rawUrl,
+          snippet: cleanSnippet,
+        });
+      }
+    }
+
+    // Fallback: If result__a regex didn't match, parse result__url links
+    if (results.length === 0) {
+      const altRegex = /<a[^>]*class="result__url"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+      let altMatch;
+      while ((altMatch = altRegex.exec(html)) !== null && results.length < limit) {
+        let rawUrl = altMatch[1];
+        if (rawUrl.includes("uddg=")) {
+          const uddgMatch = rawUrl.match(/uddg=([^&]+)/);
+          if (uddgMatch && uddgMatch[1]) rawUrl = decodeURIComponent(uddgMatch[1]);
+        }
+        const text = altMatch[2].replace(/<[^>]+>/g, "").trim();
+        if (rawUrl.startsWith("http")) {
+          results.push({ title: text || rawUrl, url: rawUrl, snippet: "Web search result" });
+        }
+      }
+    }
+
+    return results;
+  } catch (e: any) {
+    console.error("[DDG Search Error]:", e?.message || e);
+    return [];
+  }
+}
+
+
 
 /** Extract plain text from any AI SDK UIMessage format (parts[] or content string) */
 function getMessageText(m: any): string {
@@ -320,7 +417,7 @@ export async function POST(req: Request) {
     tools: {
       // ── ORCHESTRATION ────────────────────────────────────────────────────────────
       create_execution_plan: makeTool({
-        description: "Creates a structured execution plan for multi-step or chained user requests. MUST be called first when a user asks for 2 or more sequential tasks. DO NOT call any other tools in the same response turn.",
+        description: "Creates a structured execution plan for ANY request that requires calling tools (whether 1 tool or multiple tools). MUST be called first before executing ANY tool. Single tool requests MUST generate 2 steps (Step 1: target tool, Step 2: final_response). DO NOT call for casual chatting without tools.",
         inputSchema: jsonSchema({
           type: "object",
           properties: {
@@ -2813,8 +2910,46 @@ export async function POST(req: Request) {
           }
         },
       }),
+
+      // ── WEB SEARCH ──────────────────────────────────────────────────────────────
+      web_search: makeTool({
+        description: "Searches the web via DuckDuckGo for live facts, current events, technical documentation, tutorial links, or web references. MUST be called when user asks about external web information not in local system.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Search keywords or topic verbatim" },
+            limit: { type: "number", description: "Number of search results to return (default 5)" },
+          },
+          required: ["query"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const query = String(args?.query || "").trim();
+            const limit = Number(args?.limit) || 5;
+            if (!query) return { success: false, message: "Query search tidak boleh kosong." };
+
+            const results = await searchDuckDuckGo(query, limit);
+            if (results.length === 0) {
+              return { success: true, message: `Pencarian web untuk "${query}" tidak menemukan hasil relevan.` };
+            }
+
+            const formatted = results.map((r, i) =>
+              `${i + 1}. 🌐 **[${r.title}](${r.url})**\n${r.snippet}`
+            ).join("\n\n");
+
+            return {
+              success: true,
+              message: `🔍 Web Search Results for "${query}" (${results.length} sources):\n\n${formatted}`,
+              data: results,
+            };
+          } catch (e: any) {
+            return { success: false, message: `Gagal melakukan web search: ${e.message}` };
+          }
+        },
+      }),
     },
   });
+
 
   return result.toUIMessageStreamResponse();
 }
