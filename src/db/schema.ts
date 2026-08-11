@@ -219,5 +219,16 @@ export type PinnedTicker = typeof pinnedTickers.$inferSelect;
 export type NewPinnedTicker = typeof pinnedTickers.$inferInsert;
 export type KnowledgeEntry = typeof knowledgeVault.$inferSelect;
 export type NewKnowledgeEntry = typeof knowledgeVault.$inferInsert;
+export const notifications = mysqlTable('notifications', {
+  id: varchar('id', { length: 36 }).primaryKey(),
+  title: varchar('title', { length: 255 }).notNull(),
+  message: text('message').notNull(),
+  type: varchar('type', { length: 50 }).notNull().default('info'), // 'info' | 'success' | 'warning' | 'error'
+  isRead: boolean('is_read').notNull().default(false),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
 export type EmailTemplate = typeof emailTemplates.$inferSelect;
 export type NewEmailTemplate = typeof emailTemplates.$inferInsert;
+export type Notification = typeof notifications.$inferSelect;
+export type NewNotification = typeof notifications.$inferInsert;

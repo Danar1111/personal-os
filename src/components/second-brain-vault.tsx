@@ -108,6 +108,61 @@ import {
 import { cn } from "@/lib/utils";
 import { FolderTree } from "@/components/vault/FolderTree";
 
+function CodeBlockWithCopy({ language, code, style }: { language: string; code: string; style?: any }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    try {
+      navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      console.error("Failed to copy code:", e);
+    }
+  };
+
+  return (
+    <div className="relative group my-3.5 rounded-2xl overflow-hidden border border-white/15 shadow-xl bg-[#0d0c12]">
+      {/* Header Bar */}
+      <div className="flex items-center justify-between px-4 py-1.5 bg-white/[0.04] border-b border-white/10 font-mono text-[11px] text-slate-400">
+        <span className="flex items-center gap-1.5 text-indigo-300 font-semibold lowercase">
+          <Code className="w-3.5 h-3.5 text-indigo-400" />
+          {language || "code"}
+        </span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white transition-all cursor-pointer border border-white/10"
+        >
+          {copied ? (
+            <>
+              <Check className="w-3 h-3 text-emerald-400" />
+              <span className="text-emerald-300 text-[10px] font-bold">Copied!</span>
+            </>
+          ) : (
+            <>
+              <Copy className="w-3 h-3 text-slate-400" />
+              <span className="text-[10px]">Copy Code</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Code Syntax Highlight */}
+      <SyntaxHighlighter
+        style={style || (vscDarkPlus as any)}
+        language={language}
+        PreTag="div"
+        customStyle={{ margin: 0, padding: "12px 16px", background: "transparent" }}
+        className="text-xs font-mono scrollbar-thin"
+      >
+        {code}
+      </SyntaxHighlighter>
+    </div>
+  );
+}
+
+
 interface SecondBrainVaultProps {
   initialNotes: Note[];
   initialFolders: Folder[];
@@ -115,6 +170,9 @@ interface SecondBrainVaultProps {
 }
 
 export function SecondBrainVault({ initialNotes, initialFolders, initialAssets = [] }: SecondBrainVaultProps) {
+
+
+
   const [isPending, startTransition] = useTransition();
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
@@ -1511,22 +1569,16 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
                       },
                       code({ node, inline, className, children, ...props }: any) {
                         const match = /language-(\w+)/.exec(className || "");
+                        const codeString = String(children).replace(/\n$/, "");
                         return !inline && match ? (
-                          <SyntaxHighlighter
-                            style={vscDarkPlus as any}
-                            language={match[1]}
-                            PreTag="div"
-                            className="rounded-2xl border border-white/15 my-3 text-xs shadow-lg"
-                            {...props}
-                          >
-                            {String(children).replace(/\n$/, "")}
-                          </SyntaxHighlighter>
+                          <CodeBlockWithCopy language={match[1]} code={codeString} style={vscDarkPlus as any} />
                         ) : (
                           <code className="bg-white/10 text-indigo-300 font-mono text-xs px-1.5 py-0.5 rounded-lg border border-white/10" {...props}>
                             {children}
                           </code>
                         );
                       },
+
                       img({ src, alt }: any) {
                         if (!src) return null;
                         const ytId = extractYouTubeId(src);
@@ -1905,22 +1957,16 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
                       },
                       code({ node, inline, className, children, ...props }: any) {
                         const match = /language-(\w+)/.exec(className || "");
+                        const codeString = String(children).replace(/\n$/, "");
                         return !inline && match ? (
-                          <SyntaxHighlighter
-                            style={vscDarkPlus as any}
-                            language={match[1]}
-                            PreTag="div"
-                            className="rounded-2xl border border-white/15 my-4 text-xs shadow-2xl"
-                            {...props}
-                          >
-                            {String(children).replace(/\n$/, "")}
-                          </SyntaxHighlighter>
+                          <CodeBlockWithCopy language={match[1]} code={codeString} style={vscDarkPlus as any} />
                         ) : (
                           <code className="bg-white/10 text-indigo-300 font-mono text-xs px-2 py-0.5 rounded-lg border border-white/10" {...props}>
                             {children}
                           </code>
                         );
                       },
+
                       a({ href, children, ...props }: any) {
                         if (href && href.startsWith("#wiki-link:")) {
                           const targetTitle = decodeURIComponent(href.replace("#wiki-link:", ""));

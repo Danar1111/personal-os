@@ -10,7 +10,7 @@ import { SearchTrigger } from "@/components/search-trigger";
 import { OmniAiTrigger } from "@/components/omni-ai-trigger";
 import { DbStatusBadge } from "@/components/db-status-badge";
 import { NavigationProgress } from "@/components/navigation-progress";
-import { Bell } from "lucide-react";
+import { NotificationBell } from "@/components/layout/NotificationBell";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -39,6 +39,40 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`dark ${inter.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                if (typeof window !== 'undefined') {
+                  try {
+                    var observer = new MutationObserver(function(mutations) {
+                      for (var i = 0; i < mutations.length; i++) {
+                        var m = mutations[i];
+                        if (m.type === 'attributes' && m.attributeName === 'bis_skin_checked') {
+                          m.target.removeAttribute('bis_skin_checked');
+                        }
+                      }
+                    });
+                    observer.observe(document.documentElement, {
+                      attributes: true,
+                      subtree: true,
+                      attributeFilter: ['bis_skin_checked']
+                    });
+                  } catch (e) {}
+
+                  const _err = console.error;
+                  console.error = function(...args) {
+                    const str = args.map(a => (typeof a === 'object' ? String(a?.message || a?.stack || '') : String(a))).join(' ');
+                    if (str.includes('bis_skin_checked')) return;
+                    _err.apply(console, args);
+                  };
+                }
+              })();
+            `,
+          }}
+        />
+      </head>
       <body className="font-sans bg-[#0a0a0b] text-[#e5e2e3] antialiased min-h-screen flex overflow-hidden" suppressHydrationWarning>
         <PinLockProvider>
         {/* Page navigation loading pill */}
@@ -54,7 +88,7 @@ export default function RootLayout({
         <OmniAIChat />
 
         {/* Main Content Hub */}
-        <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden" suppressHydrationWarning>
           {/* Top Bar Header */}
           <header className="h-16 border-b border-white/10 glass-panel px-6 flex items-center justify-between shrink-0 z-20">
             {/* Command Search */}
@@ -66,11 +100,7 @@ export default function RootLayout({
 
               <DbStatusBadge />
 
-              <button className="relative p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-colors">
-                <Bell className="w-4 h-4" />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-indigo-500 animate-ping"></span>
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-indigo-500"></span>
-              </button>
+              <NotificationBell />
 
               <HeaderCountdown />
             </div>
