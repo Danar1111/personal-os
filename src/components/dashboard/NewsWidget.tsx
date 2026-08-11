@@ -9,15 +9,11 @@ import { NewsListClient, NewsArticle } from "./NewsListClient";
 
 async function fetchNewsData() {
   try {
-    const [row] = await db
-      .select()
-      .from(systemSettings)
-      .where(eq(systemSettings.key, "newsapi_key"));
-
-    const apiKey = row?.value?.trim();
+    const apiKey = process.env.NEWSAPI_KEY || process.env.GNEWS_API_KEY;
     if (!apiKey) {
       return { articles: [], missingKey: true };
     }
+
 
     // Try GNews API first
     let res = await fetch(

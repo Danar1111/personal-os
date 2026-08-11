@@ -54,19 +54,15 @@ export async function analyzeMarketSentiment(query: string) {
   }
 
   try {
-    const [newsRow] = await db
-      .select()
-      .from(systemSettings)
-      .where(eq(systemSettings.key, "newsapi_key"));
-
-    const newsApiKey = newsRow?.value?.trim();
+    const newsApiKey = process.env.NEWSAPI_KEY || process.env.GNEWS_API_KEY;
     if (!newsApiKey) {
       return {
         success: false,
         missingKey: true,
-        message: "News API Key is not configured in System Settings.",
+        message: "News API Key (NEWSAPI_KEY / GNEWS_API_KEY) is not configured in .env.",
       };
     }
+
 
     const gnewsUrl = `https://gnews.io/api/v4/search?q=${encodeURIComponent(
       query.trim()
@@ -105,13 +101,13 @@ export async function analyzeMarketSentiment(query: string) {
       .map((a: any, i: number) => `${i + 1}. ${a.title} - ${a.description}`)
       .join("\n");
 
-    let openaiKey = process.env.OPENAI_API_KEY;
+    const openaiKey = process.env.OPENAI_API_KEY;
     const settings = await db.select().from(systemSettings);
     let activeModel = "gpt-4o-mini";
     for (const s of settings) {
-      if (s.key === "openai_key" && s.value?.trim()) openaiKey = s.value.trim();
       if (s.key === "active_model" && s.value?.trim()) activeModel = s.value.trim();
     }
+
 
     if (!openaiKey) {
       return {

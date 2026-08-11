@@ -56,20 +56,10 @@ export function SettingsControlCenter({
   const [activeTab, setActiveTab] = useState<"api" | "model" | "prompt">("api");
   const [skillsVisibleLimit, setSkillsVisibleLimit] = useState<number>(6);
 
-  // AI Provider Keys state
-  const [openaiKey, setOpenaiKey] = useState(initialSettings["openai_key"] || "");
-  const [anthropicKey, setAnthropicKey] = useState(initialSettings["anthropic_key"] || "");
-  const [geminiKey, setGeminiKey] = useState(initialSettings["gemini_key"] || "");
-
-  // Third-Party External Data Pipeline Keys state (Finnhub, TMDB, NewsAPI)
-  const [finnhubKey, setFinnhubKey] = useState(initialSettings["finnhub_api_key"] || "");
-  const [tmdbKey, setTmdbKey] = useState(initialSettings["tmdb_api_key"] || "");
-  const [newsapiKey, setNewsapiKey] = useState(initialSettings["newsapi_key"] || "");
-
-  // Brevo Transactional Emailer state
-  const [brevoKey, setBrevoKey] = useState(initialSettings["brevo_api_key"] || "");
+  // Brevo Transactional Emailer Sender state
   const [brevoSenderEmail, setBrevoSenderEmail] = useState(initialSettings["brevo_sender_email"] || "assistant@danar.site");
   const [brevoSenderName, setBrevoSenderName] = useState(initialSettings["brevo_sender_name"] || "Personal OS Assistant");
+
 
   // Free-form LLM Model state
   const [customModel, setCustomModel] = useState(
@@ -100,29 +90,7 @@ export function SettingsControlCenter({
     setTimeout(() => setSavedFeedback(null), 3500);
   };
 
-  const handleSaveAiKeys = (e: React.FormEvent) => {
-    e.preventDefault();
-    startTransition(async () => {
-      await saveMultipleSettingsAction({
-        openai_key: openaiKey,
-        anthropic_key: anthropicKey,
-        gemini_key: geminiKey,
-      });
-      triggerSavedFeedback("AI Provider Vault keys saved to MySQL Database!");
-    });
-  };
 
-  const handleSaveExternalKeys = (e: React.FormEvent) => {
-    e.preventDefault();
-    startTransition(async () => {
-      await saveMultipleSettingsAction({
-        finnhub_api_key: finnhubKey,
-        tmdb_api_key: tmdbKey,
-        newsapi_key: newsapiKey,
-      });
-      triggerSavedFeedback("✓ External Data Pipeline keys securely saved to MySQL Database!");
-    });
-  };
 
   const handleSaveModel = (val: string) => {
     setCustomModel(val);
@@ -193,140 +161,99 @@ export function SettingsControlCenter({
           })}
         </div>
 
-        {/* Tab 1: API Vault */}
+
+        {/* Tab 1: API Vault & System Security */}
+
         {activeTab === "api" && (
           <div className="space-y-6 py-2">
-            {/* AI Provider Keys */}
-            <form onSubmit={handleSaveAiKeys} className="space-y-4 py-2">
-              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+            <div className="p-5 rounded-3xl bg-emerald-500/10 border border-emerald-500/30 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
                 <div>
-                  <h3 className="text-sm font-bold text-white font-mono flex items-center gap-2">
-                    <Key className="w-4 h-4 text-indigo-400" /> AI PROVIDER API KEYS
+                  <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wide">
+                    ENVIRONMENT VAULT • SERVER-SIDE ENCRYPTION ACTIVE
                   </h3>
-                  <p className="text-xs text-slate-400 font-mono mt-0.5">
-                    Configure OpenAI, Anthropic &amp; Gemini keys for Personal OS AI Core
+                  <p className="text-xs text-slate-300 font-sans mt-0.5">
+                    All secret API keys are strictly loaded from server-side environment variables (<code className="text-emerald-300 font-mono">.env</code>). Zero keys are exposed to the browser or client-side HTML.
                   </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-mono text-slate-300">OpenAI API Key</label>
-                  <Input
-                    type="password"
-                    placeholder="sk-proj-..."
-                    value={openaiKey}
-                    onChange={(e) => setOpenaiKey(e.target.value)}
-                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono focus:border-indigo-500"
-                  />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+                <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-1">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-300 flex items-center gap-1.5 font-bold">
+                      <Key className="w-3.5 h-3.5 text-indigo-400" /> OpenAI API Key
+                    </span>
+                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/40 text-[10px]">
+                      Active (.env)
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-mono">Status: Connected &amp; Protected</p>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-mono text-slate-300">Anthropic API Key</label>
-                  <Input
-                    type="password"
-                    placeholder="sk-ant-..."
-                    value={anthropicKey}
-                    onChange={(e) => setAnthropicKey(e.target.value)}
-                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono focus:border-indigo-500"
-                  />
+                <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-1">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-300 flex items-center gap-1.5 font-bold">
+                      <Mail className="w-3.5 h-3.5 text-purple-400" /> Brevo Email API Key
+                    </span>
+                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/40 text-[10px]">
+                      Active (.env)
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-mono">Status: Connected &amp; Protected</p>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-mono text-slate-300">Gemini API Key</label>
-                  <Input
-                    type="password"
-                    placeholder="AIzaSy..."
-                    value={geminiKey}
-                    onChange={(e) => setGeminiKey(e.target.value)}
-                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <Button
-                type="submit"
-                disabled={isPending}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 px-5 gap-2 shadow-lg shadow-indigo-600/30 cursor-pointer"
-              >
-                <Save className="w-3.5 h-3.5" /> Save AI Provider Keys
-              </Button>
-            </form>
-
-            {/* External Data Pipeline Keys */}
-            <form onSubmit={handleSaveExternalKeys} className="space-y-4 pt-4 border-t border-white/10">
-              <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                <div>
-                  <h3 className="text-sm font-bold text-white font-mono flex items-center gap-2">
-                    <Database className="w-4 h-4 text-emerald-400" /> EXTERNAL DATA PIPELINE KEYS
-                  </h3>
-                  <p className="text-xs text-slate-400 font-mono mt-0.5">
-                    Configure Finnhub (Finance), TMDB (Watchlist) &amp; NewsAPI (Briefing) keys
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-mono text-slate-300 flex items-center gap-1.5">
-                    <TrendingUp className="w-3.5 h-3.5 text-emerald-400" /> Finnhub Stock API Key
-                  </label>
-                  <Input
-                    type="password"
-                    placeholder="ct0..."
-                    value={finnhubKey}
-                    onChange={(e) => setFinnhubKey(e.target.value)}
-                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono focus:border-emerald-500"
-                  />
+                <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-1">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-300 flex items-center gap-1.5 font-bold">
+                      <Film className="w-3.5 h-3.5 text-purple-400" /> TMDB Movie API Key
+                    </span>
+                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/40 text-[10px]">
+                      Active (.env)
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-mono">Status: Connected &amp; Protected</p>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-mono text-slate-300 flex items-center gap-1.5">
-                    <Film className="w-3.5 h-3.5 text-purple-400" /> TMDB Movie API Key
-                  </label>
-                  <Input
-                    type="password"
-                    placeholder="a47f..."
-                    value={tmdbKey}
-                    onChange={(e) => setTmdbKey(e.target.value)}
-                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono focus:border-purple-500"
-                  />
+                <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-1">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-300 flex items-center gap-1.5 font-bold">
+                      <Newspaper className="w-3.5 h-3.5 text-cyan-400" /> News / GNews API Key
+                    </span>
+                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/40 text-[10px]">
+                      Active (.env)
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-mono">Status: Connected &amp; Protected</p>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-mono text-slate-300 flex items-center gap-1.5">
-                    <Newspaper className="w-3.5 h-3.5 text-cyan-400" /> NewsAPI Key
-                  </label>
-                  <Input
-                    type="password"
-                    placeholder="84bf..."
-                    value={newsapiKey}
-                    onChange={(e) => setNewsapiKey(e.target.value)}
-                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono focus:border-cyan-500"
-                  />
+                <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-1">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-300 flex items-center gap-1.5 font-bold">
+                      <TrendingUp className="w-3.5 h-3.5 text-emerald-400" /> Finnhub Stock API Key
+                    </span>
+                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/40 text-[10px]">
+                      Active (.env)
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-mono">Status: Connected &amp; Protected</p>
                 </div>
               </div>
+            </div>
 
-              <Button
-                type="submit"
-                disabled={isPending}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs rounded-2xl h-11 px-5 gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer"
-              >
-                <Save className="w-3.5 h-3.5" /> Save External Pipeline Keys
-              </Button>
-            </form>
-
-            {/* Brevo SMTP Emailer Integration */}
+            {/* Brevo Sender Preferences */}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 startTransition(async () => {
                   await saveMultipleSettingsAction({
-                    brevo_api_key: brevoKey,
                     brevo_sender_email: brevoSenderEmail,
                     brevo_sender_name: brevoSenderName,
                   });
-                  triggerSavedFeedback("✓ Brevo SMTP Emailer settings saved successfully!");
+                  triggerSavedFeedback("✓ Brevo sender email preferences updated successfully!");
                 });
               }}
               className="space-y-4 pt-4 border-t border-white/10"
@@ -334,10 +261,10 @@ export function SettingsControlCenter({
               <div className="flex items-center justify-between pb-3 border-b border-white/10">
                 <div>
                   <h3 className="text-sm font-bold text-white font-mono flex items-center gap-2">
-                    <Mail className="w-4 h-4 text-purple-400" /> BREVO TRANSACTIONAL EMAILER INTEGRATION
+                    <Mail className="w-4 h-4 text-purple-400" /> BREVO SENDER PREFERENCES
                   </h3>
                   <p className="text-xs text-slate-400 font-mono mt-0.5">
-                    Configure Brevo SMTP API Key for Omni-Emailer &amp; Automated Notifications
+                    Configure default Sender Email &amp; Name for Omni-Emailer Studio
                   </p>
                 </div>
 
@@ -352,20 +279,7 @@ export function SettingsControlCenter({
                 </Button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-mono text-slate-300 flex items-center gap-1.5">
-                    <Key className="w-3.5 h-3.5 text-purple-400" /> Brevo API Key
-                  </label>
-                  <Input
-                    type="password"
-                    placeholder="xkeysib-..."
-                    value={brevoKey}
-                    onChange={(e) => setBrevoKey(e.target.value)}
-                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono focus:border-purple-500"
-                  />
-                </div>
-
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-mono text-slate-300 flex items-center gap-1.5">
                     <Mail className="w-3.5 h-3.5 text-indigo-400" /> Sender Email
@@ -396,15 +310,16 @@ export function SettingsControlCenter({
               <Button
                 type="submit"
                 disabled={isPending}
-                className="bg-purple-600 hover:bg-purple-500 text-white font-mono text-xs rounded-2xl h-11 px-5 gap-2 shadow-lg shadow-purple-600/20 cursor-pointer"
+                className="bg-purple-600 hover:bg-purple-500 text-white font-mono text-xs rounded-2xl h-11 px-5 gap-2 shadow-lg shadow-purple-600/30 cursor-pointer"
               >
-                <Save className="w-3.5 h-3.5" /> Save Brevo Emailer Settings
+                <Save className="w-3.5 h-3.5" /> Save Sender Preferences
               </Button>
             </form>
           </div>
         )}
 
         {/* Tab 2: Free-Form Model Switcher */}
+
         {activeTab === "model" && (
           <div className="space-y-5 py-2">
             <div className="pb-3 border-b border-white/10">

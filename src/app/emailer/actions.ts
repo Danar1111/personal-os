@@ -166,26 +166,27 @@ export async function getBrevoSettingsAction(): Promise<{
 }> {
   try {
     const settings = await db.select().from(systemSettings);
-    let apiKey = "";
+    const apiKey = process.env.BREVO_API_KEY || "";
     let senderEmail = "assistant@danar.site";
     let senderName = "Personal OS Assistant";
 
     for (const item of settings) {
-      if (item.key === "brevo_api_key") apiKey = item.value || "";
-      if (item.key === "brevo_sender_email") senderEmail = item.value || "assistant@danar.site";
-      if (item.key === "brevo_sender_name") senderName = item.value || "Personal OS Assistant";
+      if (item.key === "brevo_sender_email" && item.value?.trim()) senderEmail = item.value.trim();
+      if (item.key === "brevo_sender_name" && item.value?.trim()) senderName = item.value.trim();
     }
 
     return { apiKey, senderEmail, senderName };
   } catch (error) {
     console.error("[getBrevoSettingsAction error]:", error);
     return {
-      apiKey: "",
+      apiKey: process.env.BREVO_API_KEY || "",
       senderEmail: "assistant@danar.site",
       senderName: "Personal OS Assistant",
     };
   }
 }
+
+
 
 export async function saveBrevoSettingsAction(data: {
   apiKey?: string;

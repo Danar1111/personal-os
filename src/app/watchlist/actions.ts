@@ -20,14 +20,9 @@ export async function getWatchlist(): Promise<WatchlistMovie[]> {
 
 export async function getTrendingMovies() {
   try {
-    const [row] = await db
-      .select()
-      .from(systemSettings)
-      .where(eq(systemSettings.key, "tmdb_api_key"));
-
-    const apiKey = row?.value?.trim();
+    const apiKey = process.env.TMDB_API_KEY;
     if (!apiKey) {
-      return { results: [], missingKey: true, error: "TMDB API Key is not configured in Settings." };
+      return { results: [], missingKey: true, error: "TMDB API Key (TMDB_API_KEY) is not configured in .env." };
     }
 
     // Cache trending movies for 24 hours (86,400 seconds) so page access/refresh does not hit API constantly
@@ -70,15 +65,11 @@ export async function searchTmdbMovies(query: string) {
   if (!query || !query.trim()) return { results: [], missingKey: false, error: null };
 
   try {
-    const [row] = await db
-      .select()
-      .from(systemSettings)
-      .where(eq(systemSettings.key, "tmdb_api_key"));
-
-    const apiKey = row?.value?.trim();
+    const apiKey = process.env.TMDB_API_KEY;
     if (!apiKey) {
-      return { results: [], missingKey: true, error: "TMDB API Key is not configured in Settings." };
+      return { results: [], missingKey: true, error: "TMDB API Key (TMDB_API_KEY) is not configured in .env." };
     }
+
 
     const res = await fetch(
       `https://api.themoviedb.org/3/search/movie?query=${encodeURIComponent(query.trim())}&api_key=${apiKey}`,

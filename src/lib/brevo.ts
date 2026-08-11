@@ -22,17 +22,13 @@ export async function sendBrevoEmail(
       return { success: false, message: "Invalid recipient email address." };
     }
 
-    // 1. Fetch Brevo API Key & Sender configuration from systemSettings DB
-    let apiKey = process.env.BREVO_API_KEY || "";
+    const apiKey = process.env.BREVO_API_KEY || "";
     let senderEmail = "assistant@danar.site";
     let senderName = "Personal OS Assistant";
 
     try {
       const settings = await db.select().from(systemSettings);
       for (const item of settings) {
-        if (item.key === "brevo_api_key" && item.value?.trim()) {
-          apiKey = item.value.trim();
-        }
         if (item.key === "brevo_sender_email" && item.value?.trim()) {
           senderEmail = item.value.trim();
         }
@@ -41,8 +37,10 @@ export async function sendBrevoEmail(
         }
       }
     } catch (dbErr) {
-      console.warn("[BREVO] Failed to load DB settings, using env defaults:", dbErr);
+      console.warn("[BREVO] Failed to load DB settings:", dbErr);
     }
+
+
 
     if (!apiKey) {
       return {

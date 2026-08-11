@@ -26,13 +26,9 @@ async function fetchMarketNews() {
   }
 
   try {
-    const [row] = await db
-      .select()
-      .from(systemSettings)
-      .where(eq(systemSettings.key, "newsapi_key"));
-
-    const apiKey = row?.value?.trim();
+    const apiKey = process.env.NEWSAPI_KEY || process.env.GNEWS_API_KEY;
     if (!apiKey) return [];
+
 
     const res = await fetch(
       `https://gnews.io/api/v4/top-headlines?category=business&lang=en&max=6&apikey=${apiKey}`,

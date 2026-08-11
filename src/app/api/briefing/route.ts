@@ -10,24 +10,17 @@ export async function POST(req: Request) {
   try {
     // 1. Fetch settings & OpenAI API key from Laragon MySQL
     let activeModel = "gpt-4o-mini";
-    let dbOpenaiKey = process.env.OPENAI_API_KEY;
+    const dbOpenaiKey = process.env.OPENAI_API_KEY;
 
     try {
       const dbSettings = await db.select().from(systemSettings);
       for (const item of dbSettings) {
         if (item.key === "active_model" && item.value) activeModel = item.value;
-        if (
-          item.key === "openai_key" &&
-          item.value &&
-          item.value.trim() !== "" &&
-          !item.value.includes("your-openai-api-key")
-        ) {
-          dbOpenaiKey = item.value.trim();
-        }
       }
     } catch (e) {
       console.warn("Using default briefing settings:", e);
     }
+
 
     const customOpenAI = createOpenAI({
       apiKey: dbOpenaiKey,

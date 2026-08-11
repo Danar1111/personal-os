@@ -378,21 +378,15 @@ export async function POST(req: Request) {
   // Read settings from MySQL
   let activeModel = "gpt-4o-mini";
   let systemPrompt = DEFAULT_MASTER_SYSTEM_PROMPT;
-  let dbOpenaiKey = process.env.OPENAI_API_KEY;
+  const dbOpenaiKey = process.env.OPENAI_API_KEY;
 
   try {
     const dbSettings = await db.select().from(systemSettings);
     for (const item of dbSettings) {
       if (item.key === "active_model" && item.value) activeModel = item.value;
       if (item.key === "system_prompt" && item.value) systemPrompt = item.value;
-      if (
-        item.key === "openai_key" &&
-        item.value?.trim() &&
-        !item.value.includes("your-openai-api-key")
-      ) {
-        dbOpenaiKey = item.value.trim();
-      }
     }
+
 
     // Dynamic Context Injection from Knowledge Vault (Non-Sensitive Only)
     const kvEntries = await db
@@ -2345,19 +2339,16 @@ export async function POST(req: Request) {
           try {
             const query = String(args?.query || "technology").trim();
             const limit = Math.min(Math.max(Number(args?.limit || 5), 1), 10);
-            const [newsRow] = await db
-              .select()
-              .from(systemSettings)
-              .where(eq(systemSettings.key, "newsapi_key"));
+            const newsApiKey = process.env.NEWSAPI_KEY || process.env.GNEWS_API_KEY;
 
-            const newsApiKey = newsRow?.value?.trim();
             if (!newsApiKey) {
               return {
                 success: false,
                 missingKey: true,
-                message: "News API key (GNews API) is not configured in System Settings (/settings).",
+                message: "News API key (NEWSAPI_KEY / GNEWS_API_KEY) is not configured in environment variables (.env).",
               };
             }
+
 
             const gnewsUrl = `https://gnews.io/api/v4/search?q=${encodeURIComponent(query)}&max=${limit}&apikey=${newsApiKey}`;
             const res = await fetch(gnewsUrl, { next: { revalidate: 1800 } });

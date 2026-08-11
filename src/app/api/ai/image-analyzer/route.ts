@@ -51,7 +51,7 @@ export async function POST(req: Request) {
     }
 
     let activeModel = "gpt-4o-mini";
-    let dbOpenaiKey = process.env.OPENAI_API_KEY;
+    const dbOpenaiKey = process.env.OPENAI_API_KEY;
 
     try {
       const dbSettings = await db.select().from(systemSettings);
@@ -59,17 +59,11 @@ export async function POST(req: Request) {
         if (item.key === "active_model" && item.value) {
           activeModel = item.value;
         }
-        if (
-          item.key === "openai_key" &&
-          item.value?.trim() &&
-          !item.value.includes("your-openai-api-key")
-        ) {
-          dbOpenaiKey = item.value.trim();
-        }
       }
     } catch (e) {
       console.warn("[IMAGE_ANALYZER] Using default settings:", e);
     }
+
 
     if (!dbOpenaiKey) {
       return NextResponse.json(
