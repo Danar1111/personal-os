@@ -76,6 +76,15 @@ export function PinLockProvider({ children }: { children: React.ReactNode }) {
           setIsReady(true);
           return;
         }
+
+        if (!data.authenticated) {
+          // DevTools sessionStorage manipulation or missing server cookie — force lock
+          sessionStorage.removeItem(SESSION_KEY);
+          setIsLocked(true);
+          setIsReady(true);
+          return;
+        }
+
       } catch (e) {
         console.warn("Failed to check PIN config:", e);
       }
@@ -116,12 +125,14 @@ export function PinLockProvider({ children }: { children: React.ReactNode }) {
   /* ── Lock screen ── */
   const lockScreen = useCallback(() => {
     sessionStorage.removeItem(SESSION_KEY);
+    fetch("/api/verify-pin", { method: "DELETE" }).catch(() => {});
     setIsLocked(true);
     setPassword("");
     setStatus("idle");
     setErrorMsg("");
     setTimeLeft(1800);
   }, []);
+
 
   /* ── Reset inactivity & countdown (skips reset when zen running) ── */
   const resetInactivityTimer = useCallback(() => {

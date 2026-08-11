@@ -1,37 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { systemSettings } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { getStoredPin, sanitizePin, createSessionHash } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-function sanitizePin(val?: string | null): string | null {
-  if (!val) return null;
-  // Remove surrounding quotes, Windows CRLF \r, and whitespace
-  const cleaned = val.replace(/^["']|["']$/g, "").replace(/\r/g, "").trim();
-  return cleaned || null;
-}
-
-async function getStoredPin(): Promise<string | null> {
-  let pin = sanitizePin(process.env.ACCESS_PIN) || sanitizePin(process.env.PIN) || sanitizePin(process.env.ACCESS_PASSWORD);
-  if (!pin) {
-    try {
-      const [row] = await db
-        .select()
-        .from(systemSettings)
-        .where(eq(systemSettings.key, "access_pin"));
-      pin = sanitizePin(row?.value);
-    } catch (e) {
-      console.warn("Could not read systemSettings for access_pin:", e);
-    }
-  }
-  return pin;
-}
-
-export async function GET() {
+export async function GET(req: NextRequest) {
   const correctPin = await getStoredPin();
-  return NextResponse.json({ configured: Boolean(correctPin) });
+  if (!correctPin) {
+    return NextResponse.json({ configured: false, authenticated: true });
+  }
+
+  const sessionCookie = req.cookies.get("personal_os_session")?.value;
+  const expectedHash = await createSessionHash(correctPin);
+  const authenticated = Boolean(sessionCookie && sessionCookie === expectedHash);
+
+  return NextResponse.json({ configured: true, authenticated });
 }
+
 
 export async function POST(req: NextRequest) {
   try {
@@ -41,12 +25,12 @@ export async function POST(req: NextRequest) {
     const correctPin = await getStoredPin();
 
     if (!correctPin) {
-      // No PIN configured in .env or DB — allow access but notify
-      return NextResponse.json({
+      const response = NextResponse.json({
         success: true,
         configured: false,
         message: "No PIN configured in environment or database.",
       });
+      return response;
     }
 
     if (!inputPin) {
@@ -54,11 +38,35 @@ export async function POST(req: NextRequest) {
     }
 
     if (inputPin === correctPin) {
-      return NextResponse.json({ success: true, configured: true });
+      const sessionHash = await createSessionHash(correctPin);
+      const response = NextResponse.json({ success: true, configured: true });
+      response.cookies.set({
+        name: "personal_os_session",
+        value: sessionHash,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: 30 * 24 * 60 * 60, // 30 days
+      });
+      return response;
     }
 
     return NextResponse.json({ success: false, message: "Incorrect password or PIN" }, { status: 401 });
   } catch (error: any) {
     return NextResponse.json({ success: false, message: error?.message || "Server error" }, { status: 500 });
   }
+}
+
+export async function DELETE() {
+  const response = NextResponse.json({ success: true, message: "Logged out" });
+  response.cookies.set({
+    name: "personal_os_session",
+    value: "",
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  });
+  return response;
 }
