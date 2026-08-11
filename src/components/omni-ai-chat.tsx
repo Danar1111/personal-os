@@ -453,7 +453,7 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
           const stepsToUse = validSteps.length > 0 ? validSteps : rawSteps;
 
           const planId = planTool.toolCallId || planTool.id || `plan-${messages.length}`;
-          if (!engineState || (engineState.status !== 'running' && engineState.planId !== planId)) {
+          if (!engineState || engineState.status !== 'running') {
 
             // Automatically append a final JARVIS synthesis step (N+1) if not already present
             const hasFinalStep = stepsToUse.some((s: any) => s.action_type === 'final_response' || s.target_tool === 'final_response');
@@ -493,9 +493,12 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
       if (lastMsg.role === 'user' && (lastText.includes("![SYSTEM_ENGINE]!") || lastText.includes("[SYSTEM_STEPPER]"))) return;
 
       if (lastMsg.role === 'assistant') {
-        // Check for errors in the last step for self-healing
         const toolInvocations = extractToolInvocations(lastMsg);
-        // exclude create_execution_plan from error checking since that just finished
+
+        // Check if AI mistakenly called create_execution_plan during a stepper step
+        const calledPlanAgain = toolInvocations.some((t: any) => t.toolName === 'create_execution_plan');
+
+        // Check for errors in action tools for self-healing
         const actionTools = toolInvocations.filter((t: any) => t.toolName !== 'create_execution_plan');
         const hadError = actionTools.some((t: any) => t.state === 'result' && (t.result?.success === false || t.result?.error));
 
@@ -508,6 +511,24 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
             setTimeout(() => { isDispatchingRef.current = false; }, 1000);
           }, 300);
           return;
+        }
+
+        // If AI called create_execution_plan again during stepper mode without running the step tool
+        if (calledPlanAgain && engineState.currentIndex > 0) {
+          const prevStepIndex = engineState.currentIndex - 1;
+          const prevStep = engineState.steps[prevStepIndex];
+          const prevTool = (prevStep?.target_tool || prevStep?.action_type || "").replace(/^functions\./, "").replace(/^tools?\./, "").trim();
+
+          if (prevTool && prevTool !== "final_response" && prevTool !== "final_response_step") {
+            // Re-enforce the step tool execution without advancing
+            isDispatchingRef.current = true;
+            const retryMsg = `[SYSTEM_STEPPER] CRITICAL REMINDER for Step ${prevStepIndex + 1}: DO NOT call create_execution_plan! You MUST execute the tool '${prevTool}' directly now. ${prevStep.instruction}`;
+            setTimeout(() => {
+              (sendMessage as any)({ text: retryMsg });
+              setTimeout(() => { isDispatchingRef.current = false; }, 1000);
+            }, 300);
+            return;
+          }
         }
 
         const step = engineState.steps[engineState.currentIndex];
@@ -542,7 +563,6 @@ function ChatCore({ initialMsgs }: { initialMsgs: any[] }) {
           if (prevContextSummary) {
             stepMsg += ` [Data/Result dari Langkah Sebelumnya: "${prevContextSummary}"]`;
           }
-
 
           isDispatchingRef.current = true;
           setEngineState(prev => prev ? { ...prev, currentIndex: prev.currentIndex + 1 } : null);

@@ -134,23 +134,24 @@ RULES:
      - Keep the final response SHORT (strictly 1-2 sentences directly answering the question).
      - NEVER output long essays, bullet point lists, or long raw URLs (e.g. NEVER list "https://djpb.kemenkeu.go.id/...") in the final text response!
      - The tool output bubble already displays the search sources/links above. Your final text is meant for TTS voice reading, so make it concise, natural, and direct to the point!
-7. MANDATORY PLAN-AND-EXECUTE ARCHITECTURE FOR ALL TOOL REQUESTS:
-   - MANDATORY EXECUTION PLAN RULE: Whenever the user's prompt requires calling ANY tool (even just 1 tool like \`create_calendar_event\`, \`create_task\`, \`web_search\`, \`send_email\`, \`add_to_watchlist\`, \`list_tasks\`, etc.), YOU MUST ALWAYS CALL \`create_execution_plan\` FIRST!
-   - CRITICAL EXCEPTIONS:
-     1. Only skip \`create_execution_plan\` if the user is having casual conversation without any tool actions (e.g. "Halo", "Siapa kamu?", "Terima kasih").
-     2. NEVER call \`create_execution_plan\` if you are currently responding to a prompt starting with \`[SYSTEM_STEPPER]\`!
-   - FOR SINGLE-TOOL REQUESTS (e.g. "buatkan event jam 3 lari sore" or "apa sih MBG itu?"):
-     - You MUST call \`create_execution_plan\` with exactly 2 steps:
-       - Step 1: \`create_calendar_event\` or \`web_search\` (Target Tool: target tool name)
-       - Step 2 (+1): \`final_response\` (Target Tool: \`final_response\`)
-   - FOR MULTI-TOOL REQUESTS (e.g. "buat event X kemudian kirim email Y"):
-     - You MUST call \`create_execution_plan\` with N+1 steps:
-       - Step 1: \`create_calendar_event\` (Target Tool: \`create_calendar_event\`)
-       - Step 2: \`send_email\` (Target Tool: \`send_email\`)
-       - Step 3 (+1): \`final_response\` (Target Tool: \`final_response\`)
-   - DO NOT CREATE A STEP FOR ASKING DELETION CONFIRMATION! \`execution_plan\` steps MUST only be direct tool actions or \`final_response\`. If deletion confirmation is needed, ask for confirmation BEFORE generating \`create_execution_plan\`!
-   - CRITICAL: When calling \`create_execution_plan\`, YOU MUST STOP IMMEDIATELY. Do NOT call any other tool or generate action text in the same turn!
-   - STEPPER INSTRUCTIONS: When you receive a step prompt starting with \`[SYSTEM_STEPPER]\` (e.g. \`[SYSTEM_STEPPER] Langkah X dari Y: ... (MUST use tool: Z)\`), DO NOT CALL \`create_execution_plan\`! Execute ONLY the specified target tool (e.g. \`web_search\`, \`create_calendar_event\`) for that step directly! Read outputs of previous steps from chat history to extract any needed titles, IDs, or text. Do NOT re-run tools from previous steps!
+137: 7. MANDATORY PLAN-AND-EXECUTE ARCHITECTURE FOR ALL TOOL REQUESTS:
+138:    - MANDATORY EXECUTION PLAN RULE: Whenever the initial user prompt requires calling ANY tool (even just 1 tool like \`create_calendar_event\`, \`create_task\`, \`web_search\`, \`send_email\`, \`add_to_watchlist\`, \`list_tasks\`, \`list_applications\`, etc.), YOU MUST ALWAYS CALL \`create_execution_plan\` FIRST!
+139:    - CRITICAL EXCEPTIONS & STRICT PROHIBITIONS:
+140:      1. Only skip \`create_execution_plan\` if the user is having casual conversation without any tool actions (e.g. "Halo", "Siapa kamu?", "Terima kasih").
+141:      2. ABSOLUTE BAN: NEVER EVER call \`create_execution_plan\` if you are responding to a prompt starting with \`[SYSTEM_STEPPER]\`! In stepper mode, calling \`create_execution_plan\` is a CRITICAL ERROR. You MUST call the required action tool directly.
+142:    - FOR SINGLE-TOOL REQUESTS (e.g. "buatkan event jam 3 lari sore" or "apa sih MBG itu?"):
+143:      - You MUST call \`create_execution_plan\` with exactly 2 steps:
+144:        - Step 1: \`create_calendar_event\` or \`web_search\` (Target Tool: target tool name)
+145:        - Step 2 (+1): \`final_response\` (Target Tool: \`final_response\`)
+146:    - FOR MULTI-TOOL REQUESTS (e.g. "ambil aplikasi launcher lalu kirim email ke X"):
+147:      - You MUST call \`create_execution_plan\` with N+1 steps (where N is number of tool actions):
+148:        - Step 1: \`list_applications\` (Target Tool: \`list_applications\`)
+149:        - Step 2: \`send_email\` (Target Tool: \`send_email\`)
+150:        - Step 3 (+1): \`final_response\` (Target Tool: \`final_response\`)
+151:    - DO NOT CREATE A STEP FOR ASKING DELETION CONFIRMATION! \`execution_plan\` steps MUST only be direct tool actions or \`final_response\`. If deletion confirmation is needed, ask for confirmation BEFORE generating \`create_execution_plan\`!
+152:    - CRITICAL: When calling \`create_execution_plan\`, YOU MUST STOP IMMEDIATELY. Do NOT call any other tool or generate action text in the same turn!
+153:    - STEPPER INSTRUCTIONS: When you receive a step prompt starting with \`[SYSTEM_STEPPER]\` (e.g. \`[SYSTEM_STEPPER] Langkah X dari Y: ... (MUST use tool: Z)\`), DO NOT CALL \`create_execution_plan\`! Execute ONLY the specified target tool (e.g. \`list_applications\`, \`send_email\`, \`web_search\`) for that step directly! Read outputs of previous steps from chat history to extract any needed titles, IDs, or text. Do NOT re-run tools from previous steps!
+
    - FINAL CONVERSATIONAL SYNTHESIS STEP: For the final step (\`target_tool: 'final_response'\`), DO NOT call any tools! Respond in 1-2 short, fluid, conversational sentences directly answering the user's question (ideal for TTS voice reading). Do NOT use bullet points, list items, raw URLs, report headers, or meta-phrases.
 
 8. TOOL SELECTION PRIORITY & WEB SEARCH FALLBACK HIERARCHY:
@@ -420,7 +421,8 @@ export async function POST(req: Request) {
     tools: {
       // ── ORCHESTRATION ────────────────────────────────────────────────────────────
       create_execution_plan: makeTool({
-        description: "Creates a structured execution plan for ANY request that requires calling tools (whether 1 tool or multiple tools). MUST be called first before executing ANY tool. Single tool requests MUST generate 2 steps (Step 1: target tool, Step 2: final_response). DO NOT call for casual chatting without tools.",
+        description: "Creates a structured execution plan for initial user requests requiring tool actions. MUST ONLY be called once on the initial user turn. DO NOT call this tool if responding to [SYSTEM_STEPPER] or when executing individual plan steps.",
+
         inputSchema: jsonSchema({
           type: "object",
           properties: {
