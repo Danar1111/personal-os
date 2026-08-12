@@ -26,6 +26,7 @@ import {
   Wand2,
   BrainCircuit,
   Mail,
+  Music,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -35,7 +36,9 @@ import { globalSearchAction, GlobalSearchResult } from "@/app/actions/global-sea
 
 const PAGE_ITEMS = [
   { id: "page-overview", group: "Pages & Apps", title: "Overview Dashboard", subtitle: "Main Bento Dashboard", url: "/", icon: LayoutDashboard },
+  { id: "page-spotify", group: "Pages & Apps", title: "Spotify Music Player & Synced Lyrics", subtitle: "Real-time Now Playing, Synced Lyrics & Controls", url: "#spotify", icon: Music },
   { id: "page-tasks", group: "Pages & Apps", title: "Task Omni-Kanban", subtitle: "Project & Task Management", url: "/tasks", icon: CheckSquare },
+
   { id: "page-skills", group: "Pages & Apps", title: "Skill Matrix", subtitle: "Learning & Progress Tracking", url: "/skills", icon: Brain },
   { id: "page-finance", group: "Pages & Apps", title: "Finance Hub", subtitle: "Income & Expense Tracker", url: "/finance", icon: Wallet },
   { id: "page-vault", group: "Pages & Apps", title: "Second Brain Vault", subtitle: "Zettelkasten Notes & Knowledge Base", url: "/vault", icon: FileText },
@@ -192,9 +195,15 @@ export function Omnibar() {
     const currentQuery = query;
     setIsOpen(false);
     setQuery("");
-    if (item.id === "ask-omni-ai") {
+    if (item.id === "page-spotify") {
+      window.dispatchEvent(new CustomEvent("toggle-spotify-mini-player", { detail: { isDismissed: false } }));
+      window.dispatchEvent(new CustomEvent("toggle-spotify-right-sidebar", { detail: { isOpen: false } }));
+      return;
+    }
+ else if (item.id === "ask-omni-ai") {
       window.dispatchEvent(new CustomEvent("open-omni-ai", { detail: { initialQuery: currentQuery } }));
     } else if (item.url.startsWith("http://") || item.url.startsWith("https://")) {
+
       window.open(item.url, "_blank", "noopener,noreferrer");
     } else {
       // Only show loading if navigating to a different page
@@ -259,6 +268,7 @@ export function Omnibar() {
                   {items.map((item) => {
                     const itemGlobalIndex = flattenedList.findIndex((i) => i.id === item.id);
                     const isSelected = itemGlobalIndex === selectedIndex;
+                    const isSpotifyItem = item.id === "page-spotify";
                     const IconComponent = item.icon;
 
                     return (
@@ -273,7 +283,11 @@ export function Omnibar() {
                         className={cn(
                           "flex items-center justify-between px-3 py-2.5 rounded-2xl cursor-pointer transition-all text-xs font-mono group",
                           isSelected
-                            ? "bg-indigo-600/30 border border-indigo-500/40 text-white shadow-md"
+                            ? isSpotifyItem
+                              ? "bg-[#1DB954]/20 border border-[#1DB954]/50 text-white shadow-md shadow-[#1DB954]/20"
+                              : "bg-indigo-600/30 border border-indigo-500/40 text-white shadow-md"
+                            : isSpotifyItem
+                            ? "bg-[#1DB954]/[0.05] hover:bg-[#1DB954]/15 border border-[#1DB954]/20 text-slate-200"
                             : "hover:bg-white/5 text-slate-300 border border-transparent"
                         )}
                       >
@@ -281,13 +295,16 @@ export function Omnibar() {
                           <div
                             className={cn(
                               "w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border transition-all",
-                              isSelected
+                              isSpotifyItem
+                                ? "bg-[#1DB954]/20 border-[#1DB954]/50 text-[#1DB954]"
+                                : isSelected
                                 ? "bg-indigo-500/30 border-indigo-500/50 text-indigo-300"
                                 : "bg-white/[0.04] border-white/10 text-slate-400 group-hover:text-slate-200"
                             )}
                           >
                             <IconComponent className="w-4 h-4" />
                           </div>
+
                           <div className="flex flex-col min-w-0">
                             <span className="font-bold truncate text-slate-100 group-hover:text-white">
                               {item.title}

@@ -11,8 +11,15 @@ import { OmniAiTrigger } from "@/components/omni-ai-trigger";
 import { DbStatusBadge } from "@/components/db-status-badge";
 import { NavigationProgress } from "@/components/navigation-progress";
 import { NotificationBell } from "@/components/layout/NotificationBell";
+import { RightSpotifySidebar } from "@/components/right-spotify-sidebar";
+import { SpotifyStatusPill } from "@/components/spotify-status-pill";
+
+
+
+import { SpotifyFloatingWidget } from "@/components/spotify-floating-widget";
 
 const inter = Inter({
+
   subsets: ["latin"],
   variable: "--font-sans",
 });
@@ -87,6 +94,8 @@ export default function RootLayout({
         {/* Global Omni AI Assistant (Ctrl+J) */}
         <OmniAIChat />
 
+
+
         {/* Main Content Hub */}
         <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden" suppressHydrationWarning>
           {/* Top Bar Header */}
@@ -111,6 +120,14 @@ export default function RootLayout({
             {children}
           </main>
         </div>
+
+        {/* Right Collapsible Spotify Player & Synced Karaoke Lyrics Sidebar */}
+        <RightSpotifySidebar />
+
+        {/* Global Spotify Top Status Pill Toast Notification & Shortcuts */}
+        <SpotifyStatusPill />
+
+
         </PinLockProvider>
       </body>
     </html>

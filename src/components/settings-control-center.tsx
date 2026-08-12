@@ -1,11 +1,14 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useState, useTransition, useEffect } from "react";
+
+import { useSearchParams } from "next/navigation";
 import { AISkill } from "@/db/schema";
 import {
   saveSettingAction,
   saveMultipleSettingsAction,
   forceSyncAiSkillsAction,
+  revokeSpotifyTokenAction,
 } from "@/app/settings/actions";
 import {
   Key,
@@ -28,7 +31,10 @@ import {
   X,
   RefreshCw,
   Mail,
+  Music,
+  Radio,
 } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -82,6 +88,32 @@ export function SettingsControlCenter({
     });
   };
 
+  // Spotify OAuth Token state & URL Params
+  const searchParams = useSearchParams();
+  const spotifyParam = searchParams.get("spotify");
+  const spotifyMessage = searchParams.get("message");
+
+  const [hasSpotifyToken, setHasSpotifyToken] = useState<boolean>(
+    Boolean(initialSettings["SPOTIFY_REFRESH_TOKEN"] || initialSettings["spotify_refresh_token"])
+  );
+
+  useEffect(() => {
+    if (spotifyParam === "success") {
+      setHasSpotifyToken(true);
+      triggerSavedFeedback("✓ Successfully connected Spotify account!");
+    } else if (spotifyParam === "error") {
+      triggerSavedFeedback(`⚠️ Spotify OAuth Error: ${spotifyMessage || "Failed to authorize"}`);
+    }
+  }, [spotifyParam, spotifyMessage]);
+
+  const handleRevokeSpotify = () => {
+    startTransition(async () => {
+      await revokeSpotifyTokenAction();
+      setHasSpotifyToken(false);
+      triggerSavedFeedback("Spotify authorization token revoked.");
+    });
+  };
+
   // Feedback banner
   const [savedFeedback, setSavedFeedback] = useState<string | null>(null);
 
@@ -89,6 +121,7 @@ export function SettingsControlCenter({
     setSavedFeedback(msg);
     setTimeout(() => setSavedFeedback(null), 3500);
   };
+
 
 
 
@@ -241,8 +274,58 @@ export function SettingsControlCenter({
                   </div>
                   <p className="text-[11px] text-slate-400 font-mono">Status: Connected &amp; Protected</p>
                 </div>
+
+                {/* Spotify OAuth Card */}
+                <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2 col-span-1 md:col-span-2 lg:col-span-3">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-200 flex items-center gap-1.5 font-bold text-sm">
+                      <Music className="w-4 h-4 text-[#1DB954]" /> Spotify Integration (OAuth &amp; Realtime Playback)
+                    </span>
+                    {hasSpotifyToken ? (
+                      <Badge variant="outline" className="bg-[#1DB954]/20 text-[#1DB954] border-[#1DB954]/50 text-[11px] font-bold px-2.5 py-0.5">
+                        ✓ Connected to Spotify
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/40 text-[10px]">
+                        Not Connected
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-400 font-mono leading-relaxed">
+                    Authenticate via Spotify OAuth to enable the built-in Now Playing widget &amp; LRCLIB synchronized lyrics engine.
+                  </p>
+                  <div className="flex items-center gap-3 pt-1 font-mono text-xs">
+                    {!hasSpotifyToken ? (
+                      <a
+                        href="/api/spotify/login"
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1DB954] text-black font-bold hover:bg-[#1ed760] transition-all shadow-lg shadow-[#1DB954]/20 cursor-pointer text-xs"
+                      >
+                        <Radio className="w-4 h-4" /> Connect Spotify Account
+                      </a>
+                    ) : (
+                      <>
+                        <a
+                          href="/api/spotify/login"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 text-xs transition-all cursor-pointer border border-white/10"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" /> Reconnect Account
+                        </a>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={handleRevokeSpotify}
+                          disabled={isPending}
+                          className="h-8 px-3 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl font-mono cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 mr-1" /> Revoke Access
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
+
 
             {/* Brevo Sender Preferences */}
             <form

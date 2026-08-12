@@ -20,9 +20,15 @@ export async function middleware(req: NextRequest) {
 
   // Protect all /api/* routes except public auth & health endpoints
   if (pathname.startsWith("/api/")) {
-    if (pathname === "/api/verify-pin" || pathname === "/api/health/db") {
+    if (
+      pathname === "/api/verify-pin" ||
+      pathname === "/api/health/db" ||
+      pathname === "/api/spotify/login" ||
+      pathname === "/api/spotify/callback"
+    ) {
       return NextResponse.next();
     }
+
 
     const pin = sanitizePin(process.env.ACCESS_PIN) || sanitizePin(process.env.PIN) || sanitizePin(process.env.ACCESS_PASSWORD);
     if (!pin) {

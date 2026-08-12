@@ -29,9 +29,9 @@ import {
   Mail,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-
 import { getUserNicknameAction } from "@/app/knowledge/actions";
+import { SpotifyFloatingWidget } from "@/components/spotify-floating-widget";
+
 
 const navItems = [
   { name: "Overview", href: "/", icon: LayoutDashboard },
@@ -208,8 +208,15 @@ export function Sidebar() {
         })}
       </nav>
 
+      {/* Sidebar Spotify Mini Music Player */}
+      <div className="px-3 py-2 border-t border-white/10">
+
+        <SpotifyFloatingWidget isCollapsed={isCollapsed} />
+      </div>
+
       {/* User Footer */}
       <div className="p-3 border-t border-white/10">
+
         <div
           className={cn(
             "flex items-center gap-3 p-2 rounded-xl bg-white/[0.03] border border-white/5",

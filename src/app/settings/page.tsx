@@ -1,4 +1,4 @@
-import React from "react";
+import React, { Suspense } from "react";
 import { getSettings, getAISkills } from "./actions";
 import { SettingsControlCenter } from "@/components/settings-control-center";
 import { Settings, Cpu } from "lucide-react";
@@ -34,10 +34,13 @@ export default async function SettingsPage() {
       </div>
 
       {/* Control Center Component */}
-      <SettingsControlCenter
-        initialSettings={initialSettings}
-        initialSkills={initialSkills}
-      />
+      <Suspense fallback={<div className="p-8 text-center font-mono text-xs text-slate-400">Loading Settings...</div>}>
+        <SettingsControlCenter
+          initialSettings={initialSettings}
+          initialSkills={initialSkills}
+        />
+      </Suspense>
     </div>
   );
 }
+

@@ -20,6 +20,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { ZenSpotifyFocusWidget } from "@/components/zen-spotify-focus-widget";
+
+
 
 type TimerMode = "focus" | "break" | "longBreak";
 
@@ -341,10 +344,17 @@ export function ZenTimer() {
             </div>
           </div>
 
+          {/* CINEMATIC ZEN SPOTIFY MUSIC & LIVE SYNCED LYRICS DISPLAY */}
+          <div className="w-full max-w-2xl py-2">
+            <ZenSpotifyFocusWidget />
+          </div>
+
           {/* Overlay Footer Note */}
-          <div className="text-center font-mono text-xs text-slate-500">
+          <div className="text-center font-mono text-[11px] text-slate-500 opacity-60">
             Press Pause or Exit Zen Overlay anytime to return to standard view
           </div>
+
+
         </div>
       )}
     </div>

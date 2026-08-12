@@ -158,7 +158,22 @@ export async function forceSyncAiSkillsAction() {
   return result;
 }
 
+export async function revokeSpotifyTokenAction() {
+  try {
+    await db
+      .delete(systemSettings)
+      .where(eq(systemSettings.key, "SPOTIFY_REFRESH_TOKEN"));
+    revalidatePath("/settings");
+    revalidatePath("/");
+    return { success: true, message: "Spotify authorization revoked." };
+  } catch (error: any) {
+    console.error("[revokeSpotifyTokenAction error]:", error);
+    return { success: false, message: error.message || "Failed to revoke token" };
+  }
+}
+
 export async function getAISkills() {
+
   try {
     await syncAiSkillsAction();
     const skillsList = await db.select().from(aiSkills).orderBy(desc(aiSkills.createdAt));
