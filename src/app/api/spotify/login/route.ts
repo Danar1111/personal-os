@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSpotifyRedirectUri } from "@/lib/spotify";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +13,8 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const { origin } = req.nextUrl;
-  const redirectUri =
-    process.env.SPOTIFY_REDIRECT_URI?.trim() ||
-    `${origin.replace("localhost", "127.0.0.1")}/api/spotify/callback`;
+  const redirectUri = getSpotifyRedirectUri(req);
+
 
   const scopes = [
     "user-read-currently-playing",

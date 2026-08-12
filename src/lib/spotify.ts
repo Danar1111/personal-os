@@ -1,3 +1,4 @@
+import { NextRequest } from "next/server";
 import { db } from "@/db";
 import { systemSettings } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -5,6 +6,37 @@ import { eq } from "drizzle-orm";
 const TOKEN_ENDPOINT = "https://accounts.spotify.com/api/token";
 const NOW_PLAYING_ENDPOINT = "https://api.spotify.com/v1/me/player/currently-playing";
 const PLAYER_ENDPOINT = "https://api.spotify.com/v1/me/player";
+
+export function getSpotifyRedirectUri(req?: NextRequest): string {
+  if (process.env.SPOTIFY_REDIRECT_URI?.trim()) {
+    return process.env.SPOTIFY_REDIRECT_URI.trim();
+  }
+
+  if (process.env.NEXT_PUBLIC_APP_URL?.trim()) {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL.trim().replace(/\/$/, "");
+    return `${baseUrl}/api/spotify/callback`;
+  }
+
+  if (process.env.VERCEL_URL?.trim()) {
+    const baseUrl = `https://${process.env.VERCEL_URL.trim().replace(/\/$/, "")}`;
+    return `${baseUrl}/api/spotify/callback`;
+  }
+
+  if (req) {
+    const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "127.0.0.1:3000";
+    const proto = req.headers.get("x-forwarded-proto") || (host.includes("localhost") || host.includes("127.0.0.1") ? "http" : "https");
+
+    if (host.includes("localhost") || host.includes("127.0.0.1")) {
+      const cleanHost = host.replace("localhost", "127.0.0.1");
+      return `http://${cleanHost}/api/spotify/callback`;
+    }
+
+    return `${proto}://${host}/api/spotify/callback`;
+  }
+
+  return "http://127.0.0.1:3000/api/spotify/callback";
+}
+
 
 export async function getSpotifyRefreshToken(): Promise<string | null> {
   const envToken = process.env.SPOTIFY_REFRESH_TOKEN?.trim();
