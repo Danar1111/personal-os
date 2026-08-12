@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 
 export function useSpotifyDrawer() {
   const [isOpen, setIsOpen] = useState(false);
-  const [isDismissed, setIsDismissed] = useState(false);
+  const [isDismissed, setIsDismissed] = useState(true);
+
 
   useEffect(() => {
     const handleToggleRight = (e: any) => {

@@ -209,10 +209,8 @@ export function Sidebar() {
       </nav>
 
       {/* Sidebar Spotify Mini Music Player */}
-      <div className="px-3 py-2 border-t border-white/10">
+      <SpotifyFloatingWidget isCollapsed={isCollapsed} className="px-3 py-2 border-t border-white/10" />
 
-        <SpotifyFloatingWidget isCollapsed={isCollapsed} />
-      </div>
 
       {/* User Footer */}
       <div className="p-3 border-t border-white/10">

@@ -33,9 +33,11 @@ interface LyricLine {
 
 interface SidebarSpotifyPlayerProps {
   isCollapsed?: boolean;
+  className?: string;
 }
 
-export function SpotifyFloatingWidget({ isCollapsed = false }: SidebarSpotifyPlayerProps) {
+export function SpotifyFloatingWidget({ isCollapsed = false, className }: SidebarSpotifyPlayerProps) {
+
   const { isDismissed, toggleRight, setMiniDismissed } = useSpotifyDrawer();
 
   const [data, setData] = useState<NowPlayingData>({ isPlaying: false });
@@ -187,8 +189,8 @@ export function SpotifyFloatingWidget({ isCollapsed = false }: SidebarSpotifyPla
 
 
   return (
+    <div className={cn("w-full", className)}>
 
-    <div className="w-full">
       {isCollapsed ? (
         /* COLLAPSED SIDEBAR VIEW (ICON ONLY) */
         <div className="flex justify-center p-2">
