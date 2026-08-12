@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Music, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSpotifyDrawer } from "@/hooks/use-spotify-drawer";
 
 interface PillState {
   show: boolean;
+  isVisible: boolean;
   status: "loading" | "connected" | "idle";
   trackTitle?: string;
   artist?: string;
@@ -14,50 +15,80 @@ interface PillState {
 
 export function SpotifyStatusPill() {
   const { isDismissed, toggleRight, setMiniDismissed } = useSpotifyDrawer();
-  const [pill, setPill] = useState<PillState>({ show: false, status: "loading" });
+  const [pill, setPill] = useState<PillState>({
+    show: false,
+    isVisible: false,
+    status: "loading",
+  });
 
-  // Function to trigger Spotify Check via Ctrl+M or Event
+  const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const unmountTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const animFrameRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+      if (unmountTimeoutRef.current) clearTimeout(unmountTimeoutRef.current);
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    };
+  }, []);
+
   const triggerCheck = async () => {
-    setPill({ show: true, status: "loading" });
+    if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    if (unmountTimeoutRef.current) clearTimeout(unmountTimeoutRef.current);
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+
+    // 1. Mount element in off-screen state
+    setPill({ show: true, isVisible: false, status: "loading" });
+
+    // 2. Trigger smooth slide-down transition on next frame
+    animFrameRef.current = requestAnimationFrame(() => {
+      animFrameRef.current = requestAnimationFrame(() => {
+        setPill((prev) => ({ ...prev, isVisible: true }));
+      });
+    });
 
     try {
       const res = await fetch("/api/spotify/now-playing", { cache: "no-store" });
       if (res.ok) {
         const json = await res.json();
         if (json.title) {
-          setPill({
-            show: true,
+          setPill((prev) => ({
+            ...prev,
             status: "connected",
             trackTitle: json.title,
             artist: json.artist,
-          });
+          }));
           // Show Left Sidebar Mini Player
           setMiniDismissed(false);
         } else {
-          setPill({ show: true, status: "idle" });
+          setPill((prev) => ({ ...prev, status: "idle" }));
         }
       } else {
-        setPill({ show: true, status: "idle" });
+        setPill((prev) => ({ ...prev, status: "idle" }));
       }
     } catch (e) {
-      setPill({ show: true, status: "idle" });
+      setPill((prev) => ({ ...prev, status: "idle" }));
     }
 
-    // Hide pill after 3.5 seconds
-    setTimeout(() => {
-      setPill((prev) => ({ ...prev, show: false }));
-    }, 3500);
+    // 3. Trigger smooth slide-up exit transition after 3.2 seconds
+    hideTimeoutRef.current = setTimeout(() => {
+      setPill((prev) => ({ ...prev, isVisible: false }));
+      unmountTimeoutRef.current = setTimeout(() => {
+        setPill((prev) => ({ ...prev, show: false }));
+      }, 500);
+    }, 3200);
   };
 
-  // Keyboard Shortcuts Handler (Ctrl+M and Ctrl+Shift+M)
+  // Keyboard Shortcuts & External Custom Event Listener
   useEffect(() => {
+    const handleTriggerCheck = () => triggerCheck();
+
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ctrl + Shift + M => Toggle Right Sidebar Player (only if mini player active)
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "m") {
         e.preventDefault();
-        if (!isDismissed) {
-          toggleRight();
-        }
+        if (!isDismissed) toggleRight();
         return;
       }
 
@@ -72,17 +103,27 @@ export function SpotifyStatusPill() {
         }
         return;
       }
-
     };
 
+    window.addEventListener("trigger-spotify-status-check", handleTriggerCheck);
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("trigger-spotify-status-check", handleTriggerCheck);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, [isDismissed, toggleRight, setMiniDismissed]);
 
   if (!pill.show) return null;
 
   return (
-    <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 pointer-events-none select-none font-sans animate-in slide-in-from-top-4 duration-300">
+    <div
+      className={cn(
+        "fixed left-1/2 -translate-x-1/2 z-50 pointer-events-none select-none font-sans transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]",
+        pill.isVisible
+          ? "top-5 opacity-100 scale-100"
+          : "top-[-80px] opacity-0 scale-95"
+      )}
+    >
       <div className="flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-[#0a0a0b]/95 border border-[#1DB954]/40 shadow-2xl backdrop-blur-2xl text-white shadow-black/80">
         {pill.status === "loading" && (
           <>

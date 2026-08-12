@@ -196,10 +196,10 @@ export function Omnibar() {
     setIsOpen(false);
     setQuery("");
     if (item.id === "page-spotify") {
-      window.dispatchEvent(new CustomEvent("toggle-spotify-mini-player", { detail: { isDismissed: false } }));
-      window.dispatchEvent(new CustomEvent("toggle-spotify-right-sidebar", { detail: { isOpen: false } }));
+      window.dispatchEvent(new CustomEvent("trigger-spotify-status-check"));
       return;
     }
+
  else if (item.id === "ask-omni-ai") {
       window.dispatchEvent(new CustomEvent("open-omni-ai", { detail: { initialQuery: currentQuery } }));
     } else if (item.url.startsWith("http://") || item.url.startsWith("https://")) {
