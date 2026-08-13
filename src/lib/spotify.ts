@@ -54,6 +54,34 @@ export async function getSpotifyRefreshToken(): Promise<string | null> {
   }
 }
 
+export async function saveSpotifyRefreshToken(newToken: string) {
+  try {
+    const existing = await db
+      .select()
+      .from(systemSettings)
+      .where(eq(systemSettings.key, "SPOTIFY_REFRESH_TOKEN"));
+
+    if (existing.length > 0) {
+      await db
+        .update(systemSettings)
+        .set({
+          value: newToken,
+          isSecret: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(systemSettings.key, "SPOTIFY_REFRESH_TOKEN"));
+    } else {
+      await db.insert(systemSettings).values({
+        key: "SPOTIFY_REFRESH_TOKEN",
+        value: newToken,
+        isSecret: true,
+      });
+    }
+  } catch (err) {
+    console.error("[SPOTIFY] Failed to save rotated refresh token to DB:", err);
+  }
+}
+
 export async function getAccessToken(): Promise<string | null> {
   const clientId = process.env.SPOTIFY_CLIENT_ID?.trim();
   const clientSecret = process.env.SPOTIFY_CLIENT_SECRET?.trim();
@@ -86,24 +114,41 @@ export async function getAccessToken(): Promise<string | null> {
   }
 
   const data = await response.json();
+
+  if (data.refresh_token && data.refresh_token !== refreshToken) {
+    console.log("[SPOTIFY] Received rotated refresh token from Spotify. Saving to DB...");
+    await saveSpotifyRefreshToken(data.refresh_token);
+  }
+
   return data.access_token || null;
 }
 
 export async function getNowPlaying() {
+  const refreshToken = await getSpotifyRefreshToken();
+  const clientId = process.env.SPOTIFY_CLIENT_ID?.trim();
+  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET?.trim();
+
+  if (!clientId || !clientSecret || !refreshToken) {
+    return { isConnected: false, isPlaying: false, error: "Not connected to Spotify" };
+  }
+
   const accessToken = await getAccessToken();
 
   if (!accessToken) {
-    return { isPlaying: false, error: "No access token" };
+    return { isConnected: false, isPlaying: false, error: "Failed to obtain access token" };
   }
 
-  return fetch(NOW_PLAYING_ENDPOINT, {
+  const res = await fetch(NOW_PLAYING_ENDPOINT, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
     cache: "no-store",
     next: { revalidate: 0 },
   });
+
+  return { isConnected: true, response: res };
 }
+
 
 export async function controlPlayback(action: "play" | "pause" | "next" | "previous") {
   const accessToken = await getAccessToken();

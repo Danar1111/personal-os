@@ -5,24 +5,23 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const response = await getNowPlaying();
+    const result = await getNowPlaying();
 
-    if (!response || ("isPlaying" in response && !response.isPlaying)) {
-      return NextResponse.json({ isPlaying: false });
+    if (!result || !result.isConnected) {
+      return NextResponse.json({ isConnected: false, isPlaying: false });
     }
 
-    const resObj = response as Response;
+    const resObj = result.response;
 
-    if (resObj.status === 204 || resObj.status > 400) {
-      return NextResponse.json({ isPlaying: false });
+    if (!resObj || resObj.status === 204 || resObj.status >= 400) {
+      return NextResponse.json({ isConnected: true, isPlaying: false });
     }
 
     const song = await resObj.json().catch(() => null);
 
     if (!song || !song.item) {
-      return NextResponse.json({ isPlaying: false });
+      return NextResponse.json({ isConnected: true, isPlaying: false });
     }
-
 
     const isPlaying = song.is_playing;
     const title = song.item.name;
@@ -34,6 +33,7 @@ export async function GET() {
     const duration_ms = song.item.duration_ms || 0;
 
     return NextResponse.json({
+      isConnected: true,
       isPlaying,
       title,
       artist,
@@ -45,6 +45,7 @@ export async function GET() {
     });
   } catch (error) {
     console.error("[SPOTIFY_NOW_PLAYING_ERROR]", error);
-    return NextResponse.json({ isPlaying: false });
+    return NextResponse.json({ isConnected: false, isPlaying: false });
   }
 }
+

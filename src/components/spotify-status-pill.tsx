@@ -1,14 +1,14 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, Link2Off } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSpotifyDrawer } from "@/hooks/use-spotify-drawer";
 
 interface PillState {
   show: boolean;
   isVisible: boolean;
-  status: "loading" | "connected" | "idle";
+  status: "loading" | "connected" | "idle" | "unconnected";
   trackTitle?: string;
   artist?: string;
 }
@@ -48,11 +48,16 @@ export function SpotifyStatusPill() {
       });
     });
 
+    let isNotConnected = false;
+
     try {
       const res = await fetch("/api/spotify/now-playing", { cache: "no-store" });
       if (res.ok) {
         const json = await res.json();
-        if (json.title) {
+        if (json.isConnected === false) {
+          isNotConnected = true;
+          setPill((prev) => ({ ...prev, status: "unconnected" }));
+        } else if (json.title) {
           setPill((prev) => ({
             ...prev,
             status: "connected",
@@ -65,19 +70,22 @@ export function SpotifyStatusPill() {
           setPill((prev) => ({ ...prev, status: "idle" }));
         }
       } else {
-        setPill((prev) => ({ ...prev, status: "idle" }));
+        isNotConnected = true;
+        setPill((prev) => ({ ...prev, status: "unconnected" }));
       }
     } catch (e) {
-      setPill((prev) => ({ ...prev, status: "idle" }));
+      isNotConnected = true;
+      setPill((prev) => ({ ...prev, status: "unconnected" }));
     }
 
-    // 3. Trigger smooth slide-up exit transition after 3.2 seconds
+    // 3. Trigger smooth slide-up exit transition (longer timeout if unconnected so user can click Connect)
+    const timeoutDuration = isNotConnected ? 6000 : 3200;
     hideTimeoutRef.current = setTimeout(() => {
       setPill((prev) => ({ ...prev, isVisible: false }));
       unmountTimeoutRef.current = setTimeout(() => {
         setPill((prev) => ({ ...prev, show: false }));
       }, 500);
-    }, 3200);
+    }, timeoutDuration);
   };
 
   // Keyboard Shortcuts & External Custom Event Listener
@@ -118,13 +126,13 @@ export function SpotifyStatusPill() {
   return (
     <div
       className={cn(
-        "fixed left-1/2 -translate-x-1/2 z-50 pointer-events-none select-none font-sans transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]",
+        "fixed left-1/2 -translate-x-1/2 z-50 pointer-events-auto select-none font-sans transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]",
         pill.isVisible
           ? "top-5 opacity-100 scale-100"
           : "top-[-80px] opacity-0 scale-95"
       )}
     >
-      <div className="flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-[#0a0a0b]/95 border border-[#1DB954]/40 shadow-2xl backdrop-blur-2xl text-white shadow-black/80">
+      <div className="flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-[#0a0a0b]/95 border border-white/10 shadow-2xl backdrop-blur-2xl text-white shadow-black/80">
         {pill.status === "loading" && (
           <>
             <div className="p-1.5 rounded-xl bg-[#1DB954]/20 text-[#1DB954]">
@@ -170,6 +178,28 @@ export function SpotifyStatusPill() {
                 Play a song on Spotify app to activate
               </span>
             </div>
+          </>
+        )}
+
+        {pill.status === "unconnected" && (
+          <>
+            <div className="p-1.5 rounded-xl bg-rose-500/20 text-rose-400">
+              <Link2Off className="w-4 h-4" />
+            </div>
+            <div className="flex flex-col min-w-0 pr-2">
+              <span className="text-xs font-bold text-rose-300 font-mono">
+                Spotify Not Connected
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">
+                Pair account to enable player
+              </span>
+            </div>
+            <a
+              href="/api/spotify/login"
+              className="px-3 py-1 rounded-xl bg-[#1DB954] hover:bg-[#1ed760] text-black font-bold text-[11px] font-sans transition-all ml-1 shadow-md shadow-[#1DB954]/20 cursor-pointer"
+            >
+              Connect
+            </a>
           </>
         )}
       </div>
