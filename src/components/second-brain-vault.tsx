@@ -544,7 +544,29 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
       }
     }
 
-    // 2. Tab & Shift+Tab indentation support for markdown list writing
+    // 2. Smart Backspace: Delete 4 spaces at once when deleting indented leading spaces
+    if (e.key === "Backspace" && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+      const textarea = e.currentTarget;
+      const { selectionStart, selectionEnd, value } = textarea;
+
+      if (selectionStart === selectionEnd && selectionStart >= 4) {
+        const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
+        const textBeforeCursor = value.slice(lineStart, selectionStart);
+
+        if (/^\s+$/.test(textBeforeCursor) && textBeforeCursor.length % 4 === 0) {
+          e.preventDefault();
+          recordUndoSnapshot();
+          const newValue = value.slice(0, selectionStart - 4) + value.slice(selectionEnd);
+          setEditorContent(newValue);
+          setTimeout(() => {
+            textarea.selectionStart = textarea.selectionEnd = selectionStart - 4;
+          }, 0);
+          return;
+        }
+      }
+    }
+
+    // 3. Tab & Shift+Tab indentation support (4 spaces standard for CommonMark lists)
     if (e.key === "Tab") {
       e.preventDefault();
       const textarea = e.currentTarget;
@@ -552,8 +574,11 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
 
       recordUndoSnapshot();
 
+      const TAB_SIZE = 4;
+      const TAB_STR = "    ";
+
       if (e.shiftKey) {
-        // Shift + Tab => Un-indent (remove 2 leading spaces)
+        // Shift + Tab => Un-indent (remove up to 4 leading spaces)
         const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
         const lineEnd = value.indexOf("\n", selectionEnd);
         const actualEnd = lineEnd === -1 ? value.length : lineEnd;
@@ -561,23 +586,29 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
 
         const unindented = targetText
           .split("\n")
-          .map((line) => (line.startsWith("  ") ? line.slice(2) : line.startsWith(" ") ? line.slice(1) : line))
+          .map((line) => {
+            if (line.startsWith("    ")) return line.slice(4);
+            if (line.startsWith("   ")) return line.slice(3);
+            if (line.startsWith("  ")) return line.slice(2);
+            if (line.startsWith(" ")) return line.slice(1);
+            return line;
+          })
           .join("\n");
 
         const newValue = value.slice(0, lineStart) + unindented + value.slice(actualEnd);
         setEditorContent(newValue);
 
         setTimeout(() => {
-          textarea.selectionStart = Math.max(0, selectionStart - 2);
-          textarea.selectionEnd = Math.max(0, selectionEnd - (targetText.length - unindented.length));
+          textarea.selectionStart = Math.max(lineStart, selectionStart - TAB_SIZE);
+          textarea.selectionEnd = Math.max(lineStart, selectionEnd - (targetText.length - unindented.length));
         }, 0);
       } else {
-        // Tab => Indent (insert 2 spaces)
+        // Tab => Indent (insert 4 spaces)
         if (selectionStart === selectionEnd) {
-          const newValue = value.slice(0, selectionStart) + "  " + value.slice(selectionEnd);
+          const newValue = value.slice(0, selectionStart) + TAB_STR + value.slice(selectionEnd);
           setEditorContent(newValue);
           setTimeout(() => {
-            textarea.selectionStart = textarea.selectionEnd = selectionStart + 2;
+            textarea.selectionStart = textarea.selectionEnd = selectionStart + TAB_SIZE;
           }, 0);
         } else {
           const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
@@ -587,20 +618,21 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
 
           const indented = targetText
             .split("\n")
-            .map((line) => "  " + line)
+            .map((line) => TAB_STR + line)
             .join("\n");
 
           const newValue = value.slice(0, lineStart) + indented + value.slice(actualEnd);
           setEditorContent(newValue);
 
           setTimeout(() => {
-            textarea.selectionStart = selectionStart + 2;
+            textarea.selectionStart = selectionStart + TAB_SIZE;
             textarea.selectionEnd = selectionEnd + (indented.length - targetText.length);
           }, 0);
         }
       }
     }
   };
+
 
 
   const recordUndoSnapshot = (oldTitle = editorTitle, oldContent = editorContent) => {
