@@ -535,6 +535,74 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
     }
   };
 
+  const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // 1. If wiki suggestion autocomplete is active, let handleWikiKeyDown handle it
+    if (wikiSuggestOpen && suggestedItems.length > 0) {
+      if (["ArrowDown", "ArrowUp", "Tab", "Enter", "Escape"].includes(e.key)) {
+        handleWikiKeyDown(e);
+        return;
+      }
+    }
+
+    // 2. Tab & Shift+Tab indentation support for markdown list writing
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const textarea = e.currentTarget;
+      const { selectionStart, selectionEnd, value } = textarea;
+
+      recordUndoSnapshot();
+
+      if (e.shiftKey) {
+        // Shift + Tab => Un-indent (remove 2 leading spaces)
+        const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
+        const lineEnd = value.indexOf("\n", selectionEnd);
+        const actualEnd = lineEnd === -1 ? value.length : lineEnd;
+        const targetText = value.slice(lineStart, actualEnd);
+
+        const unindented = targetText
+          .split("\n")
+          .map((line) => (line.startsWith("  ") ? line.slice(2) : line.startsWith(" ") ? line.slice(1) : line))
+          .join("\n");
+
+        const newValue = value.slice(0, lineStart) + unindented + value.slice(actualEnd);
+        setEditorContent(newValue);
+
+        setTimeout(() => {
+          textarea.selectionStart = Math.max(0, selectionStart - 2);
+          textarea.selectionEnd = Math.max(0, selectionEnd - (targetText.length - unindented.length));
+        }, 0);
+      } else {
+        // Tab => Indent (insert 2 spaces)
+        if (selectionStart === selectionEnd) {
+          const newValue = value.slice(0, selectionStart) + "  " + value.slice(selectionEnd);
+          setEditorContent(newValue);
+          setTimeout(() => {
+            textarea.selectionStart = textarea.selectionEnd = selectionStart + 2;
+          }, 0);
+        } else {
+          const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
+          const lineEnd = value.indexOf("\n", selectionEnd);
+          const actualEnd = lineEnd === -1 ? value.length : lineEnd;
+          const targetText = value.slice(lineStart, actualEnd);
+
+          const indented = targetText
+            .split("\n")
+            .map((line) => "  " + line)
+            .join("\n");
+
+          const newValue = value.slice(0, lineStart) + indented + value.slice(actualEnd);
+          setEditorContent(newValue);
+
+          setTimeout(() => {
+            textarea.selectionStart = selectionStart + 2;
+            textarea.selectionEnd = selectionEnd + (indented.length - targetText.length);
+          }, 0);
+        }
+      }
+    }
+  };
+
+
   const recordUndoSnapshot = (oldTitle = editorTitle, oldContent = editorContent) => {
     if (isHistoryActionRef.current) {
       isHistoryActionRef.current = false;
@@ -1508,7 +1576,7 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
                   value={editorContent}
                   onChange={handleTextareaChange}
                   onKeyUp={handleTextareaKeyUp}
-                  onKeyDown={handleWikiKeyDown}
+                  onKeyDown={handleEditorKeyDown}
                   placeholder="Start typing markdown, code blocks, or wiki-links like [[Note Title]]..."
                   className="w-full h-full min-h-[380px] bg-transparent border-none text-slate-200 font-mono text-xs focus-visible:ring-0 resize-none leading-relaxed p-4 placeholder:text-slate-600 placeholder:italic"
                 />
@@ -1540,13 +1608,13 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
                     remarkPlugins={[remarkGfm]}
                     components={{
                       ul({ children }) {
-                        return <ul className="list-disc list-inside space-y-1.5 my-3 pl-2 text-slate-200">{children}</ul>;
+                        return <ul className="list-disc list-outside space-y-1.5 my-2 pl-6 text-slate-200">{children}</ul>;
                       },
                       ol({ children }) {
-                        return <ol className="list-decimal list-inside space-y-1.5 my-3 pl-2 text-slate-200">{children}</ol>;
+                        return <ol className="list-decimal list-outside space-y-1.5 my-2 pl-6 text-slate-200">{children}</ol>;
                       },
                       li({ children }) {
-                        return <li className="text-slate-200 leading-relaxed font-sans">{children}</li>;
+                        return <li className="text-slate-200 leading-relaxed font-sans pl-1">{children}</li>;
                       },
                       h1({ children }) {
                         return <h1 className="text-xl font-bold text-white mt-4 mb-2 font-mono tracking-tight border-b border-white/10 pb-1">{children}</h1>;
@@ -1558,8 +1626,9 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
                         return <h3 className="text-base font-bold text-white mt-3 mb-1.5 font-mono">{children}</h3>;
                       },
                       p({ children }) {
-                        return <div className="mb-2 text-slate-200 leading-relaxed font-sans">{children}</div>;
+                        return <p className="mb-2 text-slate-200 leading-relaxed font-sans">{children}</p>;
                       },
+
                       blockquote({ children }) {
                         return (
                           <blockquote className="border-l-4 border-indigo-500/60 bg-indigo-500/10 p-3 rounded-r-2xl my-3 italic text-indigo-200 font-mono text-xs">
@@ -1929,14 +1998,15 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
                     remarkPlugins={[remarkGfm]}
                     components={{
                       ul({ children }) {
-                        return <ul className="list-disc list-inside space-y-2 my-4 pl-3 text-slate-100">{children}</ul>;
+                        return <ul className="list-disc list-outside space-y-2 my-4 pl-6 text-slate-100">{children}</ul>;
                       },
                       ol({ children }) {
-                        return <ol className="list-decimal list-inside space-y-2 my-4 pl-3 text-slate-100">{children}</ol>;
+                        return <ol className="list-decimal list-outside space-y-2 my-4 pl-6 text-slate-100">{children}</ol>;
                       },
                       li({ children }) {
-                        return <li className="text-slate-100 leading-relaxed font-sans">{children}</li>;
+                        return <li className="text-slate-100 leading-relaxed font-sans pl-1">{children}</li>;
                       },
+
                       h1({ children }) {
                         return <h1 className="text-2xl font-bold text-white mt-6 mb-3 font-mono tracking-tight border-b border-white/10 pb-1">{children}</h1>;
                       },
