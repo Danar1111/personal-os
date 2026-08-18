@@ -8,6 +8,7 @@ try {
 }
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ["googleapis", "google-auth-library"],
   typescript: {
     ignoreBuildErrors: true,
   },
