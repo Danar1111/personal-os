@@ -28,6 +28,6 @@ jobs:
             git reset --hard origin/main
             npm install
             npx drizzle-kit push
-            npm run build
+            NODE_OPTIONS="--max-old-space-size=1536" npm run build
             pm2 restart personal-os || pm2 start npm --name "personal-os" -- start
             pm2 save
