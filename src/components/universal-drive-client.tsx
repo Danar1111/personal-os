@@ -41,6 +41,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -59,6 +60,7 @@ import {
   createDriveAssetAction,
 } from "@/app/drive/actions";
 import { useUploadStore } from "@/lib/store/useUploadStore";
+import { useLocalUploadStore } from "@/lib/store/useLocalUploadStore";
 import { cn } from "@/lib/utils";
 
 interface GoogleDriveFile {
@@ -318,12 +320,15 @@ export function UniversalDriveClient({
   const [selectedAssetIds, setSelectedAssetIds] = useState<number[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Batch Upload Modes: "local_only" | "auto_sync" | "drive_only"
+  const [uploadMode, setUploadMode] = useState<"local_only" | "auto_sync" | "drive_only">("local_only");
+
   // Upload Modal State (Bulk Upload & Auto-Category)
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadTags, setUploadTags] = useState("");
   const [isSubmittingUpload, setIsSubmittingUpload] = useState(false);
-  const [autoSyncToDrive, setAutoSyncToDrive] = useState(true);
+  const localUpload = useLocalUploadStore();
   const [isDragging, setIsDragging] = useState(false);
 
   // Custom Glassmorphic Delete Confirmation Modal State
@@ -501,16 +506,16 @@ export function UniversalDriveClient({
         let changed = false;
         const updatedList = prevList.map((asset) => {
           const match = completedWithAsset.find((q) => q.assetId === asset.id);
-          if (
-            match &&
-            (asset.syncStatus !== "SYNCED_LOCAL_KEPT" || asset.gdriveId !== match.gdriveId)
-          ) {
-            changed = true;
-            return {
-              ...asset,
-              syncStatus: "SYNCED_LOCAL_KEPT",
-              gdriveId: match.gdriveId || null,
-            };
+          if (match) {
+            const targetStatus = match.targetSyncStatus || "SYNCED_LOCAL_KEPT";
+            if (asset.syncStatus !== targetStatus || asset.gdriveId !== match.gdriveId) {
+              changed = true;
+              return {
+                ...asset,
+                syncStatus: targetStatus,
+                gdriveId: match.gdriveId || null,
+              };
+            }
           }
           return asset;
         });
@@ -556,6 +561,15 @@ export function UniversalDriveClient({
 
   // Sync Single Asset via Resumable Client Upload Queue
   const handleSyncAsset = (asset: Asset) => {
+    if (asset.syncStatus === "CLOUD_ONLY") {
+      triggerFeedback(`⚠️ "${asset.title}" is Cloud Only. Local binary file does not exist.`);
+      return;
+    }
+    if (asset.syncStatus === "SYNCED_LOCAL_KEPT" || asset.gdriveId) {
+      triggerFeedback(`ℹ️ "${asset.title}" is already synced to Google Drive.`);
+      return;
+    }
+
     addToQueue([
       {
         id: `asset-${asset.id}`,
@@ -574,7 +588,17 @@ export function UniversalDriveClient({
   const handleSyncSelected = () => {
     if (selectedAssetIds.length === 0) return;
     const selected = assetsList.filter((a) => selectedAssetIds.includes(a.id));
-    const items = selected.map((asset) => ({
+    const unsyncedOnly = selected.filter(
+      (a) => a.syncStatus !== "CLOUD_ONLY" && a.syncStatus !== "SYNCED_LOCAL_KEPT" && !a.gdriveId
+    );
+
+    if (unsyncedOnly.length === 0) {
+      triggerFeedback(`ℹ️ Selected item(s) are already synced to Google Drive or Cloud Only.`);
+      setSelectedAssetIds([]);
+      return;
+    }
+
+    const items = unsyncedOnly.map((asset) => ({
       id: `asset-${asset.id}`,
       assetId: asset.id,
       name: asset.title,
@@ -584,8 +608,13 @@ export function UniversalDriveClient({
       folderName: selectedFolderName,
     }));
 
+    const skippedCount = selected.length - unsyncedOnly.length;
     addToQueue(items);
-    triggerFeedback(`✓ Queued ${items.length} file(s) for direct Google Drive sync`);
+    if (skippedCount > 0) {
+      triggerFeedback(`✓ Queued ${items.length} unsynced file(s) (${skippedCount} already synced skipped)`);
+    } else {
+      triggerFeedback(`✓ Queued ${items.length} file(s) for direct Google Drive sync`);
+    }
     setSelectedAssetIds([]);
   };
 
@@ -628,86 +657,142 @@ export function UniversalDriveClient({
     }
 
     setIsSubmittingUpload(true);
+
+    // Close modal immediately — progress shown in global bottom-right widget
+    const filesToUpload = [...uploadFiles];
+    setIsUploadOpen(false);
+    setUploadFiles([]);
+    setUploadTags("");
+
+    // Clear any previous completed items from the local widget before starting a new batch
+    localUpload.clearCompleted();
+
     let successCount = 0;
     const queuedItems: any[] = [];
+    const totalFiles = filesToUpload.length;
 
     try {
-      for (const file of uploadFiles) {
-        try {
-          const formData = new FormData();
-          formData.append("file", file, file.name);
+      for (let index = 0; index < totalFiles; index++) {
+        const file = filesToUpload[index];
+        const category = detectFileType(file);
 
-          let res = await fetch("/api/upload", {
-            method: "POST",
-            body: formData,
+        if (uploadMode === "drive_only") {
+          try {
+            // Create asset directly as CLOUD_ONLY with a dummy path
+            const created = await createDriveAssetAction({
+              title: file.name,
+              type: category,
+              urlOrPath: `pending-gdrive-${Date.now()}-${index}`,
+              tags: uploadTags.trim(),
+              sizeBytes: file.size,
+              syncStatus: "CLOUD_ONLY",
+            });
+            successCount++;
+
+            // Queue directly to Google Drive bypassing local upload
+            queuedItems.push({
+              id: `asset-${created.id || Date.now()}-${Math.random()}`,
+              assetId: created.id,
+              name: file.name,
+              size: file.size,
+              file: file, // file binary from browser memory
+              folderId: selectedFolderId,
+              folderName: selectedFolderName,
+              targetSyncStatus: "CLOUD_ONLY",
+            });
+          } catch (err: any) {
+            console.error(`Error creating Cloud Only asset ${file.name}:`, err);
+            triggerFeedback(`❌ Failed to prepare ${file.name} for Cloud Upload`);
+          }
+          continue; // Skip local upload
+        }
+
+        const itemId = `local-${Date.now()}-${index}`;
+        localUpload.startItem({ id: itemId, name: file.name, size: file.size });
+
+        try {
+          const fileData: any = await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", "/api/upload", true);
+            xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+            xhr.setRequestHeader("X-File-Name", encodeURIComponent(file.name));
+            xhr.setRequestHeader("X-File-Type", file.type || "application/octet-stream");
+
+            xhr.upload.onprogress = (evt) => {
+              if (evt.lengthComputable) {
+                const percent = Math.round((evt.loaded / evt.total) * 100);
+                localUpload.updateProgress(itemId, percent, evt.loaded);
+              }
+            };
+
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                  resolve(JSON.parse(xhr.responseText));
+                } catch {
+                  reject(new Error("Invalid JSON response"));
+                }
+              } else {
+                try {
+                  const res = JSON.parse(xhr.responseText);
+                  reject(new Error(res.error || `Upload failed (${xhr.status})`));
+                } catch {
+                  reject(new Error(`Upload failed (${xhr.status})`));
+                }
+              }
+            };
+
+            xhr.onerror = () => reject(new Error("Network upload error"));
+            xhr.send(file);
           });
 
-          // Fallback: If FormData body parsing fails in environment, send direct binary stream with headers
-          if (!res.ok) {
-            res = await fetch("/api/upload", {
-              method: "POST",
-              headers: {
-                "Content-Type": file.type || "application/octet-stream",
-                "X-File-Name": encodeURIComponent(file.name),
-                "X-File-Type": file.type || "application/octet-stream",
-              },
-              body: file,
-            });
-          }
-
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.error || `Failed to upload "${file.name}"`);
-          }
-
-          const fileData = await res.json();
-          const category = detectFileType(file);
+          localUpload.completeItem(itemId);
 
           const created = await createDriveAssetAction({
             title: file.name,
             type: category,
             urlOrPath: fileData.url,
             tags: uploadTags.trim(),
-            sizeBytes: fileData.size,
+            sizeBytes: fileData.size || file.size,
             syncStatus: "LOCAL_UNSYNCED",
           });
 
           successCount++;
 
-          if (autoSyncToDrive) {
+          if (uploadMode === "auto_sync") {
             queuedItems.push({
               id: `asset-${created.id || Date.now()}-${Math.random()}`,
               assetId: created.id,
               name: file.name,
-              size: fileData.size,
+              size: fileData.size || file.size,
               localPath: fileData.url,
               file: file,
               folderId: selectedFolderId,
               folderName: selectedFolderName,
+              targetSyncStatus: "SYNCED_LOCAL_KEPT",
             });
           }
         } catch (fileErr: any) {
+          localUpload.errorItem(itemId, fileErr.message);
           console.error(`Error uploading file ${file.name}:`, fileErr);
+          triggerFeedback(`⚠️ Error uploading ${file.name}: ${fileErr.message}`);
         }
       }
 
-      if (autoSyncToDrive && queuedItems.length > 0) {
+      if ((uploadMode === "auto_sync" || uploadMode === "drive_only") && queuedItems.length > 0) {
+        // Seamless handoff: hide local widget to prevent "stacking" since Drive sync takes over
+        if (uploadMode === "auto_sync") localUpload.clearCompleted(); 
         addToQueue(queuedItems);
-        triggerFeedback(`✓ ${successCount} file(s) saved locally & queued for Google Drive sync!`);
-      } else {
+        const msg = uploadMode === "drive_only" ? "Queued for direct Google Drive upload!" : "Saved locally & queued for Google Drive sync!";
+        triggerFeedback(`✓ ${successCount} file(s) ${msg}`);
+      } else if (successCount > 0) {
         triggerFeedback(`✓ ${successCount} file(s) saved to Local Storage!`);
       }
-
-      // Reset modal state
-      setIsUploadOpen(false);
-      setUploadFiles([]);
-      setUploadTags("");
 
       const updated = await getDriveAssets();
       setAssetsList(updated);
     } catch (err: any) {
       console.error(err);
-      triggerFeedback(`⚠️ Upload failed: ${err.message}`);
     } finally {
       setIsSubmittingUpload(false);
     }
@@ -1918,29 +2003,67 @@ export function UniversalDriveClient({
               />
             </div>
 
-            {/* Auto Google Drive Sync Checkbox */}
-            <div className="p-3 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <CustomCheckbox
-                  checked={autoSyncToDrive}
-                  onChange={() => setAutoSyncToDrive(!autoSyncToDrive)}
-                />
-                <div className="flex flex-col">
-                  <span className="text-xs font-bold text-white">
-                    Direct Cloud Sync to Google Drive
-                  </span>
-                  <span className="text-[10px] text-indigo-300">
-                    Target folder: {selectedFolderName}
-                  </span>
+            {/* Upload Mode Selector */}
+            <div className="space-y-2">
+              <label className="text-[11px] font-bold text-slate-300 uppercase">
+                Storage Destination
+              </label>
+              <div className="flex flex-col gap-2">
+                {/* Local Only */}
+                <div 
+                  onClick={() => setUploadMode("local_only")}
+                  className={cn("p-3 rounded-2xl border cursor-pointer flex items-center justify-between transition-colors", uploadMode === "local_only" ? "bg-emerald-500/10 border-emerald-500/30" : "bg-white/[0.02] border-white/5 hover:bg-white/[0.04]")}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn("w-4 h-4 rounded-full border flex items-center justify-center", uploadMode === "local_only" ? "border-emerald-500 bg-emerald-500/20" : "border-white/20")}>
+                      {uploadMode === "local_only" && <div className="w-2 h-2 rounded-full bg-emerald-400" />}
+                    </div>
+                    <div className="flex flex-col">
+                      <span className={cn("text-xs font-bold", uploadMode === "local_only" ? "text-emerald-400" : "text-slate-300")}>Local Storage Only</span>
+                      <span className="text-[10px] text-slate-400">Save to local server disk</span>
+                    </div>
+                  </div>
+                  <HardDrive className={cn("w-4 h-4", uploadMode === "local_only" ? "text-emerald-400" : "text-slate-500")} />
+                </div>
+
+                {/* Auto Sync */}
+                <div 
+                  onClick={() => setUploadMode("auto_sync")}
+                  className={cn("p-3 rounded-2xl border cursor-pointer flex items-center justify-between transition-colors", uploadMode === "auto_sync" ? "bg-indigo-500/10 border-indigo-500/30" : "bg-white/[0.02] border-white/5 hover:bg-white/[0.04]")}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn("w-4 h-4 rounded-full border flex items-center justify-center", uploadMode === "auto_sync" ? "border-indigo-500 bg-indigo-500/20" : "border-white/20")}>
+                      {uploadMode === "auto_sync" && <div className="w-2 h-2 rounded-full bg-indigo-400" />}
+                    </div>
+                    <div className="flex flex-col">
+                      <span className={cn("text-xs font-bold", uploadMode === "auto_sync" ? "text-white" : "text-slate-300")}>Auto Sync (Local + Drive)</span>
+                      <span className={cn("text-[10px]", uploadMode === "auto_sync" ? "text-indigo-300" : "text-slate-400")}>Save locally & sync to {selectedFolderName}</span>
+                    </div>
+                  </div>
+                  <RefreshCw className={cn("w-4 h-4", uploadMode === "auto_sync" ? "text-indigo-400" : "text-slate-500")} />
+                </div>
+
+                {/* Drive Only */}
+                <div 
+                  onClick={() => setUploadMode("drive_only")}
+                  className={cn("p-3 rounded-2xl border cursor-pointer flex items-center justify-between transition-colors", uploadMode === "drive_only" ? "bg-cyan-500/10 border-cyan-500/30" : "bg-white/[0.02] border-white/5 hover:bg-white/[0.04]")}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn("w-4 h-4 rounded-full border flex items-center justify-center", uploadMode === "drive_only" ? "border-cyan-500 bg-cyan-500/20" : "border-white/20")}>
+                      {uploadMode === "drive_only" && <div className="w-2 h-2 rounded-full bg-cyan-400" />}
+                    </div>
+                    <div className="flex flex-col">
+                      <span className={cn("text-xs font-bold", uploadMode === "drive_only" ? "text-cyan-400" : "text-slate-300")}>Cloud Only (Google Drive)</span>
+                      <span className="text-[10px] text-slate-400">Directly upload to Drive, bypass local</span>
+                    </div>
+                  </div>
+                  <Cloud className={cn("w-4 h-4", uploadMode === "drive_only" ? "text-cyan-400" : "text-slate-500")} />
                 </div>
               </div>
-              <Badge
-                variant="outline"
-                className="border-indigo-500/30 text-indigo-300 bg-indigo-500/20 text-[9px]"
-              >
-                Auto-Sync
-              </Badge>
             </div>
+
+
+
 
             <DialogFooter className="pt-2 flex items-center gap-3">
               <Button
@@ -1970,12 +2093,13 @@ export function UniversalDriveClient({
       {/* GLASSMORPHIC DELETE CONFIRMATION DIALOG (Popup Verif) */}
       <Dialog
         open={deleteConfirmState.isOpen}
-        onOpenChange={(open) =>
-          setDeleteConfirmState((prev) => ({ ...prev, isOpen: open }))
-        }
+        onOpenChange={(open) => {
+          if (isDeleting && !open) return;
+          setDeleteConfirmState((prev) => ({ ...prev, isOpen: open }));
+        }}
       >
         <DialogContent
-          showCloseButton={false}
+          showCloseButton={!isDeleting}
           className={cn(
             "rounded-3xl max-w-md p-6 shadow-2xl backdrop-blur-2xl font-mono text-center space-y-4",
             deleteConfirmState.mode === "drive_and_db"
@@ -1983,109 +2107,130 @@ export function UniversalDriveClient({
               : "bg-[#14141c]/95 border border-amber-500/30 text-slate-100"
           )}
         >
-          <div
-            className={cn(
-              "mx-auto w-14 h-14 rounded-2xl flex items-center justify-center border shadow-xl",
-              deleteConfirmState.mode === "drive_and_db"
-                ? "bg-rose-500/10 border-rose-500/30 text-rose-400"
-                : "bg-amber-500/10 border-amber-500/30 text-amber-400"
-            )}
-          >
-            <AlertTriangle className="w-7 h-7 animate-pulse" />
-          </div>
-
-          <div className="space-y-2">
-            <h3 className="text-base font-bold text-white tracking-wide uppercase font-mono">
-              {deleteConfirmState.mode === "drive_and_db"
-                ? "DELETE FROM DRIVE & DATABASE"
-                : "FREE DISK SPACE (KEEP CLOUD)"}
-            </h3>
-
-            <p className="text-xs text-slate-300 leading-relaxed font-sans px-2">
-              {deleteConfirmState.mode === "drive_and_db" ? (
-                <>
-                  Are you sure you want to permanently delete{" "}
-                  <span className="text-rose-300 font-bold">
-                    {deleteConfirmState.singleTitle
-                      ? `"${deleteConfirmState.singleTitle}"`
-                      : `${deleteConfirmState.targetIds.length} file(s)`}
-                  </span>
-                  ?
-                </>
-              ) : (
-                <>
-                  Are you sure you want to delete local copies for{" "}
-                  <span className="text-amber-300 font-bold">
-                    {deleteConfirmState.singleTitle
-                      ? `"${deleteConfirmState.singleTitle}"`
-                      : `${deleteConfirmState.targetIds.length} file(s)`}
-                  </span>{" "}
-                  from physical disk?
-                </>
-              )}
-            </p>
-
-            <div
-              className={cn(
-                "p-3 rounded-2xl text-[11px] text-left font-mono space-y-1 mt-2 border",
-                deleteConfirmState.mode === "drive_and_db"
-                  ? "bg-rose-950/30 border-rose-500/20 text-rose-200"
-                  : "bg-amber-950/30 border-amber-500/20 text-amber-200"
-              )}
-            >
-              {deleteConfirmState.mode === "drive_and_db" ? (
-                <>
-                  <div className="flex items-center gap-1.5 font-semibold text-rose-300">
-                    <span>⚠️ Permanent Destruction:</span>
-                  </div>
-                  <ul className="list-disc list-inside text-[10px] space-y-0.5 text-rose-300/80">
-                    <li>Deleted from Google Drive API</li>
-                    <li>Unlinked from /public/uploads</li>
-                    <li>Removed from MySQL Database</li>
-                  </ul>
-                </>
-              ) : (
-                <>
-                  <div className="flex items-center gap-1.5 font-semibold text-amber-300">
-                    <span>💡 Non-Destructive Ghosting:</span>
-                  </div>
-                  <p className="text-[10px] text-amber-300/80 leading-tight">
-                    Files will be removed from local disk (/public/uploads) to free storage, while your cloud records remain safely indexed in Google Drive.
-                  </p>
-                </>
-              )}
+          {isDeleting ? (
+            <div className="flex flex-col items-center justify-center py-12 space-y-5">
+              <RefreshCw
+                className={cn(
+                  "w-14 h-14 animate-spin",
+                  deleteConfirmState.mode === "drive_and_db"
+                    ? "text-rose-500"
+                    : "text-amber-500"
+                )}
+              />
+              <div className="space-y-1.5">
+                <h3 className="text-sm font-bold text-white uppercase tracking-widest font-mono">
+                  Processing Deletion...
+                </h3>
+                <p className="text-[10px] text-slate-400 font-sans">
+                  Please do not close this window or refresh the page.
+                </p>
+              </div>
             </div>
-          </div>
+          ) : (
+            <>
+              <div
+                className={cn(
+                  "mx-auto w-14 h-14 rounded-2xl flex items-center justify-center border shadow-xl",
+                  deleteConfirmState.mode === "drive_and_db"
+                    ? "bg-rose-500/10 border-rose-500/30 text-rose-400"
+                    : "bg-amber-500/10 border-amber-500/30 text-amber-400"
+                )}
+              >
+                <AlertTriangle className="w-7 h-7 animate-pulse" />
+              </div>
 
-          <div className="flex items-center gap-3 pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() =>
-                setDeleteConfirmState((prev) => ({ ...prev, isOpen: false }))
-              }
-              className="flex-1 border-white/15 text-slate-300 hover:bg-white/10 rounded-2xl h-11 text-xs font-mono cursor-pointer"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              disabled={isDeleting}
-              onClick={handleConfirmDelete}
-              className={cn(
-                "flex-1 text-white rounded-2xl h-11 text-xs font-mono font-bold shadow-xl cursor-pointer transition-all",
-                deleteConfirmState.mode === "drive_and_db"
-                  ? "bg-rose-600 hover:bg-rose-500 shadow-rose-600/40"
-                  : "bg-amber-600 hover:bg-amber-500 shadow-amber-600/40"
-              )}
-            >
-              {isDeleting
-                ? "Processing..."
-                : deleteConfirmState.mode === "drive_and_db"
-                ? "Delete Permanently"
-                : "Free Local Disk"}
-            </Button>
-          </div>
+              <div className="space-y-2">
+                <h3 className="text-base font-bold text-white tracking-wide uppercase font-mono">
+                  {deleteConfirmState.mode === "drive_and_db"
+                    ? "DELETE FROM DRIVE & DATABASE"
+                    : "FREE DISK SPACE (KEEP CLOUD)"}
+                </h3>
+
+                <p className="text-xs text-slate-300 leading-relaxed font-sans px-2">
+                  {deleteConfirmState.mode === "drive_and_db" ? (
+                    <>
+                      Are you sure you want to permanently delete{" "}
+                      <span className="text-rose-300 font-bold">
+                        {deleteConfirmState.singleTitle
+                          ? `"${deleteConfirmState.singleTitle}"`
+                          : `${deleteConfirmState.targetIds.length} file(s)`}
+                      </span>
+                      ?
+                    </>
+                  ) : (
+                    <>
+                      Are you sure you want to delete local copies for{" "}
+                      <span className="text-amber-300 font-bold">
+                        {deleteConfirmState.singleTitle
+                          ? `"${deleteConfirmState.singleTitle}"`
+                          : `${deleteConfirmState.targetIds.length} file(s)`}
+                      </span>{" "}
+                      from physical disk?
+                    </>
+                  )}
+                </p>
+
+                <div
+                  className={cn(
+                    "p-3 rounded-2xl text-[11px] text-left font-mono space-y-1 mt-2 border",
+                    deleteConfirmState.mode === "drive_and_db"
+                      ? "bg-rose-950/30 border-rose-500/20 text-rose-200"
+                      : "bg-amber-950/30 border-amber-500/20 text-amber-200"
+                  )}
+                >
+                  {deleteConfirmState.mode === "drive_and_db" ? (
+                    <>
+                      <div className="flex items-center gap-1.5 font-semibold text-rose-300">
+                        <span>⚠️ Permanent Destruction:</span>
+                      </div>
+                      <ul className="list-disc list-inside text-[10px] space-y-0.5 text-rose-300/80">
+                        <li>Deleted from Google Drive API</li>
+                        <li>Unlinked from /public/uploads</li>
+                        <li>Removed from MySQL Database</li>
+                      </ul>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-1.5 font-semibold text-amber-300">
+                        <span>💡 Non-Destructive Ghosting:</span>
+                      </div>
+                      <p className="text-[10px] text-amber-300/80 leading-tight">
+                        Files will be removed from local disk (/public/uploads) to free storage, while your cloud records remain safely indexed in Google Drive.
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    setDeleteConfirmState((prev) => ({ ...prev, isOpen: false }))
+                  }
+                  className="flex-1 border-white/15 text-slate-300 hover:bg-white/10 rounded-2xl h-11 text-xs font-mono cursor-pointer"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={handleConfirmDelete}
+                  className={cn(
+                    "flex-1 text-white rounded-2xl h-11 text-xs font-mono font-bold shadow-xl cursor-pointer transition-all",
+                    deleteConfirmState.mode === "drive_and_db"
+                      ? "bg-rose-600 hover:bg-rose-500 shadow-rose-600/40"
+                      : "bg-amber-600 hover:bg-amber-500 shadow-amber-600/40"
+                  )}
+                >
+                  {deleteConfirmState.mode === "drive_and_db"
+                    ? "Delete Permanently"
+                    : "Free Local Disk"}
+                </Button>
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>

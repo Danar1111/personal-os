@@ -14,6 +14,7 @@ export interface UploadItem {
   status: "queued" | "uploading" | "completed" | "error";
   error?: string;
   gdriveId?: string;
+  targetSyncStatus?: "SYNCED_LOCAL_KEPT" | "CLOUD_ONLY";
 }
 
 interface UploadStore {
@@ -149,11 +150,16 @@ export const useUploadStore = create<UploadStore>((set, get) => ({
         try {
           let fileBlob: Blob | File | null = item.file || null;
 
-          // If item was added from a local path, fetch its binary blob directly from client browser
+          // If item was added from a local path, fetch its binary blob via POST API to prevent IDM/download manager interception
           if (!fileBlob && item.localPath) {
-            const blobRes = await fetch(item.localPath);
+            const blobRes = await fetch("/api/upload/file-blob", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path: item.localPath }),
+            });
             if (!blobRes.ok) {
-              throw new Error(`Failed to load physical file from "${item.localPath}"`);
+              const errJson = await blobRes.json().catch(() => ({}));
+              throw new Error(errJson.error || `Failed to load physical file binary from "${item.localPath}"`);
             }
             fileBlob = await blobRes.blob();
           }
@@ -181,7 +187,7 @@ export const useUploadStore = create<UploadStore>((set, get) => ({
               body: JSON.stringify({
                 assetId: item.assetId,
                 gdriveId: driveResult.id,
-                syncStatus: "SYNCED_LOCAL_KEPT",
+                syncStatus: item.targetSyncStatus || "SYNCED_LOCAL_KEPT",
               }),
             });
           }

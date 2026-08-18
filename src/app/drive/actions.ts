@@ -108,8 +108,8 @@ export async function getDriveAssets(): Promise<Asset[]> {
               syncStatus: "LOCAL_UNSYNCED",
               tags: "local,upload",
             });
-          } else if (!existing.sizeBytes) {
-            // Update size if missing
+          } else if (existing.sizeBytes !== stats.size) {
+            // Update size if physical disk size differs
             await db.update(assets).set({ sizeBytes: stats.size }).where(eq(assets.id, existing.id));
           }
         }

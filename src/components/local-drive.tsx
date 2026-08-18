@@ -47,6 +47,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { useLocalUploadStore } from "@/lib/store/useLocalUploadStore";
 
 interface LocalDriveProps {
   initialAssets: Asset[];
@@ -76,8 +77,8 @@ export function LocalDrive({ initialAssets }: LocalDriveProps) {
   const [customTitle, setCustomTitle] = useState("");
   const [customTags, setCustomTags] = useState("");
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const localUpload = useLocalUploadStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Edit Modal State
@@ -187,63 +188,75 @@ export function LocalDrive({ initialAssets }: LocalDriveProps) {
     if (!selectedFile) return;
 
     setIsUploading(true);
-    setUploadProgress(15);
 
-    // Simulate progress increments for smooth UX
-    const progressInterval = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 90) {
-          clearInterval(progressInterval);
-          return 90;
-        }
-        return prev + 25;
-      });
-    }, 200);
+    // Capture values before closing modal
+    const file = selectedFile;
+    const title = customTitle.trim() || file.name;
+    const tags = customTags;
+    const itemId = `local-${Date.now()}`;
+
+    // Close modal immediately — progress shown in global bottom-right widget
+    setIsUploadDialogOpen(false);
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setCustomTitle("");
+    setCustomTags("");
+
+    localUpload.startItem({ id: itemId, name: file.name, size: file.size });
 
     try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/upload", true);
+      xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+      xhr.setRequestHeader("X-File-Name", encodeURIComponent(file.name));
+      xhr.setRequestHeader("X-File-Type", file.type || "application/octet-stream");
 
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100);
+          localUpload.updateProgress(itemId, percent, event.loaded);
+        }
+      };
+
+      const result: any = await new Promise((resolve, reject) => {
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              resolve(JSON.parse(xhr.responseText));
+            } catch {
+              reject(new Error("Invalid JSON response"));
+            }
+          } else {
+            try {
+              const res = JSON.parse(xhr.responseText);
+              reject(new Error(res.error || `Upload failed (${xhr.status})`));
+            } catch {
+              reject(new Error(`Upload failed (${xhr.status})`));
+            }
+          }
+        };
+        xhr.onerror = () => reject(new Error("Network upload error"));
+        xhr.send(file);
       });
 
-      clearInterval(progressInterval);
-      setUploadProgress(100);
-
-      const result = await response.json();
-
-      if (!result.success) {
-        alert(`Upload error: ${result.error}`);
-        setIsUploading(false);
-        setUploadProgress(0);
-        return;
-      }
+      localUpload.completeItem(itemId);
 
       startTransition(async () => {
         await createDriveAssetAction({
-          title: customTitle.trim() || selectedFile.name,
+          title,
           type: result.type || "pdf",
           urlOrPath: result.url,
           thumbnailUrl: result.type === "image" ? result.url : undefined,
-          tags: customTags,
+          tags,
+          sizeBytes: result.size || file.size,
         });
-
-        setSelectedFile(null);
-        setPreviewUrl(null);
-        setCustomTitle("");
-        setCustomTags("");
         setIsUploading(false);
-        setUploadProgress(0);
-        setIsUploadDialogOpen(false);
       });
     } catch (err: any) {
-      clearInterval(progressInterval);
+      localUpload.errorItem(itemId, err.message);
       console.error("Upload error:", err);
-      alert("Failed to upload file");
+      alert(`Upload error: ${err.message || "Failed to upload file"}`);
       setIsUploading(false);
-      setUploadProgress(0);
     }
   };
 
@@ -424,18 +437,8 @@ export function LocalDrive({ initialAssets }: LocalDriveProps) {
                   )}
                 </div>
 
-                {/* Upload Progress Bar Indicator */}
-                {isUploading && (
-                  <div className="space-y-2 p-3 rounded-2xl bg-white/[0.04] border border-white/10">
-                    <div className="flex items-center justify-between text-xs font-mono">
-                      <span className="text-indigo-300 font-bold flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-indigo-400 animate-spin" /> Uploading file...
-                      </span>
-                      <span className="text-white font-bold">{uploadProgress}%</span>
-                    </div>
-                    <Progress value={uploadProgress} className="h-2 bg-white/10" />
-                  </div>
-                )}
+
+
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-mono text-slate-300">Display Title (Optional)</label>

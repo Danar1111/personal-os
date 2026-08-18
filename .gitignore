@@ -32,6 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+.env*.local
+.tmp_migrations
 
 # vercel
 .vercel
@@ -41,3 +43,4 @@ yarn-error.log*
 next-env.d.ts
 
 /public/uploads
+/.gemini/

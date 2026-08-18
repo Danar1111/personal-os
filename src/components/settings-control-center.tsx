@@ -35,12 +35,15 @@ import {
   Music,
   Radio,
   HardDrive,
+  Download,
+  UploadCloud,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { MigrationWizard } from "@/components/migration/MigrationWizard";
 import {
   Dialog,
   DialogContent,
@@ -61,7 +64,7 @@ export function SettingsControlCenter({
   initialSkills,
 }: SettingsControlCenterProps) {
   const [isPending, startTransition] = useTransition();
-  const [activeTab, setActiveTab] = useState<"api" | "model" | "prompt">("api");
+  const [activeTab, setActiveTab] = useState<"api" | "model" | "prompt" | "migration">("api");
   const [skillsVisibleLimit, setSkillsVisibleLimit] = useState<number>(6);
 
   // Brevo Transactional Emailer Sender state
@@ -201,6 +204,7 @@ export function SettingsControlCenter({
             { id: "api", label: "API Vault", icon: Key },
             { id: "model", label: "Model Switcher", icon: Cpu },
             { id: "prompt", label: "System Prompt", icon: Terminal },
+            { id: "migration", label: "Backup & Migration", icon: Database },
           ].map((tab) => {
             const Icon = tab.icon;
             return (
@@ -563,6 +567,75 @@ export function SettingsControlCenter({
               </Button>
             </div>
           </form>
+        )}
+
+        {/* Tab 4: Easy Export & Import Migration Wizard */}
+        {activeTab === "migration" && (
+          <div className="space-y-6 py-2">
+            <div className="p-5 rounded-3xl bg-indigo-500/10 border border-indigo-500/30 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/40">
+                  <Database className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wide">
+                    DATABASE & UPLOADS MIGRATION ENGINE
+                  </h3>
+                  <p className="text-xs text-slate-300 font-sans mt-0.5">
+                    Export your complete Personal OS database as structured JSON bundled with all uploaded local files in a single compressed ZIP, or restore from a previous backup.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Export Card */}
+              <div className="p-5 rounded-3xl bg-white/[0.03] border border-white/10 space-y-4 hover:border-indigo-500/40 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-mono font-bold text-indigo-300 bg-indigo-500/10 px-2.5 py-1 rounded-xl border border-indigo-500/30 flex items-center gap-1.5">
+                    <Download className="w-3.5 h-3.5" /> Full Backup Export
+                  </span>
+                  <Badge variant="outline" className="border-indigo-500/30 text-indigo-300 text-[10px]">
+                    17 Tables + Files
+                  </Badge>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed font-sans">
+                  Exports tasks, notes, folders, assets, skills, financial ledger, calendar, applications, knowledge vault, and local media into a timestamped <code className="text-indigo-300 font-mono">PersonalOS_Backup_*.zip</code>.
+                </p>
+                <MigrationWizard
+                  mode="export"
+                  trigger={
+                    <Button className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 gap-2 shadow-lg shadow-indigo-600/30 cursor-pointer">
+                      <Download className="w-4 h-4" /> Open Export Wizard
+                    </Button>
+                  }
+                />
+              </div>
+
+              {/* Restore Card */}
+              <div className="p-5 rounded-3xl bg-white/[0.03] border border-white/10 space-y-4 hover:border-amber-500/40 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-mono font-bold text-amber-300 bg-amber-500/10 px-2.5 py-1 rounded-xl border border-amber-500/30 flex items-center gap-1.5">
+                    <UploadCloud className="w-3.5 h-3.5" /> Restore from Archive
+                  </span>
+                  <Badge variant="outline" className="border-amber-500/30 text-amber-300 text-[10px]">
+                    Danger Zone
+                  </Badge>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed font-sans">
+                  Restores database records and replaces uploaded files from a previously exported ZIP archive. Protected with confirmation safeguard.
+                </p>
+                <MigrationWizard
+                  mode="import"
+                  trigger={
+                    <Button className="w-full bg-amber-600 hover:bg-amber-500 text-white font-mono text-xs rounded-2xl h-11 gap-2 shadow-lg shadow-amber-600/30 cursor-pointer">
+                      <UploadCloud className="w-4 h-4" /> Open Restore Wizard
+                    </Button>
+                  }
+                />
+              </div>
+            </div>
+          </div>
         )}
       </div>
 
