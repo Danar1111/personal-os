@@ -43,7 +43,7 @@ const PAGE_ITEMS = [
   { id: "page-finance", group: "Pages & Apps", title: "Finance Hub", subtitle: "Income & Expense Tracker", url: "/finance", icon: Wallet },
   { id: "page-vault", group: "Pages & Apps", title: "Second Brain Vault", subtitle: "Zettelkasten Notes & Knowledge Base", url: "/vault", icon: FileText },
   { id: "page-inventory", group: "Pages & Apps", title: "Asset Vault", subtitle: "Digital Inventory & Media", url: "/inventory", icon: FolderArchive },
-  { id: "page-drive", group: "Pages & Apps", title: "Local Drive", subtitle: "Cloud & Local File Storage", url: "/drive", icon: HardDrive },
+  { id: "page-drive", group: "Pages & Apps", title: "Drive", subtitle: "Universal File Storage & Cloud Sync", url: "/drive", icon: HardDrive },
   { id: "page-calendar", group: "Pages & Apps", title: "Master Calendar", subtitle: "Events & Timetable", url: "/calendar", icon: Calendar },
   { id: "page-zen", group: "Pages & Apps", title: "Zen Time-Blocker", subtitle: "Focus & Productivity Blocker", url: "/zen", icon: Timer },
   { id: "page-briefing", group: "Pages & Apps", title: "Daily AI Briefing", subtitle: "Daily Brief & Intelligence Summary", url: "/ai-briefing", icon: Sparkles },

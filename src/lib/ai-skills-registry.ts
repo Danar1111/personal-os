@@ -399,4 +399,18 @@ export const OMNI_AI_SKILLS_REGISTRY: RegisteredAISkill[] = [
     description: "Creates a new email template in Omni-Emailer Studio.",
     examplePrompt: "Buat template email baru 'Invoice Notification' dengan subjek 'Tagihan {{invoice_number}}'",
   },
+
+  // ── GOOGLE DRIVE & WEB INTELLIGENCE ────────────────────────────────
+  {
+    name: "search_google_drive",
+    module: "Google Drive Storage",
+    description: "Searches connected Google Drive for files, documents, or assets by keyword.",
+    examplePrompt: "Cari dokumen invoice atau project plan di Google Drive saya",
+  },
+  {
+    name: "web_search",
+    module: "External Intelligence",
+    description: "Performs real-time web search for information, facts, or news.",
+    examplePrompt: "Carikan informasi terbaru mengenai rilis Next.js",
+  },
 ];

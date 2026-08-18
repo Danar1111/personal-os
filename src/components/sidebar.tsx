@@ -40,7 +40,7 @@ const navItems = [
   { name: "Finance Hub", href: "/finance", icon: Wallet },
   { name: "Second Brain Vault", href: "/vault", icon: FileText },
   { name: "Asset Vault", href: "/inventory", icon: FolderArchive },
-  { name: "Local Drive", href: "/drive", icon: HardDrive },
+  { name: "Drive", href: "/drive", icon: HardDrive },
   { name: "Master Calendar", href: "/calendar", icon: Calendar },
   { name: "Zen Time-Blocker", href: "/zen", icon: Timer },
   { name: "Daily AI Briefing", href: "/ai-briefing", icon: Sparkles },

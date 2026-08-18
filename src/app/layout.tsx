@@ -13,6 +13,7 @@ import { NavigationProgress } from "@/components/navigation-progress";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 import { RightSpotifySidebar } from "@/components/right-spotify-sidebar";
 import { SpotifyStatusPill } from "@/components/spotify-status-pill";
+import { GlobalUploadProgress } from "@/components/layout/GlobalUploadProgress";
 
 
 
@@ -127,6 +128,8 @@ export default function RootLayout({
         {/* Global Spotify Top Status Pill Toast Notification & Shortcuts */}
         <SpotifyStatusPill />
 
+        {/* Global Google Drive Upload Progress Floating Widget (persists across page navigations) */}
+        <GlobalUploadProgress />
 
         </PinLockProvider>
       </body>

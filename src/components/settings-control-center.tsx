@@ -9,6 +9,7 @@ import {
   saveMultipleSettingsAction,
   forceSyncAiSkillsAction,
   revokeSpotifyTokenAction,
+  revokeGoogleTokenAction,
 } from "@/app/settings/actions";
 import {
   Key,
@@ -33,6 +34,7 @@ import {
   Mail,
   Music,
   Radio,
+  HardDrive,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -111,6 +113,31 @@ export function SettingsControlCenter({
       await revokeSpotifyTokenAction();
       setHasSpotifyToken(false);
       triggerSavedFeedback("Spotify authorization token revoked.");
+    });
+  };
+
+  // Google OAuth Token state & URL Params
+  const googleParam = searchParams.get("google");
+  const googleMessage = searchParams.get("message");
+
+  const [hasGoogleToken, setHasGoogleToken] = useState<boolean>(
+    Boolean(initialSettings["GOOGLE_REFRESH_TOKEN"] || initialSettings["google_refresh_token"])
+  );
+
+  useEffect(() => {
+    if (googleParam === "success") {
+      setHasGoogleToken(true);
+      triggerSavedFeedback("✓ Successfully connected Google Drive account!");
+    } else if (googleParam === "error") {
+      triggerSavedFeedback(`⚠️ Google OAuth Error: ${googleMessage || "Failed to authorize"}`);
+    }
+  }, [googleParam, googleMessage]);
+
+  const handleRevokeGoogle = () => {
+    startTransition(async () => {
+      await revokeGoogleTokenAction();
+      setHasGoogleToken(false);
+      triggerSavedFeedback("Google Drive authorization token revoked.");
     });
   };
 
@@ -314,6 +341,55 @@ export function SettingsControlCenter({
                           type="button"
                           variant="ghost"
                           onClick={handleRevokeSpotify}
+                          disabled={isPending}
+                          className="h-8 px-3 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl font-mono cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 mr-1" /> Revoke Access
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Google Drive OAuth Card */}
+                <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2 col-span-1 md:col-span-2 lg:col-span-3">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-200 flex items-center gap-1.5 font-bold text-sm">
+                      <HardDrive className="w-4 h-4 text-blue-400" /> Google Drive Integration (OAuth &amp; Universal File Sync)
+                    </span>
+                    {hasGoogleToken ? (
+                      <Badge variant="outline" className="bg-emerald-500/20 text-emerald-400 border-emerald-500/50 text-[11px] font-bold px-2.5 py-0.5">
+                        ✓ Connected to Google Drive
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/40 text-[10px]">
+                        Not Connected
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-400 font-mono leading-relaxed">
+                    Authenticate via Google OAuth 2.0 to enable manual file sync, cloud asset vault backups, and universal drive management.
+                  </p>
+                  <div className="flex items-center gap-3 pt-1 font-mono text-xs">
+                    {!hasGoogleToken ? (
+                      <a
+                        href="/api/google/login"
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition-all shadow-lg shadow-blue-600/20 cursor-pointer text-xs"
+                      >
+                        <HardDrive className="w-4 h-4" /> Connect Google Drive
+                      </a>
+                    ) : (
+                      <>
+                        <a
+                          href="/api/google/login"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 text-xs transition-all cursor-pointer border border-white/10"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" /> Reconnect Account
+                        </a>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={handleRevokeGoogle}
                           disabled={isPending}
                           className="h-8 px-3 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl font-mono cursor-pointer"
                         >

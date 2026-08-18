@@ -94,7 +94,7 @@ export async function globalSearchAction(query: string): Promise<GlobalSearchRes
         results.push({
           id: `drive-${a.id}`,
           type: "drive",
-          group: "Local Drive",
+          group: "Drive",
           title: a.title,
           subtitle: `Type: ${a.type} ${a.tags ? "• #" + a.tags : ""}`,
           url: `/drive?search=${encodeURIComponent(a.title)}`,

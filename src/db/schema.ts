@@ -72,6 +72,9 @@ export const assets = mysqlTable('assets', {
   urlOrPath: varchar('url_or_path', { length: 500 }).notNull(),
   thumbnailUrl: varchar('thumbnail_url', { length: 500 }),
   tags: varchar('tags', { length: 255 }).notNull().default(''),
+  sizeBytes: int('size_bytes'),
+  syncStatus: varchar('sync_status', { length: 50 }).notNull().default('LOCAL_UNSYNCED'), // 'LOCAL_UNSYNCED' | 'SYNCED_LOCAL_KEPT' | 'CLOUD_ONLY'
+  gdriveId: varchar('gdrive_id', { length: 255 }),
   createdAt: timestamp('created_at').defaultNow(),
 });
 

@@ -42,12 +42,14 @@ import {
   Paperclip,
   ExternalLink,
   HardDrive,
+  Cloud,
   Video,
   Image as ImageIcon,
   Music,
   RotateCcw,
   RotateCw,
 } from "lucide-react";
+import useSWR from "swr";
 
 function extractYouTubeId(url: string): string | null {
   if (!url) return null;
@@ -276,7 +278,7 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
   // Wiki-Link & Asset Autocomplete Suggestion Popup State
   const [wikiSuggestOpen, setWikiSuggestOpen] = useState(false);
   const [wikiSuggestQuery, setWikiSuggestQuery] = useState("");
-  const [wikiSuggestTab, setWikiSuggestTab] = useState<"all" | "notes" | "assets">("all");
+  const [wikiSuggestTab, setWikiSuggestTab] = useState<"all" | "notes" | "assets" | "gdrive">("all");
   const [wikiSuggestIndex, setWikiSuggestIndex] = useState(0);
   const [wikiSuggestMode, setWikiSuggestMode] = useState<"wiki" | "attach">("wiki");
   const [wikiSuggestCursorPos, setWikiSuggestCursorPos] = useState<number | null>(null);
@@ -705,7 +707,34 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
     checkWikiTrigger(target.value, target.selectionStart);
   };
 
-  const insertSuggestion = (item: { title: string; type: "note" | "asset"; urlOrPath?: string; assetType?: string }) => {
+  const [debouncedWikiQuery, setDebouncedWikiQuery] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedWikiQuery(wikiSuggestQuery.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [wikiSuggestQuery]);
+
+  const gdriveVaultUrl = debouncedWikiQuery
+    ? `/api/drive/list?q=${encodeURIComponent(debouncedWikiQuery)}`
+    : "/api/drive/list";
+
+  const { data: googleDriveData } = useSWR<{ files: any[] }>(
+    gdriveVaultUrl,
+    (url: string) =>
+      fetch(url)
+        .then((res) => (res.ok ? res.json() : { files: [] }))
+        .catch(() => ({ files: [] })),
+    { keepPreviousData: true }
+  );
+  const googleDriveFiles = googleDriveData?.files || [];
+
+  const insertSuggestion = (item: {
+    title: string;
+    type: "note" | "asset" | "gdrive";
+    urlOrPath?: string;
+    assetType?: string;
+  }) => {
     if (wikiSuggestCursorPos === null) return;
     const currentVal = editorContent;
 
@@ -766,7 +795,7 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
     const items: Array<{
       id: string;
       title: string;
-      type: "note" | "asset";
+      type: "note" | "asset" | "gdrive";
       category?: string;
       urlOrPath?: string;
       assetType?: string;
@@ -795,8 +824,23 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
       });
     }
 
+    if (wikiSuggestTab === "all" || wikiSuggestTab === "gdrive") {
+      (googleDriveFiles || []).forEach((g: any) => {
+        if (!q || g.name.toLowerCase().includes(q) || (g.mimeType && g.mimeType.toLowerCase().includes(q))) {
+          items.push({
+            id: `gdrive-${g.id}`,
+            title: g.name,
+            type: "gdrive",
+            category: "Google Drive",
+            urlOrPath: g.webViewLink || `https://drive.google.com/file/d/${g.id}/view`,
+            assetType: "gdrive",
+          });
+        }
+      });
+    }
+
     return items;
-  }, [wikiSuggestQuery, wikiSuggestTab, initialNotes, initialAssets]);
+  }, [wikiSuggestQuery, wikiSuggestTab, initialNotes, initialAssets, googleDriveFiles]);
 
   // Sort & Category filtering for notes
   const [sortBy, setSortBy] = useState<"updated-desc" | "updated-asc" | "title-asc" | "title-desc">("updated-desc");
@@ -1501,13 +1545,13 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
                   </button>
                 </div>
 
-                {/* Category Tabs: All | Notes | Assets / Drive */}
-                <div className="flex items-center gap-1 bg-white/[0.04] p-1 rounded-xl border border-white/10 text-[10px]">
+                {/* Category Tabs: All | Notes | Assets | Google Drive */}
+                <div className="flex items-center gap-1 bg-white/[0.04] p-1 rounded-xl border border-white/10 text-[10px] overflow-x-auto">
                   <button
                     type="button"
                     onClick={() => setWikiSuggestTab("all")}
                     className={cn(
-                      "flex-1 py-1 rounded-lg transition-colors cursor-pointer text-center font-bold",
+                      "px-2 py-1 rounded-lg transition-colors cursor-pointer text-center font-bold",
                       wikiSuggestTab === "all" ? "bg-purple-600 text-white font-bold" : "text-slate-400 hover:text-white"
                     )}
                   >
@@ -1517,7 +1561,7 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
                     type="button"
                     onClick={() => setWikiSuggestTab("notes")}
                     className={cn(
-                      "flex-1 py-1 rounded-lg transition-colors cursor-pointer text-center font-bold",
+                      "px-2 py-1 rounded-lg transition-colors cursor-pointer text-center font-bold whitespace-nowrap",
                       wikiSuggestTab === "notes" ? "bg-purple-600 text-white font-bold" : "text-slate-400 hover:text-white"
                     )}
                   >
@@ -1527,11 +1571,21 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
                     type="button"
                     onClick={() => setWikiSuggestTab("assets")}
                     className={cn(
-                      "flex-1 py-1 rounded-lg transition-colors cursor-pointer text-center font-bold",
+                      "px-2 py-1 rounded-lg transition-colors cursor-pointer text-center font-bold whitespace-nowrap",
                       wikiSuggestTab === "assets" ? "bg-purple-600 text-white font-bold" : "text-slate-400 hover:text-white"
                     )}
                   >
-                    Assets & Drive ({(initialAssets || []).length})
+                    Local ({(initialAssets || []).length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWikiSuggestTab("gdrive")}
+                    className={cn(
+                      "px-2 py-1 rounded-lg transition-colors cursor-pointer text-center font-bold whitespace-nowrap",
+                      wikiSuggestTab === "gdrive" ? "bg-blue-600 text-white font-bold" : "text-slate-400 hover:text-white"
+                    )}
+                  >
+                    Cloud ({googleDriveFiles.length})
                   </button>
                 </div>
 
@@ -1539,7 +1593,7 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
                 <div className="relative">
                   <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <Input
-                    placeholder="Search note, asset, or drive file..."
+                    placeholder="Search note, local asset, or Google Drive file..."
                     value={wikiSuggestQuery}
                     onChange={(e) => setWikiSuggestQuery(e.target.value)}
                     onKeyDown={handleWikiKeyDown}
@@ -1571,6 +1625,8 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
                           <div className="flex items-center gap-2 min-w-0">
                             {item.type === "note" ? (
                               <LinkIcon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                            ) : item.type === "gdrive" ? (
+                              <Cloud className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                             ) : item.assetType === "image" || isImageUrl(item.urlOrPath || "") ? (
                               <ImageIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                             ) : item.assetType === "video" || isVideoUrl(item.urlOrPath || "") || extractYouTubeId(item.urlOrPath || "") ? (
@@ -1585,7 +1641,7 @@ export function SecondBrainVault({ initialNotes, initialFolders, initialAssets =
                             </span>
                           </div>
                           <Badge variant="outline" className={cn("text-[9px] uppercase px-1.5 py-0 shrink-0", isSelected ? "border-purple-300 text-purple-200 bg-purple-500/20" : "border-white/10 text-slate-400")}>
-                            {item.type === "note" ? item.category || "Note" : item.category || "Asset"}
+                            {item.type === "note" ? item.category || "Note" : item.type === "gdrive" ? "Google Drive" : item.category || "Asset"}
                           </Badge>
                         </div>
                       );

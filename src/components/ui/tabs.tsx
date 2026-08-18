@@ -4,7 +4,9 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 interface TabsProps {
-  defaultValue: string;
+  defaultValue?: string;
+  value?: string;
+  onValueChange?: (val: string) => void;
   children: React.ReactNode;
   className?: string;
 }
@@ -34,11 +36,22 @@ const TabsContext = React.createContext<{
   setActiveTab: () => {},
 });
 
-export function Tabs({ defaultValue, children, className }: TabsProps) {
-  const [activeTab, setActiveTab] = React.useState(defaultValue);
+export function Tabs({ defaultValue = "", value, onValueChange, children, className }: TabsProps) {
+  const [internalTab, setInternalTab] = React.useState(defaultValue || value || "");
+  const activeTab = value !== undefined ? value : internalTab;
+
+  const handleTabChange = React.useCallback(
+    (newTab: string) => {
+      if (value === undefined) {
+        setInternalTab(newTab);
+      }
+      onValueChange?.(newTab);
+    },
+    [value, onValueChange]
+  );
 
   return (
-    <TabsContext.Provider value={{ activeTab, setActiveTab }}>
+    <TabsContext.Provider value={{ activeTab, setActiveTab: handleTabChange }}>
       <div className={cn("space-y-6", className)}>{children}</div>
     </TabsContext.Provider>
   );

@@ -27,6 +27,7 @@ import {
   Edit3,
   FileText,
   HardDrive,
+  Cloud,
   AlertTriangle,
   ExternalLink,
   Eye,
@@ -34,6 +35,7 @@ import {
   Check,
   Link2,
 } from "lucide-react";
+import useSWR from "swr";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -44,6 +46,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
@@ -57,7 +60,7 @@ import { cn } from "@/lib/utils";
 
 interface ReferenceItem {
   id: string;
-  type: "asset" | "drive" | "note" | "link";
+  type: "asset" | "drive" | "gdrive" | "note" | "link";
   value: string;
 }
 
@@ -142,12 +145,12 @@ export function SkillLearner({
     if (!descText) return { cleanDesc: "", references: [] };
 
     const normalizedText = descText.replace(/\[REF:FILE:/gi, "[REF:LINK:");
-    const matches = Array.from(normalizedText.matchAll(/\[REF:(ASSET|DRIVE|NOTE|LINK):(.*?)\]/gi));
-    const cleanDesc = normalizedText.replace(/\[REF:(ASSET|DRIVE|NOTE|LINK):.*?\]/gi, "").trim();
+    const matches = Array.from(normalizedText.matchAll(/\[REF:(ASSET|DRIVE|GDRIVE|NOTE|LINK):(.*?)\]/gi));
+    const cleanDesc = normalizedText.replace(/\[REF:(ASSET|DRIVE|GDRIVE|NOTE|LINK):.*?\]/gi, "").trim();
 
     const references: ReferenceItem[] = matches.map((m, index) => ({
       id: `ref-${index}-${Date.now()}`,
-      type: m[1].toLowerCase() as "asset" | "drive" | "note" | "link",
+      type: m[1].toLowerCase() as "asset" | "drive" | "gdrive" | "note" | "link",
       value: m[2].trim(),
     }));
 
@@ -167,6 +170,14 @@ export function SkillLearner({
 
   // Helper to resolve reference status & title
   const checkReferenceStatus = (ref: ReferenceItem) => {
+    if (ref.type === "gdrive") {
+      if (ref.value.includes("|")) {
+        const [title, link] = ref.value.split("|");
+        return { isMissing: false, label: title || "Google Drive File", link: link || "#" };
+      }
+      return { isMissing: false, label: ref.value.replace(/^https?:\/\//, ""), link: ref.value };
+    }
+
     if (ref.type === "asset" || ref.type === "drive") {
       const numId = parseInt(ref.value, 10);
       let asset = !isNaN(numId) ? assetMap.get(numId) : undefined;
@@ -580,6 +591,8 @@ export function SkillLearner({
                                   <Brain className="w-3 h-3 text-purple-400 shrink-0" />
                                 ) : ref.type === "drive" ? (
                                   <HardDrive className="w-3 h-3 text-indigo-400 shrink-0" />
+                                ) : ref.type === "gdrive" ? (
+                                  <Cloud className="w-3 h-3 text-blue-400 shrink-0" />
                                 ) : ref.type === "asset" ? (
                                   <FileText className="w-3 h-3 text-cyan-400 shrink-0" />
                                 ) : (
@@ -872,6 +885,8 @@ export function SkillLearner({
                                         <Brain className="w-4 h-4 text-purple-400 shrink-0" />
                                       ) : ref.type === "drive" ? (
                                         <HardDrive className="w-4 h-4 text-indigo-400 shrink-0" />
+                                      ) : ref.type === "gdrive" ? (
+                                        <Cloud className="w-4 h-4 text-blue-400 shrink-0" />
                                       ) : ref.type === "asset" ? (
                                         <FileText className="w-4 h-4 text-cyan-400 shrink-0" />
                                       ) : (
@@ -1126,7 +1141,33 @@ function ReferenceManager({
   vaultAssets,
   driveAssets,
   notes,
+  assetMap,
+  noteMap,
 }: ReferenceManagerProps) {
+  const [gdriveSearchQuery, setGdriveSearchQuery] = useState("");
+  const [debouncedGdriveQuery, setDebouncedGdriveQuery] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedGdriveQuery(gdriveSearchQuery.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [gdriveSearchQuery]);
+
+  const gdriveUrl = debouncedGdriveQuery
+    ? `/api/drive/list?q=${encodeURIComponent(debouncedGdriveQuery)}`
+    : "/api/drive/list";
+
+  const { data: googleDriveData } = useSWR<{ files: any[] }>(
+    gdriveUrl,
+    (url: string) =>
+      fetch(url)
+        .then((res) => (res.ok ? res.json() : { files: [] }))
+        .catch(() => ({ files: [] })),
+    { keepPreviousData: true }
+  );
+  const googleDriveFiles = googleDriveData?.files || [];
+
   const addReferenceRow = () => {
     const newRef: ReferenceItem = {
       id: `ref-${Date.now()}-${Math.random()}`,
@@ -1176,7 +1217,7 @@ function ReferenceManager({
         <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1.5 scrollbar-thin">
           {references.map((ref) => (
             <div key={ref.id} className="flex items-center gap-2 bg-white/[0.02] p-2.5 rounded-2xl border border-white/10">
-              {/* Type Select (4 Options: Asset Vault, Drive Storage, Second Brain, External Link) */}
+              {/* Type Select (5 Options: Asset Vault, Local Drive, Google Drive, Second Brain, External Link) */}
               <Select
                 value={ref.type}
                 onValueChange={(val: any) => updateReferenceRow(ref.id, "type", val)}
@@ -1186,13 +1227,14 @@ function ReferenceManager({
                 </SelectTrigger>
                 <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[190px]">
                   <SelectItem value="asset" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Asset Vault</SelectItem>
-                  <SelectItem value="drive" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Drive Storage</SelectItem>
+                  <SelectItem value="drive" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Local Drive</SelectItem>
+                  <SelectItem value="gdrive" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Google Drive Cloud</SelectItem>
                   <SelectItem value="note" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Second Brain Note</SelectItem>
                   <SelectItem value="link" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">External Link</SelectItem>
                 </SelectContent>
               </Select>
 
-              {/* Item Value Selector with Inline Search popup */}
+              {/* Item Value Selector with Inline Search popup for Asset, Drive, GDrive, and Note */}
               <div className="flex-1 min-w-0">
                 {ref.type === "asset" && (
                   <SearchableSelect
@@ -1205,10 +1247,24 @@ function ReferenceManager({
 
                 {ref.type === "drive" && (
                   <SearchableSelect
-                    placeholder="Search Drive Files..."
+                    placeholder="Search Local Drive Files..."
                     value={ref.value}
                     onChange={(val) => updateReferenceRow(ref.id, "value", val)}
                     items={driveAssets.map((d) => ({ id: d.id.toString(), label: d.title, sublabel: d.urlOrPath }))}
+                  />
+                )}
+
+                {ref.type === "gdrive" && (
+                  <SearchableSelect
+                    placeholder="Search Google Drive Files..."
+                    value={ref.value}
+                    onChange={(val) => updateReferenceRow(ref.id, "value", val)}
+                    onSearchChange={setGdriveSearchQuery}
+                    items={googleDriveFiles.map((g: any) => ({
+                      id: `${g.name}|${g.webViewLink || ""}`,
+                      label: g.name,
+                      sublabel: `Google Drive • ${g.mimeType?.split("/").pop() || "File"}`,
+                    }))}
                   />
                 )}
 
@@ -1253,11 +1309,13 @@ function SearchableSelect({
   placeholder,
   value,
   onChange,
+  onSearchChange,
   items,
 }: {
   placeholder: string;
   value: string;
   onChange: (val: string) => void;
+  onSearchChange?: (q: string) => void;
   items: Array<{ id: string; label: string; sublabel?: string }>;
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -1356,9 +1414,25 @@ function SearchableSelect({
                 autoFocus
                 placeholder="Type to search..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8 bg-white/[0.06] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-xl h-9 font-mono"
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  onSearchChange?.(e.target.value);
+                }}
+                className="pl-8 pr-7 bg-white/[0.06] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-xl h-9 font-mono"
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery("");
+                    onSearchChange?.("");
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 transition-colors"
+                  title="Clear search"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
             </div>
 
             {/* Filtered Options List */}

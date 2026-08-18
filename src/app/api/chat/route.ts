@@ -29,6 +29,7 @@ import { updateAssetAction } from "@/app/inventory/actions";
 import { deleteFolderAction, renameFolderAction, updateNoteAction } from "@/app/vault/actions";
 import { renameProjectAction, deleteProjectAction, updateTaskFullAction } from "@/app/tasks/actions";
 import { updateSkillAction, createMilestoneAction, updateMilestoneAction, deleteMilestoneAction } from "@/app/skills/actions";
+import { google } from "googleapis";
 
 export const maxDuration = 30;
 
@@ -2495,6 +2496,71 @@ export async function POST(req: Request) {
             };
           } catch (e: any) {
             return { success: false, message: `Failed to search TMDB movies: ${e.message}` };
+          }
+        },
+      }),
+
+      search_google_drive: makeTool({
+        description: "Searches the user's connected Google Drive for files, documents, or assets by name or keyword. Returns the file name, type, and a direct web link. Format the links as Markdown when replying.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              description: "The keyword or file name to search for, e.g., 'invoice', 'project plan'",
+            },
+          },
+          required: ["query"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const query = String(args?.query || "").trim();
+
+            const tokenRecord = await db
+              .select()
+              .from(systemSettings)
+              .where(eq(systemSettings.key, "GOOGLE_REFRESH_TOKEN"))
+              .limit(1);
+
+            const refreshToken = tokenRecord[0]?.value?.trim() || process.env.GOOGLE_REFRESH_TOKEN?.trim();
+
+            if (!refreshToken) {
+              return {
+                success: false,
+                message: "Google Drive is not connected. Please connect it in the Settings page.",
+              };
+            }
+
+            const oauth2Client = new google.auth.OAuth2(
+              process.env.GOOGLE_CLIENT_ID,
+              process.env.GOOGLE_CLIENT_SECRET,
+              process.env.GOOGLE_REDIRECT_URI
+            );
+            oauth2Client.setCredentials({ refresh_token: refreshToken });
+
+            const drive = google.drive({ version: "v3", auth: oauth2Client });
+
+            const response = await drive.files.list({
+              q: `name contains '${query.replace(/'/g, "\\'")}' and trashed = false`,
+              pageSize: 5,
+              fields: "files(name, mimeType, webViewLink)",
+            });
+
+            const files = (response.data.files || []).map((file) => ({
+              name: file.name || "Untitled File",
+              mimeType: file.mimeType || "unknown",
+              webViewLink: file.webViewLink || "",
+            }));
+
+            return {
+              success: true,
+              results: files,
+            };
+          } catch (e: any) {
+            return {
+              success: false,
+              message: e.message || "Failed to search Google Drive",
+            };
           }
         },
       }),

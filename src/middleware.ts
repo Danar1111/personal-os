@@ -24,7 +24,9 @@ export async function middleware(req: NextRequest) {
       pathname === "/api/verify-pin" ||
       pathname === "/api/health/db" ||
       pathname === "/api/spotify/login" ||
-      pathname === "/api/spotify/callback"
+      pathname === "/api/spotify/callback" ||
+      pathname === "/api/google/login" ||
+      pathname === "/api/google/callback"
     ) {
       return NextResponse.next();
     }

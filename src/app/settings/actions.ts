@@ -172,6 +172,21 @@ export async function revokeSpotifyTokenAction() {
   }
 }
 
+export async function revokeGoogleTokenAction() {
+  try {
+    await db
+      .delete(systemSettings)
+      .where(eq(systemSettings.key, "GOOGLE_REFRESH_TOKEN"));
+    revalidatePath("/settings");
+    revalidatePath("/");
+    return { success: true, message: "Google Drive authorization revoked." };
+  } catch (error: any) {
+    console.error("[revokeGoogleTokenAction error]:", error);
+    return { success: false, message: error.message || "Failed to revoke Google token" };
+  }
+}
+
+
 export async function getAISkills() {
 
   try {

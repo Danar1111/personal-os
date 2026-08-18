@@ -156,7 +156,7 @@ function renderFormattedText(text: string, onInternalLinkClick: () => void, zenR
     "/finance": "Finance Hub",
     "/skills": "Skill Matrix",
     "/inventory": "Asset Vault",
-    "/drive": "Local Drive",
+    "/drive": "Drive",
     "/watchlist": "TMDB Watchlist",
     "/knowledge": "Personal Knowledge Vault",
     "/emailer": "Omni-Emailer Studio",
