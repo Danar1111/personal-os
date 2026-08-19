@@ -119,20 +119,8 @@ export function Omnibar() {
       p.subtitle.toLowerCase().includes(query.toLowerCase())
   );
 
-  // Group all results by group name
+  // Group all results by group name (Pages & DB items first, Omni AI at the end)
   const allMatchedItems = [
-    ...(query.trim()
-      ? [
-          {
-            id: "ask-omni-ai",
-            group: "Omni AI Assistant",
-            title: `Ask Omni AI Assistant: "${query.trim()}"`,
-            subtitle: "Send prompt to GPT-4o Personal OS Assistant (Ctrl+J)",
-            url: "#omni-ai",
-            icon: Sparkles,
-          },
-        ]
-      : []),
     ...matchedPages.map((p) => ({
       id: p.id,
       group: p.group,
@@ -166,6 +154,18 @@ export function Omnibar() {
           ? Calendar
           : Folder,
     })),
+    ...(query.trim()
+      ? [
+          {
+            id: "ask-omni-ai",
+            group: "Omni AI Assistant",
+            title: `Ask Omni AI Assistant: "${query.trim()}"`,
+            subtitle: "Send prompt to GPT-4o Personal OS Assistant (Press → or Enter)",
+            url: "#omni-ai",
+            icon: Sparkles,
+          },
+        ]
+      : []),
   ];
 
   // Group items by group string
@@ -179,6 +179,19 @@ export function Omnibar() {
 
   // Keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowRight" && query.trim()) {
+      e.preventDefault();
+      handleSelectItem({
+        id: "ask-omni-ai",
+        group: "Omni AI Assistant",
+        title: `Ask Omni AI Assistant: "${query.trim()}"`,
+        subtitle: "",
+        url: "#omni-ai",
+        icon: Sparkles,
+      });
+      return;
+    }
+
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setSelectedIndex((prev) => (prev + 1) % Math.max(1, flattenedList.length));
@@ -198,12 +211,9 @@ export function Omnibar() {
     if (item.id === "page-spotify") {
       window.dispatchEvent(new CustomEvent("trigger-spotify-status-check"));
       return;
-    }
-
- else if (item.id === "ask-omni-ai") {
+    } else if (item.id === "ask-omni-ai") {
       window.dispatchEvent(new CustomEvent("open-omni-ai", { detail: { initialQuery: currentQuery } }));
     } else if (item.url.startsWith("http://") || item.url.startsWith("https://")) {
-
       window.open(item.url, "_blank", "noopener,noreferrer");
     } else {
       // Only show loading if navigating to a different page
@@ -269,6 +279,7 @@ export function Omnibar() {
                     const itemGlobalIndex = flattenedList.findIndex((i) => i.id === item.id);
                     const isSelected = itemGlobalIndex === selectedIndex;
                     const isSpotifyItem = item.id === "page-spotify";
+                    const isOmniAiItem = item.id === "ask-omni-ai";
                     const IconComponent = item.icon;
 
                     return (
@@ -285,9 +296,13 @@ export function Omnibar() {
                           isSelected
                             ? isSpotifyItem
                               ? "bg-[#1DB954]/20 border border-[#1DB954]/50 text-white shadow-md shadow-[#1DB954]/20"
+                              : isOmniAiItem
+                              ? "bg-purple-600/30 border border-purple-500/50 text-white shadow-md"
                               : "bg-indigo-600/30 border border-indigo-500/40 text-white shadow-md"
                             : isSpotifyItem
                             ? "bg-[#1DB954]/[0.05] hover:bg-[#1DB954]/15 border border-[#1DB954]/20 text-slate-200"
+                            : isOmniAiItem
+                            ? "bg-purple-500/[0.05] hover:bg-purple-500/15 border border-purple-500/20 text-purple-200"
                             : "hover:bg-white/5 text-slate-300 border border-transparent"
                         )}
                       >
@@ -297,6 +312,8 @@ export function Omnibar() {
                               "w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border transition-all",
                               isSpotifyItem
                                 ? "bg-[#1DB954]/20 border-[#1DB954]/50 text-[#1DB954]"
+                                : isOmniAiItem
+                                ? "bg-purple-500/20 border-purple-500/40 text-purple-300"
                                 : isSelected
                                 ? "bg-indigo-500/30 border-indigo-500/50 text-indigo-300"
                                 : "bg-white/[0.04] border-white/10 text-slate-400 group-hover:text-slate-200"
@@ -319,8 +336,8 @@ export function Omnibar() {
 
                         <div className="flex items-center gap-2 shrink-0">
                           {isSelected && (
-                            <span className="text-[10px] text-indigo-300 font-mono flex items-center gap-1">
-                              Jump to <ArrowRight className="w-3 h-3" />
+                            <span className={cn("text-[10px] font-mono flex items-center gap-1", isOmniAiItem ? "text-purple-300" : "text-indigo-300")}>
+                              {isOmniAiItem ? "Ask Omni" : "Jump to"} <ArrowRight className="w-3 h-3" />
                             </span>
                           )}
                         </div>
@@ -336,6 +353,9 @@ export function Omnibar() {
         {/* Footer Shortcut Bar */}
         <div className="px-4 py-2.5 border-t border-white/10 bg-white/[0.01] flex items-center justify-between text-[10px] font-mono text-slate-400 shrink-0">
           <div className="flex items-center gap-3">
+            {query.trim() && (
+              <span><kbd className="px-1.5 py-0.5 bg-purple-500/20 text-purple-300 rounded border border-purple-500/30">→</kbd> Ask Omni</span>
+            )}
             <span><kbd className="px-1.5 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300">↑↓</kbd> Navigate</span>
             <span><kbd className="px-1.5 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300">↵</kbd> Select</span>
             <span><kbd className="px-1.5 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300">esc</kbd> Dismiss</span>

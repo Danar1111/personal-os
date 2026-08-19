@@ -575,7 +575,7 @@ export function KanbanBoard({
         </div>
       </div>
 
-      {/* Manage Projects Modal Dialog */}
+      {/* MANAGE PROJECTS MODAL */}
       <Dialog
         open={isManageProjectsOpen}
         onOpenChange={(open) => {
@@ -586,8 +586,8 @@ export function KanbanBoard({
           }
         }}
       >
-        <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-lg p-6 shadow-2xl backdrop-blur-2xl space-y-4 font-mono">
-          <DialogHeader className="flex flex-row items-center justify-between border-b border-white/10 pb-3">
+        <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-lg max-h-[88vh] p-6 shadow-2xl backdrop-blur-2xl flex flex-col font-mono">
+          <DialogHeader className="shrink-0 flex flex-row items-center justify-between border-b border-white/10 pb-3">
             <div className="flex items-center gap-2.5">
               <div className="p-2 rounded-xl bg-purple-500/20 text-purple-300">
                 <Folder className="w-4 h-4" />
@@ -608,7 +608,7 @@ export function KanbanBoard({
             </button>
           </DialogHeader>
 
-          <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+          <div className="space-y-2.5 overflow-y-auto flex-1 pr-1.5 pt-3">
             {initialProjects.length === 0 ? (
               <div className="p-4 text-center text-xs font-mono text-slate-500 border border-dashed border-white/10 rounded-2xl">
                 No projects found in database.
@@ -644,7 +644,7 @@ export function KanbanBoard({
                             disabled={isPending}
                             onClick={() => handleSaveProjectRename(proj.id)}
                             className="w-8 h-8 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white shrink-0"
-                            title="Save Project Name"
+                            title="Save Rename"
                           >
                             <Check className="w-3.5 h-3.5" />
                           </Button>
@@ -659,15 +659,19 @@ export function KanbanBoard({
                           </Button>
                         </div>
                       ) : (
-                        <div className="min-w-0 flex-1">
-                          <h4 className="font-bold text-white truncate text-xs">{proj.name}</h4>
-                          <p className="text-[10px] text-slate-400 mt-0.5">{taskCount} linked task{taskCount !== 1 ? "s" : ""}</p>
+                        <div className="flex flex-col min-w-0 flex-1">
+                          <span className="font-bold text-white text-xs truncate">
+                            {proj.name}
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            {taskCount} task{taskCount !== 1 ? "s" : ""} associated
+                          </span>
                         </div>
                       )}
                     </div>
 
                     {!isEditing && (
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <Button
                           size="icon"
                           variant="ghost"
@@ -676,16 +680,17 @@ export function KanbanBoard({
                             setEditingProjectName(proj.name);
                           }}
                           className="w-8 h-8 rounded-xl text-slate-400 hover:text-indigo-300 hover:bg-indigo-500/10"
-                          title="Rename Project"
+                          title="Rename project"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                         </Button>
                         <Button
                           size="icon"
                           variant="ghost"
+                          disabled={isPending}
                           onClick={() => setDeletingProjectConfirm(proj)}
                           className="w-8 h-8 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10"
-                          title="Delete Project & Tasks"
+                          title="Delete project"
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
@@ -697,7 +702,7 @@ export function KanbanBoard({
             )}
           </div>
 
-          <DialogFooter className="pt-2 border-t border-white/10 flex justify-between items-center">
+          <DialogFooter className="shrink-0 pt-3 border-t border-white/10 mt-3 flex justify-between items-center">
             <Button
               onClick={() => {
                 setIsManageProjectsOpen(false);
@@ -961,8 +966,8 @@ export function KanbanBoard({
       {/* TASK DETAIL VIEW MODAL (Triggered on Card Click) */}
       {viewingTask && (
         <Dialog open={!!viewingTask} onOpenChange={() => setViewingTask(null)}>
-          <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-lg p-6 shadow-2xl backdrop-blur-2xl space-y-4 font-mono">
-            <DialogHeader className="flex flex-row items-center justify-between border-b border-white/10 pb-3">
+          <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-lg max-h-[88vh] p-6 shadow-2xl backdrop-blur-2xl flex flex-col font-mono">
+            <DialogHeader className="shrink-0 flex flex-row items-center justify-between border-b border-white/10 pb-3">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-purple-500/20 text-purple-300">
                   <Eye className="w-4 h-4" />
@@ -981,7 +986,7 @@ export function KanbanBoard({
             </DialogHeader>
 
             {/* Task Info Body */}
-            <div className="space-y-4">
+            <div className="overflow-y-auto flex-1 pr-1.5 space-y-4 pt-3">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-base font-bold text-white font-sans">{viewingTask.title}</h3>
                 {getPriorityBadge(viewingTask.priority)}
@@ -1076,7 +1081,7 @@ export function KanbanBoard({
             </div>
 
             {/* Modal Footer Actions */}
-            <DialogFooter className="pt-3 border-t border-white/10 flex items-center justify-between gap-3">
+            <DialogFooter className="shrink-0 pt-3 border-t border-white/10 mt-3 flex items-center justify-between gap-3">
               <Button
                 variant="ghost"
                 onClick={() => setDeletingTaskConfirm(viewingTask)}
