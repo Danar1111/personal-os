@@ -43,6 +43,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { GoogleIcon } from "@/components/ui/google-icon";
 import { MigrationWizard } from "@/components/migration/MigrationWizard";
 import {
   Dialog,
@@ -355,15 +356,16 @@ export function SettingsControlCenter({
                   </div>
                 </div>
 
-                {/* Google Drive OAuth Card */}
+                {/* Google Workspace & Account OAuth Card */}
                 <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2 col-span-1 md:col-span-2 lg:col-span-3">
                   <div className="flex items-center justify-between text-xs font-mono">
-                    <span className="text-slate-200 flex items-center gap-1.5 font-bold text-sm">
-                      <HardDrive className="w-4 h-4 text-blue-400" /> Google Drive Integration (OAuth &amp; Universal File Sync)
+                    <span className="text-slate-200 flex items-center gap-2 font-bold text-sm">
+                      <GoogleIcon className="w-4 h-4" /> Google Account (Drive, Calendar &amp; Universal Sync)
                     </span>
                     {hasGoogleToken ? (
-                      <Badge variant="outline" className="bg-emerald-500/20 text-emerald-400 border-emerald-500/50 text-[11px] font-bold px-2.5 py-0.5">
-                        ✓ Connected to Google Drive
+                      <Badge variant="outline" className="bg-emerald-500/20 text-emerald-300 border-emerald-500/50 text-[11px] font-bold px-2.5 py-0.5 flex items-center gap-1.5 font-mono">
+                        <GoogleIcon className="w-3 h-3" />
+                        <span>Connected to Google</span>
                       </Badge>
                     ) : (
                       <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/40 text-[10px]">
@@ -372,15 +374,15 @@ export function SettingsControlCenter({
                     )}
                   </div>
                   <p className="text-xs text-slate-400 font-mono leading-relaxed">
-                    Authenticate via Google OAuth 2.0 to enable manual file sync, cloud asset vault backups, and universal drive management.
+                    Authenticate via Google OAuth 2.0 to enable Master Calendar event synchronization, cloud asset vault backups, and universal drive management.
                   </p>
                   <div className="flex items-center gap-3 pt-1 font-mono text-xs">
                     {!hasGoogleToken ? (
                       <a
                         href="/api/google/login"
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition-all shadow-lg shadow-blue-600/20 cursor-pointer text-xs"
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold transition-all border border-white/15 shadow-lg shadow-white/5 cursor-pointer text-xs"
                       >
-                        <HardDrive className="w-4 h-4" /> Connect Google Drive
+                        <GoogleIcon className="w-4 h-4" /> Connect Google Account
                       </a>
                     ) : (
                       <>
@@ -388,7 +390,7 @@ export function SettingsControlCenter({
                           href="/api/google/login"
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 text-xs transition-all cursor-pointer border border-white/10"
                         >
-                          <RefreshCw className="w-3.5 h-3.5" /> Reconnect Account
+                          <RefreshCw className="w-3.5 h-3.5" /> Reconnect Google
                         </a>
                         <Button
                           type="button"

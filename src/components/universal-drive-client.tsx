@@ -1847,9 +1847,9 @@ export function UniversalDriveClient({
       <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
         <DialogContent
           showCloseButton={false}
-          className="bg-[#12121e]/95 border border-white/15 text-slate-100 rounded-3xl max-w-lg p-6 shadow-2xl backdrop-blur-2xl space-y-4 font-mono"
+          className="bg-[#12121e]/95 border border-white/15 text-slate-100 rounded-3xl max-w-lg max-h-[88vh] p-6 shadow-2xl backdrop-blur-2xl flex flex-col font-mono"
         >
-          <DialogHeader className="flex flex-row items-center justify-between border-b border-white/10 pb-3">
+          <DialogHeader className="shrink-0 flex flex-row items-center justify-between border-b border-white/10 pb-3">
             <DialogTitle className="text-base font-bold text-white font-mono flex items-center gap-2">
               <UploadCloud className="w-4 h-4 text-indigo-400" />
               <span>UPLOAD FILE TO DRIVE & STORAGE</span>
@@ -1863,209 +1863,207 @@ export function UniversalDriveClient({
             </button>
           </DialogHeader>
 
-          <form onSubmit={handleFormUploadSubmit} className="space-y-4">
-            {/* Drag and drop Dropzone */}
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsDragging(true);
-              }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setIsDragging(false);
-                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                  handleFilesSelect(e.dataTransfer.files);
-                }
-              }}
-              className={cn(
-                "border-2 border-dashed rounded-3xl p-5 text-center cursor-pointer transition-all group relative overflow-hidden",
-                isDragging
-                  ? "border-indigo-400 bg-indigo-500/10 shadow-lg shadow-indigo-500/20"
-                  : uploadFiles.length > 0
-                  ? "border-emerald-500/40 bg-emerald-500/5"
-                  : "border-white/15 hover:border-indigo-400/50 bg-white/[0.02] hover:bg-white/[0.04]"
-              )}
-            >
-              <input
-                type="file"
-                id="universal-file-upload"
-                multiple
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files && e.target.files.length > 0) {
-                    handleFilesSelect(e.target.files);
-                    e.target.value = ""; // Reset input so same files can be re-selected if removed
+          <form onSubmit={handleFormUploadSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden pt-3">
+            <div className="overflow-y-auto flex-1 pr-1.5 space-y-4">
+              {/* Drag and drop Dropzone */}
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragging(false);
+                  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    handleFilesSelect(e.dataTransfer.files);
                   }
                 }}
-              />
-              <label
-                htmlFor="universal-file-upload"
-                className="cursor-pointer flex flex-col items-center justify-center space-y-2 w-full"
+                className={cn(
+                  "border-2 border-dashed rounded-3xl p-5 text-center cursor-pointer transition-all group relative overflow-hidden",
+                  isDragging
+                    ? "border-indigo-400 bg-indigo-500/10 shadow-lg shadow-indigo-500/20"
+                    : uploadFiles.length > 0
+                    ? "border-emerald-500/40 bg-emerald-500/5"
+                    : "border-white/15 hover:border-indigo-400/50 bg-white/[0.02] hover:bg-white/[0.04]"
+                )}
               >
-                <div className="w-11 h-11 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 group-hover:scale-105 transition-transform shadow-lg">
-                  {uploadFiles.length > 0 ? (
-                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                  ) : (
-                    <UploadCloud className="w-5 h-5 text-indigo-400" />
-                  )}
-                </div>
+                <input
+                  type="file"
+                  id="universal-file-upload"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      handleFilesSelect(e.target.files);
+                      e.target.value = ""; // Reset input so same files can be re-selected if removed
+                    }
+                  }}
+                />
+                <label
+                  htmlFor="universal-file-upload"
+                  className="cursor-pointer flex flex-col items-center justify-center space-y-2 w-full"
+                >
+                  <div className="w-11 h-11 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 group-hover:scale-105 transition-transform shadow-lg">
+                    {uploadFiles.length > 0 ? (
+                      <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                    ) : (
+                      <UploadCloud className="w-5 h-5 text-indigo-400" />
+                    )}
+                  </div>
 
-                <div className="space-y-0.5 text-center">
-                  <p className="text-xs font-bold text-white">
-                    {uploadFiles.length > 0
-                      ? `${uploadFiles.length} file(s) selected (Click or drop more to add)`
-                      : "Click to select files or drag & drop here (Bulk supported)"}
-                  </p>
-                  <p className="text-[10px] text-slate-400">
-                    Auto-categorizes PDF, Docs, Sheets, Images, Videos, Audio & Archives
-                  </p>
-                </div>
-              </label>
-            </div>
+                  <div className="space-y-0.5 text-center">
+                    <p className="text-xs font-bold text-white">
+                      {uploadFiles.length > 0
+                        ? `${uploadFiles.length} file(s) selected (Click or drop more to add)`
+                        : "Click to select files or drag & drop here (Bulk supported)"}
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      Auto-categorizes PDF, Docs, Sheets, Images, Videos, Audio & Archives
+                    </p>
+                  </div>
+                </label>
+              </div>
 
-            {/* Selected Files List with Auto-Detected Category Badges */}
-            {uploadFiles.length > 0 && (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] font-bold text-slate-300">
-                  <span>Selected Files Queue ({uploadFiles.length}):</span>
-                  <button
-                    type="button"
-                    onClick={() => setUploadFiles([])}
-                    className="text-[10px] text-rose-400 hover:underline cursor-pointer"
-                  >
-                    Clear All
-                  </button>
-                </div>
+              {/* Selected Files List with Auto-Detected Category Badges */}
+              {uploadFiles.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-slate-300">
+                    <span>Selected Files Queue ({uploadFiles.length}):</span>
+                    <button
+                      type="button"
+                      onClick={() => setUploadFiles([])}
+                      className="text-[10px] text-rose-400 hover:underline cursor-pointer"
+                    >
+                      Clear All
+                    </button>
+                  </div>
 
-                <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
-                  {uploadFiles.map((file, idx) => {
-                    const cat = detectFileType(file);
-                    const ext = file.name.split(".").pop() || "";
-                    const isImg = cat === "image";
+                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
+                    {uploadFiles.map((file, idx) => {
+                      const cat = detectFileType(file);
+                      const ext = file.name.split(".").pop() || "";
 
-                    return (
-                      <div
-                        key={`${file.name}-${idx}`}
-                        className="p-2 px-3 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between gap-2.5 text-xs font-mono group"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          {getRichFileIcon(ext, file.type)}
-                          <div className="flex flex-col min-w-0">
-                            <span className="truncate text-xs font-semibold text-white max-w-[220px] sm:max-w-[260px]">
-                              {file.name}
-                            </span>
-                            <div className="flex items-center gap-2 text-[10px] text-slate-400">
-                              <span>{formatBytes(file.size)}</span>
-                              <span>•</span>
-                              <Badge
-                                variant="outline"
-                                className={cn(
-                                  "text-[9px] px-1.5 py-0 uppercase font-mono",
-                                  cat === "image"
-                                    ? "border-emerald-500/30 text-emerald-300 bg-emerald-500/10"
-                                    : cat === "video"
-                                    ? "border-amber-500/30 text-amber-300 bg-amber-500/10"
-                                    : "border-blue-500/30 text-blue-300 bg-blue-500/10"
-                                )}
-                              >
-                                {cat === "image" ? "Image" : cat === "video" ? "Video" : "Document"}
-                              </Badge>
+                      return (
+                        <div
+                          key={`${file.name}-${idx}`}
+                          className="p-2 px-3 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between gap-2.5 text-xs font-mono group"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            {getRichFileIcon(ext, file.type)}
+                            <div className="flex flex-col min-w-0">
+                              <span className="truncate text-xs font-semibold text-white max-w-[220px] sm:max-w-[260px]">
+                                {file.name}
+                              </span>
+                              <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                                <span>{formatBytes(file.size)}</span>
+                                <span>•</span>
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "text-[9px] px-1.5 py-0 uppercase font-mono",
+                                    cat === "image"
+                                      ? "border-emerald-500/30 text-emerald-300 bg-emerald-500/10"
+                                      : cat === "video"
+                                      ? "border-amber-500/30 text-amber-300 bg-amber-500/10"
+                                      : "border-blue-500/30 text-blue-300 bg-blue-500/10"
+                                  )}
+                                >
+                                  {cat === "image" ? "Image" : cat === "video" ? "Video" : "Document"}
+                                </Badge>
+                              </div>
                             </div>
                           </div>
+
+                          <button
+                            type="button"
+                            onClick={() => removeUploadFile(idx)}
+                            className="p-1 rounded-lg text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                            title="Remove file from queue"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
                         </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
-                        <button
-                          type="button"
-                          onClick={() => removeUploadFile(idx)}
-                          className="p-1 rounded-lg text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                          title="Remove file from queue"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+              {/* Optional Tags for the batch */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-300 uppercase">
+                  Tags (Optional, comma separated)
+                </label>
+                <Input
+                  value={uploadTags}
+                  onChange={(e) => setUploadTags(e.target.value)}
+                  placeholder="e.g., project, report, personal"
+                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-10 px-3.5 font-mono"
+                />
+              </div>
+
+              {/* Upload Mode Selector */}
+              <div className="space-y-2">
+                <label className="text-[11px] font-bold text-slate-300 uppercase">
+                  Storage Destination
+                </label>
+                <div className="flex flex-col gap-2">
+                  {/* Local Only */}
+                  <div 
+                    onClick={() => setUploadMode("local_only")}
+                    className={cn("p-3 rounded-2xl border cursor-pointer flex items-center justify-between transition-colors", uploadMode === "local_only" ? "bg-emerald-500/10 border-emerald-500/30" : "bg-white/[0.02] border-white/5 hover:bg-white/[0.04]")}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={cn("w-4 h-4 rounded-full border flex items-center justify-center", uploadMode === "local_only" ? "border-emerald-500 bg-emerald-500/20" : "border-white/20")}>
+                        {uploadMode === "local_only" && <div className="w-2 h-2 rounded-full bg-emerald-400" />}
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Optional Tags for the batch */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-300 uppercase">
-                Tags (Optional, comma separated)
-              </label>
-              <Input
-                value={uploadTags}
-                onChange={(e) => setUploadTags(e.target.value)}
-                placeholder="e.g., project, report, personal"
-                className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-10 px-3.5 font-mono"
-              />
-            </div>
-
-            {/* Upload Mode Selector */}
-            <div className="space-y-2">
-              <label className="text-[11px] font-bold text-slate-300 uppercase">
-                Storage Destination
-              </label>
-              <div className="flex flex-col gap-2">
-                {/* Local Only */}
-                <div 
-                  onClick={() => setUploadMode("local_only")}
-                  className={cn("p-3 rounded-2xl border cursor-pointer flex items-center justify-between transition-colors", uploadMode === "local_only" ? "bg-emerald-500/10 border-emerald-500/30" : "bg-white/[0.02] border-white/5 hover:bg-white/[0.04]")}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={cn("w-4 h-4 rounded-full border flex items-center justify-center", uploadMode === "local_only" ? "border-emerald-500 bg-emerald-500/20" : "border-white/20")}>
-                      {uploadMode === "local_only" && <div className="w-2 h-2 rounded-full bg-emerald-400" />}
+                      <div className="flex flex-col">
+                        <span className={cn("text-xs font-bold", uploadMode === "local_only" ? "text-emerald-400" : "text-slate-300")}>Local Storage Only</span>
+                        <span className="text-[10px] text-slate-400">Save to local server disk</span>
+                      </div>
                     </div>
-                    <div className="flex flex-col">
-                      <span className={cn("text-xs font-bold", uploadMode === "local_only" ? "text-emerald-400" : "text-slate-300")}>Local Storage Only</span>
-                      <span className="text-[10px] text-slate-400">Save to local server disk</span>
-                    </div>
+                    <HardDrive className={cn("w-4 h-4", uploadMode === "local_only" ? "text-emerald-400" : "text-slate-500")} />
                   </div>
-                  <HardDrive className={cn("w-4 h-4", uploadMode === "local_only" ? "text-emerald-400" : "text-slate-500")} />
-                </div>
 
-                {/* Auto Sync */}
-                <div 
-                  onClick={() => setUploadMode("auto_sync")}
-                  className={cn("p-3 rounded-2xl border cursor-pointer flex items-center justify-between transition-colors", uploadMode === "auto_sync" ? "bg-indigo-500/10 border-indigo-500/30" : "bg-white/[0.02] border-white/5 hover:bg-white/[0.04]")}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={cn("w-4 h-4 rounded-full border flex items-center justify-center", uploadMode === "auto_sync" ? "border-indigo-500 bg-indigo-500/20" : "border-white/20")}>
-                      {uploadMode === "auto_sync" && <div className="w-2 h-2 rounded-full bg-indigo-400" />}
+                  {/* Auto Sync */}
+                  <div 
+                    onClick={() => setUploadMode("auto_sync")}
+                    className={cn("p-3 rounded-2xl border cursor-pointer flex items-center justify-between transition-colors", uploadMode === "auto_sync" ? "bg-indigo-500/10 border-indigo-500/30" : "bg-white/[0.02] border-white/5 hover:bg-white/[0.04]")}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={cn("w-4 h-4 rounded-full border flex items-center justify-center", uploadMode === "auto_sync" ? "border-indigo-500 bg-indigo-500/20" : "border-white/20")}>
+                        {uploadMode === "auto_sync" && <div className="w-2 h-2 rounded-full bg-indigo-400" />}
+                      </div>
+                      <div className="flex flex-col">
+                        <span className={cn("text-xs font-bold", uploadMode === "auto_sync" ? "text-white" : "text-slate-300")}>Auto Sync (Local + Drive)</span>
+                        <span className={cn("text-[10px]", uploadMode === "auto_sync" ? "text-indigo-300" : "text-slate-400")}>Save locally & sync to {selectedFolderName}</span>
+                      </div>
                     </div>
-                    <div className="flex flex-col">
-                      <span className={cn("text-xs font-bold", uploadMode === "auto_sync" ? "text-white" : "text-slate-300")}>Auto Sync (Local + Drive)</span>
-                      <span className={cn("text-[10px]", uploadMode === "auto_sync" ? "text-indigo-300" : "text-slate-400")}>Save locally & sync to {selectedFolderName}</span>
-                    </div>
+                    <RefreshCw className={cn("w-4 h-4", uploadMode === "auto_sync" ? "text-indigo-400" : "text-slate-500")} />
                   </div>
-                  <RefreshCw className={cn("w-4 h-4", uploadMode === "auto_sync" ? "text-indigo-400" : "text-slate-500")} />
-                </div>
 
-                {/* Drive Only */}
-                <div 
-                  onClick={() => setUploadMode("drive_only")}
-                  className={cn("p-3 rounded-2xl border cursor-pointer flex items-center justify-between transition-colors", uploadMode === "drive_only" ? "bg-cyan-500/10 border-cyan-500/30" : "bg-white/[0.02] border-white/5 hover:bg-white/[0.04]")}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={cn("w-4 h-4 rounded-full border flex items-center justify-center", uploadMode === "drive_only" ? "border-cyan-500 bg-cyan-500/20" : "border-white/20")}>
-                      {uploadMode === "drive_only" && <div className="w-2 h-2 rounded-full bg-cyan-400" />}
+                  {/* Drive Only */}
+                  <div 
+                    onClick={() => setUploadMode("drive_only")}
+                    className={cn("p-3 rounded-2xl border cursor-pointer flex items-center justify-between transition-colors", uploadMode === "drive_only" ? "bg-cyan-500/10 border-cyan-500/30" : "bg-white/[0.02] border-white/5 hover:bg-white/[0.04]")}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={cn("w-4 h-4 rounded-full border flex items-center justify-center", uploadMode === "drive_only" ? "border-cyan-500 bg-cyan-500/20" : "border-white/20")}>
+                        {uploadMode === "drive_only" && <div className="w-2 h-2 rounded-full bg-cyan-400" />}
+                      </div>
+                      <div className="flex flex-col">
+                        <span className={cn("text-xs font-bold", uploadMode === "drive_only" ? "text-cyan-400" : "text-slate-300")}>Cloud Only (Google Drive)</span>
+                        <span className="text-[10px] text-slate-400">Directly upload to Drive, bypass local</span>
+                      </div>
                     </div>
-                    <div className="flex flex-col">
-                      <span className={cn("text-xs font-bold", uploadMode === "drive_only" ? "text-cyan-400" : "text-slate-300")}>Cloud Only (Google Drive)</span>
-                      <span className="text-[10px] text-slate-400">Directly upload to Drive, bypass local</span>
-                    </div>
+                    <Cloud className={cn("w-4 h-4", uploadMode === "drive_only" ? "text-cyan-400" : "text-slate-500")} />
                   </div>
-                  <Cloud className={cn("w-4 h-4", uploadMode === "drive_only" ? "text-cyan-400" : "text-slate-500")} />
                 </div>
               </div>
             </div>
 
-
-
-
-            <DialogFooter className="pt-2 flex items-center gap-3">
+            <DialogFooter className="shrink-0 pt-3 border-t border-white/10 mt-3 flex items-center gap-3">
               <Button
                 type="button"
                 variant="outline"

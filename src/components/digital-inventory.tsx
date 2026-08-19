@@ -268,8 +268,8 @@ export function DigitalInventory({ initialAssets }: DigitalInventoryProps) {
           <DialogTrigger className={cn(buttonVariants({ variant: "default", size: "sm" }), "bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 px-4 gap-2 shadow-lg shadow-indigo-600/30 cursor-pointer shrink-0")}>
             <Plus className="w-4 h-4" /> Register Asset
           </DialogTrigger>
-          <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-md p-6 shadow-2xl backdrop-blur-2xl space-y-4 font-mono">
-            <DialogHeader className="flex flex-row items-center justify-between border-b border-white/10 pb-3">
+          <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-md max-h-[88vh] p-6 shadow-2xl backdrop-blur-2xl flex flex-col font-mono">
+            <DialogHeader className="shrink-0 flex flex-row items-center justify-between border-b border-white/10 pb-3">
               <DialogTitle className="text-base font-bold text-white font-mono flex items-center gap-2">
                 <FolderArchive className="w-4 h-4 text-indigo-400" /> REGISTER NEW ASSET
               </DialogTitle>
@@ -280,70 +280,72 @@ export function DigitalInventory({ initialAssets }: DigitalInventoryProps) {
                 <X className="w-4 h-4" />
               </button>
             </DialogHeader>
-            <form onSubmit={handleCreateAsset} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">Asset Title *</label>
-                <Input
-                  autoFocus
-                  required
-                  placeholder="e.g. Next.js 16 App Router Specs"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                />
+            <form onSubmit={handleCreateAsset} className="flex flex-col flex-1 min-h-0 overflow-hidden pt-3">
+              <div className="overflow-y-auto flex-1 pr-1.5 space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Asset Title *</label>
+                  <Input
+                    autoFocus
+                    required
+                    placeholder="e.g. Next.js 16 App Router Specs"
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Asset Type *</label>
+                  <Select value={newType} onValueChange={(val: any) => setNewType(val)}>
+                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono">
+                      <SelectValue placeholder="Select type..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[180px]">
+                      <SelectItem value="link" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Link Bookmark</SelectItem>
+                      <SelectItem value="pdf" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Document / PDF</SelectItem>
+                      <SelectItem value="image" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Image Asset</SelectItem>
+                      <SelectItem value="video" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Video Resource</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Target Website / Resource URL *</label>
+                  <Input
+                    required
+                    placeholder="e.g. https://youtu.be/..."
+                    value={newUrlOrPath}
+                    onChange={(e) => setNewUrlOrPath(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                  />
+                  <p className="text-[10px] text-indigo-300 font-mono flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-indigo-400 inline shrink-0" />
+                    <span>Auto-scrapes website OpenGraph &amp; YouTube thumbnails!</span>
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Custom Thumbnail URL (Optional)</label>
+                  <Input
+                    placeholder="https://images.unsplash.com/..."
+                    value={newThumbnailUrl}
+                    onChange={(e) => setNewThumbnailUrl(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Tags (Comma-separated)</label>
+                  <Input
+                    placeholder="e.g. docs, video, nextjs"
+                    value={newTags}
+                    onChange={(e) => setNewTags(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                  />
+                </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">Asset Type *</label>
-                <Select value={newType} onValueChange={(val: any) => setNewType(val)}>
-                  <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono">
-                    <SelectValue placeholder="Select type..." />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[180px]">
-                    <SelectItem value="link" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Link Bookmark</SelectItem>
-                    <SelectItem value="pdf" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Document / PDF</SelectItem>
-                    <SelectItem value="image" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Image Asset</SelectItem>
-                    <SelectItem value="video" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Video Resource</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">Target Website / Resource URL *</label>
-                <Input
-                  required
-                  placeholder="e.g. https://youtu.be/..."
-                  value={newUrlOrPath}
-                  onChange={(e) => setNewUrlOrPath(e.target.value)}
-                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                />
-                <p className="text-[10px] text-indigo-300 font-mono flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-indigo-400 inline shrink-0" />
-                  <span>Auto-scrapes website OpenGraph &amp; YouTube thumbnails!</span>
-                </p>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">Custom Thumbnail URL (Optional)</label>
-                <Input
-                  placeholder="https://images.unsplash.com/..."
-                  value={newThumbnailUrl}
-                  onChange={(e) => setNewThumbnailUrl(e.target.value)}
-                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">Tags (Comma-separated)</label>
-                <Input
-                  placeholder="e.g. docs, video, nextjs"
-                  value={newTags}
-                  onChange={(e) => setNewTags(e.target.value)}
-                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                />
-              </div>
-
-              <DialogFooter className="pt-2">
+              <DialogFooter className="shrink-0 pt-3 border-t border-white/10 mt-3">
                 <Button type="submit" disabled={isPending} className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 w-full shadow-lg shadow-indigo-600/30">
                   {isPending ? "Registering..." : "Save Asset"}
                 </Button>
@@ -493,8 +495,8 @@ export function DigitalInventory({ initialAssets }: DigitalInventoryProps) {
       {/* Edit Bookmark Modal Dialog */}
       {editingAsset && (
         <Dialog open={!!editingAsset} onOpenChange={(open) => !open && setEditingAsset(null)}>
-          <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-md p-6 shadow-2xl backdrop-blur-2xl space-y-4 font-mono">
-            <DialogHeader className="flex flex-row items-center justify-between border-b border-white/10 pb-3">
+          <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-md max-h-[88vh] p-6 shadow-2xl backdrop-blur-2xl flex flex-col font-mono">
+            <DialogHeader className="shrink-0 flex flex-row items-center justify-between border-b border-white/10 pb-3">
               <DialogTitle className="text-base font-bold text-white font-mono flex items-center gap-2">
                 <Pencil className="w-4 h-4 text-indigo-400" /> EDIT ASSET
               </DialogTitle>
@@ -505,61 +507,63 @@ export function DigitalInventory({ initialAssets }: DigitalInventoryProps) {
                 <X className="w-4 h-4" />
               </button>
             </DialogHeader>
-            <form onSubmit={handleUpdateAsset} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">Asset Title</label>
-                <Input
-                  required
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                />
+            <form onSubmit={handleUpdateAsset} className="flex flex-col flex-1 min-h-0 overflow-hidden pt-3">
+              <div className="overflow-y-auto flex-1 pr-1.5 space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Asset Title</label>
+                  <Input
+                    required
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Asset Type</label>
+                  <Select value={editType} onValueChange={(val: any) => setEditType(val)}>
+                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono">
+                      <SelectValue placeholder="Select type..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[180px]">
+                      <SelectItem value="link" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Link Bookmark</SelectItem>
+                      <SelectItem value="pdf" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Document / PDF</SelectItem>
+                      <SelectItem value="image" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Image Asset</SelectItem>
+                      <SelectItem value="video" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Video Resource</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Website / Resource URL</label>
+                  <Input
+                    required
+                    value={editUrlOrPath}
+                    onChange={(e) => setEditUrlOrPath(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Thumbnail URL</label>
+                  <Input
+                    value={editThumbnailUrl}
+                    onChange={(e) => setEditThumbnailUrl(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Tags</label>
+                  <Input
+                    value={editTags}
+                    onChange={(e) => setEditTags(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                  />
+                </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">Asset Type</label>
-                <Select value={editType} onValueChange={(val: any) => setEditType(val)}>
-                  <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono">
-                    <SelectValue placeholder="Select type..." />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[180px]">
-                    <SelectItem value="link" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Link Bookmark</SelectItem>
-                    <SelectItem value="pdf" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Document / PDF</SelectItem>
-                    <SelectItem value="image" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Image Asset</SelectItem>
-                    <SelectItem value="video" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Video Resource</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">Website / Resource URL</label>
-                <Input
-                  required
-                  value={editUrlOrPath}
-                  onChange={(e) => setEditUrlOrPath(e.target.value)}
-                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">Thumbnail URL</label>
-                <Input
-                  value={editThumbnailUrl}
-                  onChange={(e) => setEditThumbnailUrl(e.target.value)}
-                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">Tags</label>
-                <Input
-                  value={editTags}
-                  onChange={(e) => setEditTags(e.target.value)}
-                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                />
-              </div>
-
-              <DialogFooter className="pt-2">
+              <DialogFooter className="shrink-0 pt-3 border-t border-white/10 mt-3">
                 <Button type="submit" disabled={isPending} className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 w-full shadow-lg shadow-indigo-600/30">
                   {isPending ? "Saving..." : "Update Asset"}
                 </Button>

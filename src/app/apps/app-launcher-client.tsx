@@ -487,8 +487,8 @@ export function AppLauncherClient({ initialApps }: AppLauncherClientProps) {
 
       {/* Register / Edit App Modal */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-md p-6 shadow-2xl backdrop-blur-2xl space-y-4 font-mono">
-          <DialogHeader className="flex flex-row items-center justify-between border-b border-white/10 pb-3">
+        <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-md max-h-[88vh] p-6 shadow-2xl backdrop-blur-2xl flex flex-col font-mono">
+          <DialogHeader className="shrink-0 flex flex-row items-center justify-between border-b border-white/10 pb-3">
             <DialogTitle className="text-base font-bold font-mono text-white flex items-center gap-2">
               <AppWindow className="w-5 h-5 text-indigo-400" />
               <span>{editingApp ? "EDIT APPLICATION" : "REGISTER APPLICATION"}</span>
@@ -501,180 +501,182 @@ export function AppLauncherClient({ initialApps }: AppLauncherClientProps) {
             </button>
           </DialogHeader>
 
-          <form onSubmit={handleSubmitForm} className="space-y-4">
-            {errorMsg && (
-              <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-mono">
-                {errorMsg}
+          <form onSubmit={handleSubmitForm} className="flex flex-col flex-1 min-h-0 overflow-hidden pt-3">
+            <div className="overflow-y-auto flex-1 pr-1.5 space-y-4">
+              {errorMsg && (
+                <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-mono">
+                  {errorMsg}
+                </div>
+              )}
+
+              {/* Name */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-300">Application Name *</label>
+                <Input
+                  autoFocus
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g. n8n Automation Hub"
+                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                  required
+                />
               </div>
-            )}
 
-            {/* Name */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-mono text-slate-300">Application Name *</label>
-              <Input
-                autoFocus
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g. n8n Automation Hub"
-                className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                required
-              />
-            </div>
+              {/* URL */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-300">Target URL *</label>
+                <Input
+                  value={formData.url}
+                  onChange={(e) => setFormData({ ...formData, url: e.target.value })}
+                  placeholder="e.g. http://localhost:5678 or https://github.com"
+                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                  required
+                />
+              </div>
 
-            {/* URL */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-mono text-slate-300">Target URL *</label>
-              <Input
-                value={formData.url}
-                onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-                placeholder="e.g. http://localhost:5678 or https://github.com"
-                className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                required
-              />
-            </div>
+              {/* Category */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-300">Category</label>
+                <Input
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  placeholder="e.g. Local Services, Development, Productivity"
+                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                />
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {SUGGESTED_CATEGORIES.map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, category: cat })}
+                      className={`text-[10px] font-mono px-2.5 py-1 rounded-xl border transition-colors cursor-pointer ${
+                        formData.category === cat
+                          ? "bg-indigo-600/30 border-indigo-500 text-indigo-300 font-bold"
+                          : "bg-white/[0.03] border-white/10 text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-            {/* Category */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-mono text-slate-300">Category</label>
-              <Input
-                value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                placeholder="e.g. Local Services, Development, Productivity"
-                className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-              />
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {SUGGESTED_CATEGORIES.map((cat) => (
+              {/* Icon Mode Tabs */}
+              <div className="space-y-2">
+                <label className="text-xs font-mono text-slate-300">Icon Display Options</label>
+
+                {/* Mode Selection Buttons */}
+                <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-white/[0.03] border border-white/10">
                   <button
-                    key={cat}
                     type="button"
-                    onClick={() => setFormData({ ...formData, category: cat })}
-                    className={`text-[10px] font-mono px-2.5 py-1 rounded-xl border transition-colors cursor-pointer ${
-                      formData.category === cat
-                        ? "bg-indigo-600/30 border-indigo-500 text-indigo-300 font-bold"
-                        : "bg-white/[0.03] border-white/10 text-slate-400 hover:text-slate-200"
+                    onClick={() => setIconTypeTab("auto")}
+                    className={`py-1.5 px-2 rounded-xl text-[11px] font-mono flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                      iconTypeTab === "auto"
+                        ? "bg-indigo-600 text-white font-bold shadow-md"
+                        : "text-slate-400 hover:text-white"
                     }`}
                   >
-                    {cat}
+                    <RefreshCw className="w-3 h-3" /> Auto Favicon
                   </button>
-                ))}
-              </div>
-            </div>
 
-            {/* Icon Mode Tabs */}
-            <div className="space-y-2">
-              <label className="text-xs font-mono text-slate-300">Icon Display Options</label>
+                  <button
+                    type="button"
+                    onClick={() => setIconTypeTab("lucide")}
+                    className={`py-1.5 px-2 rounded-xl text-[11px] font-mono flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                      iconTypeTab === "lucide"
+                        ? "bg-indigo-600 text-white font-bold shadow-md"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <Globe className="w-3 h-3" /> Lucide Icon
+                  </button>
 
-              {/* Mode Selection Buttons */}
-              <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-white/[0.03] border border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setIconTypeTab("auto")}
-                  className={`py-1.5 px-2 rounded-xl text-[11px] font-mono flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                    iconTypeTab === "auto"
-                      ? "bg-indigo-600 text-white font-bold shadow-md"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  <RefreshCw className="w-3 h-3" /> Auto Favicon
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIconTypeTab("lucide")}
-                  className={`py-1.5 px-2 rounded-xl text-[11px] font-mono flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                    iconTypeTab === "lucide"
-                      ? "bg-indigo-600 text-white font-bold shadow-md"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  <Globe className="w-3 h-3" /> Lucide Icon
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIconTypeTab("custom")}
-                  className={`py-1.5 px-2 rounded-xl text-[11px] font-mono flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                    iconTypeTab === "custom"
-                      ? "bg-indigo-600 text-white font-bold shadow-md"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  <LinkIcon className="w-3 h-3" /> Custom Image
-                </button>
-              </div>
-
-              {/* Tab Contents */}
-              {iconTypeTab === "auto" && (
-                <div className="p-3 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-mono flex items-center gap-2.5">
-                  {formData.url && getFaviconUrl(formData.url) ? (
-                    <img
-                      src={getFaviconUrl(formData.url)}
-                      alt="Favicon preview"
-                      className="w-7 h-7 object-contain rounded bg-black/40 p-1 shrink-0"
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = "none";
-                      }}
-                    />
-                  ) : (
-                    <Globe className="w-5 h-5 text-indigo-400 shrink-0" />
-                  )}
-                  <span className="text-[11px] leading-relaxed">
-                    Automatically fetches official domain favicon from Target URL with fallback to Lucide icon.
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIconTypeTab("custom")}
+                    className={`py-1.5 px-2 rounded-xl text-[11px] font-mono flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                      iconTypeTab === "custom"
+                        ? "bg-indigo-600 text-white font-bold shadow-md"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <LinkIcon className="w-3 h-3" /> Custom Image
+                  </button>
                 </div>
-              )}
 
-              {iconTypeTab === "lucide" && (
-                <div className="space-y-2">
-                  {/* Popular Icons Grid */}
-                  <div className="grid grid-cols-8 gap-2 p-2.5 rounded-2xl bg-white/[0.02] border border-white/10 max-h-36 overflow-y-auto">
-                    {POPULAR_ICONS.map((iconStr) => {
-                      const IconComp = ICON_MAP[iconStr] || Globe;
-                      const isSelected = formData.iconName === iconStr;
-                      return (
-                        <button
-                          key={iconStr}
-                          type="button"
-                          onClick={() => setFormData({ ...formData, iconName: iconStr })}
-                          className={`p-2 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
-                            isSelected
-                              ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 border border-indigo-400"
-                              : "bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/10"
-                          }`}
-                          title={iconStr}
-                        >
-                          <IconComp className="w-4 h-4" />
-                        </button>
-                      );
-                    })}
+                {/* Tab Contents */}
+                {iconTypeTab === "auto" && (
+                  <div className="p-3 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-mono flex items-center gap-2.5">
+                    {formData.url && getFaviconUrl(formData.url) ? (
+                      <img
+                        src={getFaviconUrl(formData.url)}
+                        alt="Favicon preview"
+                        className="w-7 h-7 object-contain rounded bg-black/40 p-1 shrink-0"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = "none";
+                        }}
+                      />
+                    ) : (
+                      <Globe className="w-5 h-5 text-indigo-400 shrink-0" />
+                    )}
+                    <span className="text-[11px] leading-relaxed">
+                      Automatically fetches official domain favicon from Target URL with fallback to Lucide icon.
+                    </span>
                   </div>
+                )}
 
-                  <Input
-                    value={formData.iconName}
-                    onChange={(e) => setFormData({ ...formData, iconName: e.target.value })}
-                    placeholder="Or type Lucide icon name (e.g. Server, Database)"
-                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                  />
-                </div>
-              )}
+                {iconTypeTab === "lucide" && (
+                  <div className="space-y-2">
+                    {/* Popular Icons Grid */}
+                    <div className="grid grid-cols-8 gap-2 p-2.5 rounded-2xl bg-white/[0.02] border border-white/10 max-h-36 overflow-y-auto">
+                      {POPULAR_ICONS.map((iconStr) => {
+                        const IconComp = ICON_MAP[iconStr] || Globe;
+                        const isSelected = formData.iconName === iconStr;
+                        return (
+                          <button
+                            key={iconStr}
+                            type="button"
+                            onClick={() => setFormData({ ...formData, iconName: iconStr })}
+                            className={`p-2 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                              isSelected
+                                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 border border-indigo-400"
+                                : "bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/10"
+                            }`}
+                            title={iconStr}
+                          >
+                            <IconComp className="w-4 h-4" />
+                          </button>
+                        );
+                      })}
+                    </div>
 
-              {iconTypeTab === "custom" && (
-                <div className="space-y-1.5">
-                  <Input
-                    value={formData.iconName}
-                    onChange={(e) => setFormData({ ...formData, iconName: e.target.value })}
-                    placeholder="Paste direct PNG / SVG image URL (https://...)"
-                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                  />
-                  <p className="text-[10px] text-slate-400 font-mono">
-                    Provide a direct image URL to use a custom app logo.
-                  </p>
-                </div>
-              )}
+                    <Input
+                      value={formData.iconName}
+                      onChange={(e) => setFormData({ ...formData, iconName: e.target.value })}
+                      placeholder="Or type Lucide icon name (e.g. Server, Database)"
+                      className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                    />
+                  </div>
+                )}
+
+                {iconTypeTab === "custom" && (
+                  <div className="space-y-1.5">
+                    <Input
+                      value={formData.iconName}
+                      onChange={(e) => setFormData({ ...formData, iconName: e.target.value })}
+                      placeholder="Paste direct PNG / SVG image URL (https://...)"
+                      className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                    />
+                    <p className="text-[10px] text-slate-400 font-mono">
+                      Provide a direct image URL to use a custom app logo.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Action Buttons */}
-            <DialogFooter className="pt-2">
+            <DialogFooter className="shrink-0 pt-3 border-t border-white/10 mt-3">
               <Button
                 type="submit"
                 disabled={isSubmitting}

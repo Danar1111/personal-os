@@ -7,9 +7,14 @@ import { revalidatePath } from "next/cache";
 
 export async function getTasksWithProjects() {
   try {
-    // Ensure position column exists in MySQL tasks table
+    // Ensure position and due_date columns exist in MySQL tasks table
     try {
       await poolConnection.query("ALTER TABLE tasks ADD COLUMN position INT DEFAULT 0");
+    } catch {
+      // Column already exists or already updated
+    }
+    try {
+      await poolConnection.query("ALTER TABLE tasks ADD COLUMN due_date TIMESTAMP NULL");
     } catch {
       // Column already exists or already updated
     }
@@ -60,6 +65,7 @@ export async function reorderTasksAction(
   }
 
   revalidatePath("/tasks");
+  revalidatePath("/calendar");
   revalidatePath("/");
   return { success: true };
 }
@@ -70,9 +76,16 @@ export async function createTaskAction(data: {
   status?: "todo" | "in_progress" | "done";
   priority?: "low" | "medium" | "high";
   projectId?: number | null;
+  dueDate?: Date | string | null;
 }) {
   if (!data.title || data.title.trim() === "") {
     throw new Error("Task title is required");
+  }
+
+  let finalDueDate: Date | null = null;
+  if (data.dueDate) {
+    const d = new Date(data.dueDate);
+    if (!isNaN(d.getTime())) finalDueDate = d;
   }
 
   await db.insert(tasks).values({
@@ -82,9 +95,11 @@ export async function createTaskAction(data: {
     priority: data.priority || "medium",
     projectId: data.projectId || null,
     position: 0,
+    dueDate: finalDueDate,
   });
 
   revalidatePath("/tasks");
+  revalidatePath("/calendar");
   revalidatePath("/");
   return { success: true };
 }
@@ -99,6 +114,7 @@ export async function updateTaskStatusAction(
     .where(eq(tasks.id, taskId));
 
   revalidatePath("/tasks");
+  revalidatePath("/calendar");
   revalidatePath("/");
   return { success: true };
 }
@@ -111,10 +127,17 @@ export async function updateTaskFullAction(
     status?: "todo" | "in_progress" | "done";
     priority?: "low" | "medium" | "high";
     projectId?: number | null;
+    dueDate?: Date | string | null;
   }
 ) {
   if (!data.title || data.title.trim() === "") {
     throw new Error("Task title is required");
+  }
+
+  let finalDueDate: Date | null = null;
+  if (data.dueDate) {
+    const d = new Date(data.dueDate);
+    if (!isNaN(d.getTime())) finalDueDate = d;
   }
 
   await db
@@ -125,10 +148,12 @@ export async function updateTaskFullAction(
       status: data.status || "todo",
       priority: data.priority || "medium",
       projectId: data.projectId || null,
+      dueDate: finalDueDate,
     })
     .where(eq(tasks.id, taskId));
 
   revalidatePath("/tasks");
+  revalidatePath("/calendar");
   revalidatePath("/");
   return { success: true };
 }

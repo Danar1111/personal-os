@@ -191,7 +191,7 @@ export async function POST(req: NextRequest) {
             }
           });
 
-          dest.on("finish", resolve);
+          dest.on("finish", () => resolve(true));
           dest.on("error", reject);
           (driveFileRes.data as any).on("error", reject);
           (driveFileRes.data as any).pipe(dest);

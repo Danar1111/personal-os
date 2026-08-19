@@ -8,6 +8,8 @@ import { eq } from "drizzle-orm";
 export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/drive.file",
   "https://www.googleapis.com/auth/drive",
+  "https://www.googleapis.com/auth/calendar.readonly",
+  "https://www.googleapis.com/auth/calendar.events",
 ];
 
 export function getGoogleRedirectUri(req?: NextRequest): string {
@@ -137,4 +139,14 @@ export async function getDriveClient(req?: NextRequest) {
 
   const oauth2Client = setGoogleCredentials(refreshToken, req);
   return google.drive({ version: "v3", auth: oauth2Client });
+}
+
+export async function getCalendarClient(req?: NextRequest) {
+  const refreshToken = await getGoogleRefreshToken();
+  if (!refreshToken) {
+    throw new Error("Google Calendar is not connected. Missing GOOGLE_REFRESH_TOKEN.");
+  }
+
+  const oauth2Client = setGoogleCredentials(refreshToken, req);
+  return google.calendar({ version: "v3", auth: oauth2Client });
 }

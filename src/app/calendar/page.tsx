@@ -1,6 +1,6 @@
 import React from "react";
 import { getCalendarEvents } from "./actions";
-import { MasterCalendar } from "@/components/master-calendar";
+import { MasterCalendar } from "@/components/calendar/MasterCalendar";
 import { Calendar as CalendarIcon, Database } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
@@ -19,7 +19,7 @@ export default async function CalendarPage() {
             <span>MASTER CALENDAR</span>
           </h1>
           <p className="text-xs text-slate-400 mt-1 font-mono">
-            Time Management • Drizzle ORM + Laragon MySQL Event Scheduler & Timeline
+            Time Management • Unified Local MySQL & Google Calendar Multi-Day Timeline
           </p>
         </div>
 

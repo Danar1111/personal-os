@@ -62,6 +62,7 @@ import {
   Check,
   Link2,
   ArrowUp,
+  Calendar as CalendarIcon,
 } from "lucide-react";
 import useSWR from "swr";
 
@@ -82,6 +83,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { GlassDatePicker } from "@/components/ui/glass-date-picker";
 import {
   Dialog,
   DialogContent,
@@ -234,6 +236,7 @@ export function KanbanBoard({
   const [newStatus, setNewStatus] = useState<"todo" | "in_progress" | "done">("todo");
   const [newPriority, setNewPriority] = useState<"low" | "medium" | "high">("medium");
   const [newProjectId, setNewProjectId] = useState<string>("none");
+  const [newDueDate, setNewDueDate] = useState<string>("");
   const [newReferences, setNewReferences] = useState<ReferenceItem[]>([]);
 
   // Manage Projects & Create Project Modal State
@@ -261,6 +264,7 @@ export function KanbanBoard({
   const [editStatus, setEditStatus] = useState<"todo" | "in_progress" | "done">("todo");
   const [editPriority, setEditPriority] = useState<"low" | "medium" | "high">("medium");
   const [editProjectId, setEditProjectId] = useState<string>("none");
+  const [editDueDate, setEditDueDate] = useState<string>("");
   const [editReferences, setEditReferences] = useState<ReferenceItem[]>([]);
 
   // Cool Custom Delete Confirmation Modal States
@@ -396,9 +400,11 @@ export function KanbanBoard({
         status: newStatus,
         priority: newPriority,
         projectId: newProjectId !== "none" ? parseInt(newProjectId, 10) : null,
+        dueDate: newDueDate ? new Date(newDueDate) : null,
       });
       setNewTitle("");
       setNewDescription("");
+      setNewDueDate("");
       setNewReferences([]);
       setIsTaskDialogOpen(false);
     });
@@ -414,6 +420,7 @@ export function KanbanBoard({
     setEditStatus((task.status as any) || "todo");
     setEditPriority((task.priority as any) || "medium");
     setEditProjectId(task.projectId ? task.projectId.toString() : "none");
+    setEditDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split("T")[0] : "");
     setEditReferences(references);
   };
 
@@ -430,6 +437,7 @@ export function KanbanBoard({
         status: editStatus,
         priority: editPriority,
         projectId: editProjectId !== "none" ? parseInt(editProjectId, 10) : null,
+        dueDate: editDueDate ? new Date(editDueDate) : null,
       });
       setEditingTask(null);
     });
@@ -735,96 +743,121 @@ export function KanbanBoard({
 
       {/* New Task Dialog */}
       <Dialog open={isTaskDialogOpen} onOpenChange={setIsTaskDialogOpen}>
-        <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-xl p-6 shadow-2xl backdrop-blur-2xl space-y-4 font-mono">
-          <DialogHeader>
+        <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-xl max-h-[88vh] p-6 shadow-2xl backdrop-blur-2xl flex flex-col font-mono">
+          <DialogHeader className="shrink-0 pb-3 border-b border-white/10 flex flex-row items-center justify-between">
             <DialogTitle className="text-base font-bold text-white font-mono flex items-center gap-2">
               <Plus className="w-5 h-5 text-indigo-400" /> NEW OMNI-KANBAN TASK
             </DialogTitle>
+            <button
+              onClick={() => setIsTaskDialogOpen(false)}
+              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-colors border border-white/10"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </DialogHeader>
 
-          <form onSubmit={handleCreateTask} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-mono text-slate-300">Task Title *</label>
-              <Input
-                required
-                placeholder="e.g., Build Server Actions for CRUD"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+          <form onSubmit={handleCreateTask} className="flex flex-col flex-1 min-h-0 overflow-hidden pt-3">
+            <div className="overflow-y-auto flex-1 pr-1.5 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-300">Task Title *</label>
+                <Input
+                  required
+                  placeholder="e.g., Build Server Actions for CRUD"
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-300">Description</label>
+                <Textarea
+                  placeholder="Provide additional details or sub-tasks..."
+                  value={newDescription}
+                  onChange={(e) => setNewDescription(e.target.value)}
+                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl min-h-[90px] p-3.5 font-sans"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="flex-1 min-w-[120px] space-y-1">
+                  <label className="text-[11px] font-mono text-slate-300">Status</label>
+                  <Select value={newStatus} onValueChange={(val: any) => setNewStatus(val || "todo")}>
+                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[160px]">
+                      <SelectItem value="todo" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Todo</SelectItem>
+                      <SelectItem value="in_progress" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">In Progress</SelectItem>
+                      <SelectItem value="done" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Completed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex-1 min-w-[120px] space-y-1">
+                  <label className="text-[11px] font-mono text-slate-300">Priority</label>
+                  <Select value={newPriority} onValueChange={(val: any) => setNewPriority(val || "medium")}>
+                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[160px]">
+                      <SelectItem value="low" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Low</SelectItem>
+                      <SelectItem value="medium" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Medium</SelectItem>
+                      <SelectItem value="high" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">High</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex-1 min-w-[140px] space-y-1">
+                  <label className="text-[11px] font-mono text-slate-300">Project</label>
+                  <Select value={newProjectId} onValueChange={(val: any) => setNewProjectId(val || "none")}>
+                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                      <span className="truncate">
+                        {newProjectId === "none" ? "None" : getProjectName(parseInt(newProjectId, 10)) || "Project"}
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[200px]">
+                      <SelectItem value="none" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">None</SelectItem>
+                      {initialProjects.map((p) => (
+                        <SelectItem key={p.id} value={p.id.toString()} className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Optional Deadline / Due Date Field */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-bold text-slate-300 font-mono flex items-center gap-1.5">
+                    <CalendarIcon className="w-3.5 h-3.5 text-amber-400" />
+                    <span>DEADLINE / DUE DATE</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-mono">(Optional • Syncs to Master Calendar)</span>
+                </div>
+                <GlassDatePicker
+                  value={newDueDate}
+                  onChange={setNewDueDate}
+                  placeholder="Select deadline date..."
+                  accentColor="amber"
+                />
+              </div>
+
+              {/* Multiple Linked References Section */}
+              <ReferenceManager
+                references={newReferences}
+                onChange={setNewReferences}
+                vaultAssets={displayVaultAssets}
+                driveAssets={displayDriveAssets}
+                notes={initialNotes}
+                assetMap={assetMap}
+                noteMap={noteMap}
               />
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-mono text-slate-300">Description</label>
-              <Textarea
-                placeholder="Provide additional details or sub-tasks..."
-                value={newDescription}
-                onChange={(e) => setNewDescription(e.target.value)}
-                className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl min-h-[90px] p-3.5 font-sans"
-              />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2.5">
-              <div className="flex-1 min-w-[120px] space-y-1">
-                <label className="text-[11px] font-mono text-slate-300">Status</label>
-                <Select value={newStatus} onValueChange={(val: any) => setNewStatus(val || "todo")}>
-                  <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[160px]">
-                    <SelectItem value="todo" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Todo</SelectItem>
-                    <SelectItem value="in_progress" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">In Progress</SelectItem>
-                    <SelectItem value="done" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Completed</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex-1 min-w-[120px] space-y-1">
-                <label className="text-[11px] font-mono text-slate-300">Priority</label>
-                <Select value={newPriority} onValueChange={(val: any) => setNewPriority(val || "medium")}>
-                  <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[160px]">
-                    <SelectItem value="low" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Low</SelectItem>
-                    <SelectItem value="medium" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Medium</SelectItem>
-                    <SelectItem value="high" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">High</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex-1 min-w-[140px] space-y-1">
-                <label className="text-[11px] font-mono text-slate-300">Project</label>
-                <Select value={newProjectId} onValueChange={(val: any) => setNewProjectId(val || "none")}>
-                  <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
-                    <span className="truncate">
-                      {newProjectId === "none" ? "None" : getProjectName(parseInt(newProjectId, 10)) || "Project"}
-                    </span>
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[200px]">
-                    <SelectItem value="none" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">None</SelectItem>
-                    {initialProjects.map((p) => (
-                      <SelectItem key={p.id} value={p.id.toString()} className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Multiple Linked References Section */}
-            <ReferenceManager
-              references={newReferences}
-              onChange={setNewReferences}
-              vaultAssets={displayVaultAssets}
-              driveAssets={displayDriveAssets}
-              notes={initialNotes}
-              assetMap={assetMap}
-              noteMap={noteMap}
-            />
-
-            <DialogFooter className="pt-3">
+            <DialogFooter className="shrink-0 pt-3 border-t border-white/10 mt-3">
               <Button type="submit" disabled={isPending} className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 w-full shadow-lg shadow-indigo-600/30">
                 {isPending ? "Creating..." : "Save Task"}
               </Button>
@@ -954,12 +987,21 @@ export function KanbanBoard({
                 {getPriorityBadge(viewingTask.priority)}
               </div>
 
-              <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
+              <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-slate-400">
                 <span>Status: <strong className="text-white uppercase">{viewingTask.status}</strong></span>
                 {viewingTask.projectId && (
                   <>
                     <span>•</span>
                     <span className="text-indigo-300">Project: {getProjectName(viewingTask.projectId)}</span>
+                  </>
+                )}
+                {viewingTask.dueDate && (
+                  <>
+                    <span>•</span>
+                    <span className="text-amber-300 flex items-center gap-1 font-bold">
+                      <CalendarIcon className="w-3.5 h-3.5 text-amber-400" />
+                      Due: {new Date(viewingTask.dueDate).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
+                    </span>
                   </>
                 )}
               </div>
@@ -1059,8 +1101,8 @@ export function KanbanBoard({
       {/* TASK EDIT MODAL DIALOG */}
       {editingTask && (
         <Dialog open={!!editingTask} onOpenChange={() => setEditingTask(null)}>
-          <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-xl p-6 shadow-2xl backdrop-blur-2xl space-y-4 font-mono">
-            <DialogHeader className="flex flex-row items-center justify-between border-b border-white/10 pb-3">
+          <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-xl max-h-[88vh] p-6 shadow-2xl backdrop-blur-2xl flex flex-col font-mono">
+            <DialogHeader className="shrink-0 flex flex-row items-center justify-between border-b border-white/10 pb-3">
               <DialogTitle className="text-base font-bold text-white font-mono flex items-center gap-2">
                 <Edit3 className="w-4 h-4 text-indigo-400" /> EDIT TASK &amp; REFERENCES
               </DialogTitle>
@@ -1072,87 +1114,106 @@ export function KanbanBoard({
               </button>
             </DialogHeader>
 
-            <form onSubmit={handleSaveEdit} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">Task Title *</label>
-                <Input
-                  required
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+            <form onSubmit={handleSaveEdit} className="flex flex-col flex-1 min-h-0 overflow-hidden pt-3">
+              <div className="overflow-y-auto flex-1 pr-1.5 space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Task Title *</label>
+                  <Input
+                    required
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Description</label>
+                  <Textarea
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl min-h-[90px] p-3.5 font-sans"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <div className="flex-1 min-w-[120px] space-y-1">
+                    <label className="text-[11px] font-mono text-slate-300">Status</label>
+                    <Select value={editStatus} onValueChange={(val: any) => setEditStatus(val || "todo")}>
+                      <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[160px]">
+                        <SelectItem value="todo" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Todo</SelectItem>
+                        <SelectItem value="in_progress" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">In Progress</SelectItem>
+                        <SelectItem value="done" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Completed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex-1 min-w-[120px] space-y-1">
+                    <label className="text-[11px] font-mono text-slate-300">Priority</label>
+                    <Select value={editPriority} onValueChange={(val: any) => setEditPriority(val || "medium")}>
+                      <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[160px]">
+                        <SelectItem value="low" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Low</SelectItem>
+                        <SelectItem value="medium" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Medium</SelectItem>
+                        <SelectItem value="high" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">High</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex-1 min-w-[140px] space-y-1">
+                    <label className="text-[11px] font-mono text-slate-300">Project</label>
+                    <Select value={editProjectId} onValueChange={(val: any) => setEditProjectId(val || "none")}>
+                      <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                        <span className="truncate">
+                          {editProjectId === "none" ? "None" : getProjectName(parseInt(editProjectId, 10)) || "Project"}
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[200px]">
+                        <SelectItem value="none" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">None</SelectItem>
+                        {initialProjects.map((p) => (
+                          <SelectItem key={p.id} value={p.id.toString()} className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Optional Deadline / Due Date Field */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-slate-300 font-mono flex items-center gap-1.5">
+                      <CalendarIcon className="w-3.5 h-3.5 text-amber-400" />
+                      <span>DEADLINE / DUE DATE</span>
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-mono">(Optional • Syncs to Master Calendar)</span>
+                  </div>
+                  <GlassDatePicker
+                    value={editDueDate}
+                    onChange={setEditDueDate}
+                    placeholder="Select deadline date..."
+                    accentColor="amber"
+                  />
+                </div>
+
+                {/* Multiple Linked References Editor */}
+                <ReferenceManager
+                  references={editReferences}
+                  onChange={setEditReferences}
+                  vaultAssets={displayVaultAssets}
+                  driveAssets={displayDriveAssets}
+                  notes={initialNotes}
+                  assetMap={assetMap}
+                  noteMap={noteMap}
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">Description</label>
-                <Textarea
-                  value={editDescription}
-                  onChange={(e) => setEditDescription(e.target.value)}
-                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl min-h-[90px] p-3.5 font-sans"
-                />
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2.5">
-                <div className="flex-1 min-w-[120px] space-y-1">
-                  <label className="text-[11px] font-mono text-slate-300">Status</label>
-                  <Select value={editStatus} onValueChange={(val: any) => setEditStatus(val || "todo")}>
-                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[160px]">
-                      <SelectItem value="todo" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Todo</SelectItem>
-                      <SelectItem value="in_progress" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">In Progress</SelectItem>
-                      <SelectItem value="done" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Completed</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex-1 min-w-[120px] space-y-1">
-                  <label className="text-[11px] font-mono text-slate-300">Priority</label>
-                  <Select value={editPriority} onValueChange={(val: any) => setEditPriority(val || "medium")}>
-                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[160px]">
-                      <SelectItem value="low" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Low</SelectItem>
-                      <SelectItem value="medium" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Medium</SelectItem>
-                      <SelectItem value="high" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">High</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex-1 min-w-[140px] space-y-1">
-                  <label className="text-[11px] font-mono text-slate-300">Project</label>
-                  <Select value={editProjectId} onValueChange={(val: any) => setEditProjectId(val || "none")}>
-                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
-                      <span className="truncate">
-                        {editProjectId === "none" ? "None" : getProjectName(parseInt(editProjectId, 10)) || "Project"}
-                      </span>
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[200px]">
-                      <SelectItem value="none" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">None</SelectItem>
-                      {initialProjects.map((p) => (
-                        <SelectItem key={p.id} value={p.id.toString()} className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">
-                          {p.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {/* Multiple Linked References Editor */}
-              <ReferenceManager
-                references={editReferences}
-                onChange={setEditReferences}
-                vaultAssets={displayVaultAssets}
-                driveAssets={displayDriveAssets}
-                notes={initialNotes}
-                assetMap={assetMap}
-                noteMap={noteMap}
-              />
-
-              <DialogFooter className="pt-3 flex items-center justify-between gap-3">
+              <DialogFooter className="shrink-0 pt-3 border-t border-white/10 mt-3 flex items-center justify-between gap-3">
                 <Button
                   type="button"
                   variant="ghost"
@@ -1677,7 +1738,24 @@ function SortableTaskCard({
           {getPriorityBadge(task.priority)}
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+          {task.dueDate && (
+            <span
+              className={cn(
+                "text-[10px] font-mono px-2 py-0.5 rounded-full border flex items-center gap-1 font-bold shadow-xs",
+                task.status === "done"
+                  ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+                  : new Date(task.dueDate).getTime() < new Date().setHours(0, 0, 0, 0)
+                  ? "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"
+                  : "bg-amber-500/15 text-amber-300 border-amber-500/35"
+              )}
+              title={`Deadline: ${new Date(task.dueDate).toLocaleDateString([], { month: "long", day: "numeric", year: "numeric" })}`}
+            >
+              <CalendarIcon className="w-2.5 h-2.5" />
+              <span>{new Date(task.dueDate).toLocaleDateString([], { month: "short", day: "numeric" })}</span>
+            </span>
+          )}
+
           {projectName && (
             <span className="text-[10px] font-mono text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20 flex items-center gap-1">
               <Layers className="w-2.5 h-2.5 inline" /> {projectName}

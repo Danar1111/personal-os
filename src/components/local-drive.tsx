@@ -355,8 +355,8 @@ export function LocalDrive({ initialAssets }: LocalDriveProps) {
             <DialogTrigger className={cn(buttonVariants({ variant: "default", size: "sm" }), "bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 px-4 gap-2 shadow-lg shadow-indigo-600/30 cursor-pointer")}>
               <UploadCloud className="w-4 h-4" /> Upload File
             </DialogTrigger>
-            <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-md p-6 shadow-2xl backdrop-blur-2xl space-y-4 font-mono">
-              <DialogHeader className="flex flex-row items-center justify-between border-b border-white/10 pb-3">
+            <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-md max-h-[88vh] p-6 shadow-2xl backdrop-blur-2xl flex flex-col font-mono">
+              <DialogHeader className="shrink-0 flex flex-row items-center justify-between border-b border-white/10 pb-3">
                 <DialogTitle className="text-base font-bold text-white font-mono flex items-center gap-2">
                   <HardDrive className="w-4 h-4 text-indigo-400" /> UPLOAD FILE TO LOCAL DRIVE
                 </DialogTitle>
@@ -368,105 +368,100 @@ export function LocalDrive({ initialAssets }: LocalDriveProps) {
                 </button>
               </DialogHeader>
 
-              <form onSubmit={handleFileUpload} className="space-y-4">
-                {/* Drag and Drop Zone */}
-                <div
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
-                  className={cn(
-                    "p-6 rounded-2xl border-2 border-dashed transition-all cursor-pointer flex flex-col items-center justify-center text-center relative overflow-hidden",
-                    isDragging
-                      ? "border-indigo-400 bg-indigo-500/20 scale-[1.02]"
-                      : selectedFile
-                      ? "border-emerald-500/40 bg-emerald-500/10"
-                      : "border-white/15 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/25"
-                  )}
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files[0]) {
-                        handleFileSelect(e.target.files[0]);
-                      }
-                    }}
-                    className="hidden"
-                  />
-
-                  {selectedFile ? (
-                    <div className="space-y-2 w-full flex flex-col items-center">
-                      {previewUrl ? (
-                        <div className="w-24 h-24 rounded-xl overflow-hidden border border-white/20 shadow-md mb-1">
-                          <img src={previewUrl} alt="Upload preview" className="w-full h-full object-cover" />
-                        </div>
-                      ) : (
-                        <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-300 mb-1">
-                          <File className="w-6 h-6" />
-                        </div>
-                      )}
-
-                      <div className="text-center w-full px-2">
-                        <p className="text-xs font-bold text-white truncate max-w-[280px] mx-auto">
-                          {selectedFile.name}
-                        </p>
-                        <p className="text-[10px] text-slate-400 font-mono mt-0.5">
-                          {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • {selectedFile.type || "Document"}
-                        </p>
-                      </div>
-
-                      <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 bg-emerald-500/20 text-[10px] font-mono gap-1">
-                        <CheckCircle2 className="w-3 h-3" /> Ready to Upload
-                      </Badge>
-                    </div>
-                  ) : (
-                    <div className="space-y-2 flex flex-col items-center">
-                      <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shadow-md">
-                        <UploadCloud className="w-6 h-6 animate-bounce" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-white font-mono">
-                          Drag &amp; Drop file here, or <span className="text-indigo-400 underline">browse</span>
-                        </p>
-                        <p className="text-[10px] text-slate-400 mt-1">
-                          Supports PDF, Images, Videos, &amp; local media documents
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-
-
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-mono text-slate-300">Display Title (Optional)</label>
-                  <Input
-                    placeholder="e.g. System Architecture Diagram"
-                    value={customTitle}
-                    onChange={(e) => setCustomTitle(e.target.value)}
-                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-mono text-slate-300">Tags (Comma-separated)</label>
-                  <Input
-                    placeholder="e.g. pdf, spec, system"
-                    value={customTags}
-                    onChange={(e) => setCustomTags(e.target.value)}
-                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                  />
-                </div>
-
-                <DialogFooter className="pt-2">
-                  <Button
-                    type="submit"
-                    disabled={!selectedFile || isUploading || isPending}
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 w-full shadow-lg shadow-indigo-600/30 cursor-pointer"
+              <form onSubmit={handleFileUpload} className="flex flex-col flex-1 min-h-0 overflow-hidden pt-3">
+                <div className="overflow-y-auto flex-1 pr-1.5 space-y-4">
+                  {/* Drag and Drop Zone */}
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={cn(
+                      "p-6 rounded-2xl border-2 border-dashed transition-all cursor-pointer flex flex-col items-center justify-center text-center relative overflow-hidden",
+                      isDragging
+                        ? "border-indigo-400 bg-indigo-500/20 scale-[1.02]"
+                        : selectedFile
+                        ? "border-emerald-500/40 bg-emerald-500/10"
+                        : "border-white/15 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/25"
+                    )}
                   >
-                    {isUploading ? "Uploading file..." : "Upload & Save Record"}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          handleFileSelect(e.target.files[0]);
+                        }
+                      }}
+                      className="hidden"
+                    />
+
+                    {selectedFile ? (
+                      <div className="space-y-2 w-full flex flex-col items-center">
+                        {previewUrl ? (
+                          <div className="w-24 h-24 rounded-xl overflow-hidden border border-white/20 shadow-md mb-1">
+                            <img src={previewUrl} alt="Upload preview" className="w-full h-full object-cover" />
+                          </div>
+                        ) : (
+                          <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-300 mb-1">
+                            <File className="w-6 h-6" />
+                          </div>
+                        )}
+
+                        <div className="text-center w-full px-2">
+                          <p className="text-xs font-bold text-white truncate max-w-[280px] mx-auto">
+                            {selectedFile.name}
+                          </p>
+                          <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                            {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • {selectedFile.type || "Document"}
+                          </p>
+                        </div>
+
+                        <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 bg-emerald-500/20 text-[10px] font-mono gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> Ready to Upload
+                        </Badge>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 flex flex-col items-center">
+                        <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shadow-md">
+                          <UploadCloud className="w-6 h-6 animate-bounce" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-white font-mono">
+                            Drag &amp; Drop file here, or <span className="text-indigo-400 underline">browse</span>
+                          </p>
+                          <p className="text-[10px] text-slate-400 mt-1">
+                            Supports PDF, Images, Videos, &amp; local media documents
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-mono text-slate-300">Display Title (Optional)</label>
+                    <Input
+                      placeholder="e.g. System Architecture Diagram"
+                      value={customTitle}
+                      onChange={(e) => setCustomTitle(e.target.value)}
+                      className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-mono text-slate-300">Tags (Comma-separated)</label>
+                    <Input
+                      placeholder="e.g. pdf, spec, system"
+                      value={customTags}
+                      onChange={(e) => setCustomTags(e.target.value)}
+                      className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <DialogFooter className="shrink-0 pt-3 border-t border-white/10 mt-3">
+                  <Button type="submit" disabled={isPending || !selectedFile} className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 w-full shadow-lg shadow-indigo-600/30">
+                    {isPending ? "Uploading..." : "Upload File"}
                   </Button>
                 </DialogFooter>
               </form>
@@ -658,8 +653,8 @@ export function LocalDrive({ initialAssets }: LocalDriveProps) {
       {/* Edit File Modal Dialog */}
       {editingAsset && (
         <Dialog open={!!editingAsset} onOpenChange={(open) => !open && setEditingAsset(null)}>
-          <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-md p-6 shadow-2xl backdrop-blur-2xl space-y-4 font-mono">
-            <DialogHeader className="flex flex-row items-center justify-between border-b border-white/10 pb-3">
+          <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-md max-h-[88vh] p-6 shadow-2xl backdrop-blur-2xl flex flex-col font-mono">
+            <DialogHeader className="shrink-0 flex flex-row items-center justify-between border-b border-white/10 pb-3">
               <DialogTitle className="text-base font-bold text-white font-mono flex items-center gap-2">
                 <Pencil className="w-4 h-4 text-indigo-400" /> EDIT FILE DETAILS
               </DialogTitle>
@@ -671,60 +666,62 @@ export function LocalDrive({ initialAssets }: LocalDriveProps) {
               </button>
             </DialogHeader>
 
-            <form onSubmit={handleUpdateDriveAsset} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">File Title</label>
-                <Input
-                  required
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                />
+            <form onSubmit={handleUpdateDriveAsset} className="flex flex-col flex-1 min-h-0 overflow-hidden pt-3">
+              <div className="overflow-y-auto flex-1 pr-1.5 space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">File Title</label>
+                  <Input
+                    required
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">File Type</label>
+                  <Select value={editType} onValueChange={(val: any) => setEditType(val)}>
+                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono">
+                      <SelectValue placeholder="Select file type..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[180px]">
+                      <SelectItem value="pdf" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Document (PDF)</SelectItem>
+                      <SelectItem value="image" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Image Asset</SelectItem>
+                      <SelectItem value="video" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Video Asset</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">File Path / URL</label>
+                  <Input
+                    required
+                    value={editUrlOrPath}
+                    onChange={(e) => setEditUrlOrPath(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Thumbnail URL</label>
+                  <Input
+                    value={editThumbnailUrl}
+                    onChange={(e) => setEditThumbnailUrl(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Tags</label>
+                  <Input
+                    value={editTags}
+                    onChange={(e) => setEditTags(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                  />
+                </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">File Type</label>
-                <Select value={editType} onValueChange={(val: any) => setEditType(val)}>
-                  <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono">
-                    <SelectValue placeholder="Select file type..." />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[180px]">
-                    <SelectItem value="pdf" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Document (PDF)</SelectItem>
-                    <SelectItem value="image" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Image Asset</SelectItem>
-                    <SelectItem value="video" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Video Asset</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">File Path / URL</label>
-                <Input
-                  required
-                  value={editUrlOrPath}
-                  onChange={(e) => setEditUrlOrPath(e.target.value)}
-                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">Thumbnail URL</label>
-                <Input
-                  value={editThumbnailUrl}
-                  onChange={(e) => setEditThumbnailUrl(e.target.value)}
-                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">Tags</label>
-                <Input
-                  value={editTags}
-                  onChange={(e) => setEditTags(e.target.value)}
-                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
-                />
-              </div>
-
-              <DialogFooter className="pt-2">
+              <DialogFooter className="shrink-0 pt-3 border-t border-white/10 mt-3">
                 <Button type="submit" disabled={isPending} className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 w-full shadow-lg shadow-indigo-600/30">
                   {isPending ? "Saving..." : "Update File Details"}
                 </Button>

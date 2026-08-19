@@ -401,8 +401,8 @@ export function SkillLearner({
 
       {/* New Skill Dialog */}
       <Dialog open={isSkillDialogOpen} onOpenChange={setIsSkillDialogOpen}>
-        <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-xl p-6 shadow-2xl backdrop-blur-2xl space-y-4 font-mono">
-          <DialogHeader className="flex flex-row items-center justify-between border-b border-white/10 pb-3">
+        <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-xl max-h-[88vh] p-6 shadow-2xl backdrop-blur-2xl flex flex-col font-mono">
+          <DialogHeader className="shrink-0 flex flex-row items-center justify-between border-b border-white/10 pb-3">
             <DialogTitle className="text-base font-bold text-white font-mono flex items-center gap-2">
               <Brain className="w-5 h-5 text-indigo-400" /> REGISTER NEW SKILL
             </DialogTitle>
@@ -414,73 +414,75 @@ export function SkillLearner({
             </button>
           </DialogHeader>
 
-          <form onSubmit={handleCreateSkill} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-mono text-slate-300">Skill Title *</label>
-              <Input
-                autoFocus
-                required
-                placeholder="e.g. Rust Systems Programming"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+          <form onSubmit={handleCreateSkill} className="flex flex-col flex-1 min-h-0 overflow-hidden pt-3">
+            <div className="overflow-y-auto flex-1 pr-1.5 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-300">Skill Title *</label>
+                <Input
+                  autoFocus
+                  required
+                  placeholder="e.g. Rust Systems Programming"
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-300">Description</label>
+                <Textarea
+                  placeholder="Provide skill overview or study syllabus..."
+                  value={newDescription}
+                  onChange={(e) => setNewDescription(e.target.value)}
+                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl min-h-[80px] p-3.5 font-sans"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-mono text-slate-300">Category</label>
+                  <Select value={newCategory} onValueChange={(val: any) => setNewCategory(val)}>
+                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5">
+                      <SelectItem value="hard_skill" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Hard / Technical</SelectItem>
+                      <SelectItem value="creative" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Creative &amp; Design</SelectItem>
+                      <SelectItem value="language" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Language</SelectItem>
+                      <SelectItem value="soft_skill" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Soft Skill</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-mono text-slate-300">Initial Level</label>
+                  <Select value={newProficiency} onValueChange={(val: any) => setNewProficiency(val)}>
+                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5">
+                      <SelectItem value="beginner" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Beginner (25%)</SelectItem>
+                      <SelectItem value="intermediate" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Intermediate (50%)</SelectItem>
+                      <SelectItem value="advanced" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Advanced (75%)</SelectItem>
+                      <SelectItem value="mastery" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Mastery (100%)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Multiple Linked References Manager */}
+              <ReferenceManager
+                references={newReferences}
+                onChange={setNewReferences}
+                vaultAssets={displayVaultAssets}
+                driveAssets={displayDriveAssets}
+                notes={initialNotes}
+                assetMap={assetMap}
+                noteMap={noteMap}
               />
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-mono text-slate-300">Description</label>
-              <Textarea
-                placeholder="Provide skill overview or study syllabus..."
-                value={newDescription}
-                onChange={(e) => setNewDescription(e.target.value)}
-                className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl min-h-[80px] p-3.5 font-sans"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-[11px] font-mono text-slate-300">Category</label>
-                <Select value={newCategory} onValueChange={(val: any) => setNewCategory(val)}>
-                  <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5">
-                    <SelectItem value="hard_skill" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Hard / Technical</SelectItem>
-                    <SelectItem value="creative" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Creative &amp; Design</SelectItem>
-                    <SelectItem value="language" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Language</SelectItem>
-                    <SelectItem value="soft_skill" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Soft Skill</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] font-mono text-slate-300">Initial Level</label>
-                <Select value={newProficiency} onValueChange={(val: any) => setNewProficiency(val)}>
-                  <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5">
-                    <SelectItem value="beginner" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Beginner (25%)</SelectItem>
-                    <SelectItem value="intermediate" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Intermediate (50%)</SelectItem>
-                    <SelectItem value="advanced" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Advanced (75%)</SelectItem>
-                    <SelectItem value="mastery" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Mastery (100%)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Multiple Linked References Manager */}
-            <ReferenceManager
-              references={newReferences}
-              onChange={setNewReferences}
-              vaultAssets={displayVaultAssets}
-              driveAssets={displayDriveAssets}
-              notes={initialNotes}
-              assetMap={assetMap}
-              noteMap={noteMap}
-            />
-
-            <DialogFooter className="pt-3">
+            <DialogFooter className="shrink-0 pt-3 border-t border-white/10 mt-3">
               <Button type="submit" disabled={isPending} className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 w-full shadow-lg shadow-indigo-600/30">
                 {isPending ? "Registering..." : "Save Skill"}
               </Button>
@@ -670,8 +672,8 @@ export function SkillLearner({
             }
           }}
         >
-          <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-lg p-6 shadow-2xl backdrop-blur-2xl space-y-4 font-mono">
-            <DialogHeader className="flex flex-row items-center justify-between border-b border-white/10 pb-3">
+          <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-lg max-h-[88vh] p-6 shadow-2xl backdrop-blur-2xl flex flex-col font-mono">
+            <DialogHeader className="shrink-0 flex flex-row items-center justify-between border-b border-white/10 pb-3">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-purple-500/20 text-purple-300">
                   <Eye className="w-4 h-4" />
@@ -693,7 +695,7 @@ export function SkillLearner({
               </button>
             </DialogHeader>
 
-            <div className="space-y-4">
+            <div className="overflow-y-auto flex-1 pr-1.5 space-y-4 pt-3">
               {/* Category & Proficiency Level Selector */}
               <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between">
                 <div className="flex items-center gap-2 text-xs text-slate-300">
@@ -910,7 +912,7 @@ export function SkillLearner({
               })()}
             </div>
 
-            <DialogFooter className="pt-3 border-t border-white/10 flex items-center justify-between gap-3">
+            <DialogFooter className="shrink-0 pt-3 border-t border-white/10 mt-3 flex items-center justify-between gap-3">
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -940,8 +942,8 @@ export function SkillLearner({
       {/* EDIT SKILL MODAL DIALOG */}
       {editingSkill && (
         <Dialog open={!!editingSkill} onOpenChange={() => setEditingSkill(null)}>
-          <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-xl p-6 shadow-2xl backdrop-blur-2xl space-y-4 font-mono">
-            <DialogHeader className="flex flex-row items-center justify-between border-b border-white/10 pb-3">
+          <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-xl max-h-[88vh] p-6 shadow-2xl backdrop-blur-2xl flex flex-col font-mono">
+            <DialogHeader className="shrink-0 flex flex-row items-center justify-between border-b border-white/10 pb-3">
               <DialogTitle className="text-base font-bold text-white font-mono flex items-center gap-2">
                 <Edit3 className="w-4 h-4 text-indigo-400" /> EDIT SKILL &amp; REFERENCES
               </DialogTitle>
@@ -953,70 +955,72 @@ export function SkillLearner({
               </button>
             </DialogHeader>
 
-            <form onSubmit={handleSaveEditSkill} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">Skill Title *</label>
-                <Input
-                  required
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+            <form onSubmit={handleSaveEditSkill} className="flex flex-col flex-1 min-h-0 overflow-hidden pt-3">
+              <div className="overflow-y-auto flex-1 pr-1.5 space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Skill Title *</label>
+                  <Input
+                    required
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Description</label>
+                  <Textarea
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl min-h-[80px] p-3.5 font-sans"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-mono text-slate-300">Category</label>
+                    <Select value={editCategory} onValueChange={(val: any) => setEditCategory(val)}>
+                      <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5">
+                        <SelectItem value="hard_skill" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Hard / Technical</SelectItem>
+                        <SelectItem value="creative" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Creative &amp; Design</SelectItem>
+                        <SelectItem value="language" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Language</SelectItem>
+                        <SelectItem value="soft_skill" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Soft Skill</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-mono text-slate-300">Proficiency Level</label>
+                    <Select value={editProficiency} onValueChange={(val: any) => setEditProficiency(val)}>
+                      <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5">
+                        <SelectItem value="beginner" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Beginner (25%)</SelectItem>
+                        <SelectItem value="intermediate" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Intermediate (50%)</SelectItem>
+                        <SelectItem value="advanced" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Advanced (75%)</SelectItem>
+                        <SelectItem value="mastery" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Mastery (100%)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Multiple Linked References Manager */}
+                <ReferenceManager
+                  references={editReferences}
+                  onChange={setEditReferences}
+                  vaultAssets={displayVaultAssets}
+                  driveAssets={displayDriveAssets}
+                  notes={initialNotes}
+                  assetMap={assetMap}
+                  noteMap={noteMap}
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">Description</label>
-                <Textarea
-                  value={editDescription}
-                  onChange={(e) => setEditDescription(e.target.value)}
-                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl min-h-[80px] p-3.5 font-sans"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[11px] font-mono text-slate-300">Category</label>
-                  <Select value={editCategory} onValueChange={(val: any) => setEditCategory(val)}>
-                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5">
-                      <SelectItem value="hard_skill" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Hard / Technical</SelectItem>
-                      <SelectItem value="creative" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Creative &amp; Design</SelectItem>
-                      <SelectItem value="language" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Language</SelectItem>
-                      <SelectItem value="soft_skill" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Soft Skill</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[11px] font-mono text-slate-300">Proficiency Level</label>
-                  <Select value={editProficiency} onValueChange={(val: any) => setEditProficiency(val)}>
-                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5">
-                      <SelectItem value="beginner" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Beginner (25%)</SelectItem>
-                      <SelectItem value="intermediate" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Intermediate (50%)</SelectItem>
-                      <SelectItem value="advanced" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Advanced (75%)</SelectItem>
-                      <SelectItem value="mastery" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Mastery (100%)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {/* Multiple Linked References Manager */}
-              <ReferenceManager
-                references={editReferences}
-                onChange={setEditReferences}
-                vaultAssets={displayVaultAssets}
-                driveAssets={displayDriveAssets}
-                notes={initialNotes}
-                assetMap={assetMap}
-                noteMap={noteMap}
-              />
-
-              <DialogFooter className="pt-3 flex items-center justify-between gap-3">
+              <DialogFooter className="shrink-0 pt-3 border-t border-white/10 mt-3 flex items-center justify-between gap-3">
                 <Button
                   type="button"
                   variant="ghost"

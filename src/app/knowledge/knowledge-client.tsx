@@ -349,119 +349,121 @@ export function KnowledgeClient({
 
       {/* Add / Edit Entry Modal */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="bg-[#0e0e14] border-white/15 text-slate-100 rounded-3xl p-6 max-w-lg w-[94vw] shadow-2xl backdrop-blur-2xl font-sans">
-          <DialogTitle className="text-base font-bold text-white flex items-center gap-2 font-mono pb-2 border-b border-white/10">
+        <DialogContent className="bg-[#0e0e14] border-white/15 text-slate-100 rounded-3xl p-6 max-w-lg max-h-[88vh] w-[94vw] shadow-2xl backdrop-blur-2xl flex flex-col font-sans">
+          <DialogTitle className="shrink-0 text-base font-bold text-white flex items-center gap-2 font-mono pb-2 border-b border-white/10">
             <BrainCircuit className="w-4 h-4 text-indigo-400" />
             <span>{editingEntry ? "Edit Knowledge Entry" : "Add Knowledge Entry"}</span>
           </DialogTitle>
 
-          <form onSubmit={handleFormSubmit} className="space-y-4 mt-3 font-sans text-xs">
-            {formError && (
-              <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-300 flex items-center gap-2 font-mono">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>{formError}</span>
+          <form onSubmit={handleFormSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden pt-3 font-sans text-xs">
+            <div className="overflow-y-auto flex-1 pr-1.5 space-y-4">
+              {formError && (
+                <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-300 flex items-center gap-2 font-mono">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{formError}</span>
+                </div>
+              )}
+
+              {/* Title */}
+              <div className="space-y-1.5">
+                <label className="text-slate-300 font-mono text-[11px] uppercase font-bold">
+                  Entry Title
+                </label>
+                <Input
+                  value={formTitle}
+                  onChange={(e) => setFormTitle(e.target.value)}
+                  placeholder="e.g. National ID (NIK), Forge25 Brand Voice, WiFi Password"
+                  className="bg-white/[0.04] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-2xl h-10 font-mono focus-visible:ring-indigo-500/40"
+                  required
+                />
               </div>
-            )}
 
-            {/* Title */}
-            <div className="space-y-1.5">
-              <label className="text-slate-300 font-mono text-[11px] uppercase font-bold">
-                Entry Title
-              </label>
-              <Input
-                value={formTitle}
-                onChange={(e) => setFormTitle(e.target.value)}
-                placeholder="e.g. National ID (NIK), Forge25 Brand Voice, WiFi Password"
-                className="bg-white/[0.04] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-2xl h-10 font-mono focus-visible:ring-indigo-500/40"
-                required
-              />
-            </div>
+              {/* Category selection */}
+              <div className="space-y-1.5">
+                <label className="text-slate-300 font-mono text-[11px] uppercase font-bold flex items-center justify-between">
+                  <span>Category</span>
+                  <span className="text-slate-500 text-[10px] font-normal">Choose or type custom</span>
+                </label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {CATEGORY_PRESETS.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setFormCategory(preset)}
+                      className={cn(
+                        "px-2.5 py-1 rounded-xl border text-[11px] font-mono transition-all cursor-pointer",
+                        formCategory.toLowerCase() === preset.toLowerCase()
+                          ? "bg-indigo-600 text-white border-indigo-500 font-bold"
+                          : "bg-white/[0.04] text-slate-400 border-white/10 hover:text-white"
+                      )}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+                <Input
+                  value={formCategory}
+                  onChange={(e) => setFormCategory(e.target.value)}
+                  placeholder="Category (e.g. Bio, Work, Finance, Credentials)"
+                  className="bg-white/[0.04] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-2xl h-10 font-mono focus-visible:ring-indigo-500/40"
+                />
+              </div>
 
-            {/* Category selection */}
-            <div className="space-y-1.5">
-              <label className="text-slate-300 font-mono text-[11px] uppercase font-bold flex items-center justify-between">
-                <span>Category</span>
-                <span className="text-slate-500 text-[10px] font-normal">Choose or type custom</span>
-              </label>
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {CATEGORY_PRESETS.map((preset) => (
+              {/* Content Textarea */}
+              <div className="space-y-1.5">
+                <label className="text-slate-300 font-mono text-[11px] uppercase font-bold">
+                  Content / Value
+                </label>
+                <Textarea
+                  rows={4}
+                  value={formContent}
+                  onChange={(e) => setFormContent(e.target.value)}
+                  placeholder="Enter key info, guidelines, bio text, or sensitive key..."
+                  className="bg-white/[0.04] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-2xl p-3 font-mono focus-visible:ring-indigo-500/40 resize-none scrollbar-thin"
+                  required
+                />
+              </div>
+
+              {/* Sensitive Toggle */}
+              <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Lock className={cn("w-4 h-4", formIsSensitive ? "text-rose-400" : "text-slate-400")} />
+                    <span className="font-mono text-xs font-bold text-slate-200">
+                      Mark as Sensitive Data
+                    </span>
+                  </div>
                   <button
-                    key={preset}
                     type="button"
-                    onClick={() => setFormCategory(preset)}
+                    onClick={() => setFormIsSensitive(!formIsSensitive)}
                     className={cn(
-                      "px-2.5 py-1 rounded-xl border text-[11px] font-mono transition-all cursor-pointer",
-                      formCategory.toLowerCase() === preset.toLowerCase()
-                        ? "bg-indigo-600 text-white border-indigo-500 font-bold"
-                        : "bg-white/[0.04] text-slate-400 border-white/10 hover:text-white"
+                      "w-11 h-6 rounded-full transition-colors relative cursor-pointer",
+                      formIsSensitive ? "bg-rose-600" : "bg-white/20"
                     )}
                   >
-                    {preset}
+                    <span
+                      className={cn(
+                        "block w-4 h-4 rounded-full bg-white transition-transform absolute top-1 left-1",
+                        formIsSensitive ? "translate-x-5" : "translate-x-0"
+                      )}
+                    />
                   </button>
-                ))}
-              </div>
-              <Input
-                value={formCategory}
-                onChange={(e) => setFormCategory(e.target.value)}
-                placeholder="Category (e.g. Bio, Work, Finance, Credentials)"
-                className="bg-white/[0.04] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-2xl h-10 font-mono focus-visible:ring-indigo-500/40"
-              />
-            </div>
-
-            {/* Content Textarea */}
-            <div className="space-y-1.5">
-              <label className="text-slate-300 font-mono text-[11px] uppercase font-bold">
-                Content / Value
-              </label>
-              <Textarea
-                rows={4}
-                value={formContent}
-                onChange={(e) => setFormContent(e.target.value)}
-                placeholder="Enter key info, guidelines, bio text, or sensitive key..."
-                className="bg-white/[0.04] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-2xl p-3 font-mono focus-visible:ring-indigo-500/40 resize-none scrollbar-thin"
-                required
-              />
-            </div>
-
-            {/* Sensitive Toggle */}
-            <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Lock className={cn("w-4 h-4", formIsSensitive ? "text-rose-400" : "text-slate-400")} />
-                  <span className="font-mono text-xs font-bold text-slate-200">
-                    Mark as Sensitive Data
-                  </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setFormIsSensitive(!formIsSensitive)}
-                  className={cn(
-                    "w-11 h-6 rounded-full transition-colors relative cursor-pointer",
-                    formIsSensitive ? "bg-rose-600" : "bg-white/20"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "block w-4 h-4 rounded-full bg-white transition-transform absolute top-1 left-1",
-                      formIsSensitive ? "translate-x-5" : "translate-x-0"
-                    )}
-                  />
-                </button>
-              </div>
 
-              {formIsSensitive ? (
-                <p className="text-[11px] text-rose-300 font-mono leading-relaxed bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/20">
-                  ⚠️ <strong>Warning:</strong> Sensitive data is masked in the UI and <strong>EXCLUDED from automatic Omni AI system prompt injection</strong> to prevent leaks to external LLMs.
-                </p>
-              ) : (
-                <p className="text-[11px] text-emerald-300/80 font-mono leading-relaxed bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20">
-                  ✨ Non-sensitive entries are automatically injected into Omni AI's context so the AI knows your preferences, bio, and brand guidelines!
-                </p>
-              )}
+                {formIsSensitive ? (
+                  <p className="text-[11px] text-rose-300 font-mono leading-relaxed bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/20">
+                    ⚠️ <strong>Warning:</strong> Sensitive data is masked in the UI and <strong>EXCLUDED from automatic Omni AI system prompt injection</strong> to prevent leaks to external LLMs.
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-emerald-300/80 font-mono leading-relaxed bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20">
+                    ✨ Non-sensitive entries are automatically injected into Omni AI's context so the AI knows your preferences, bio, and brand guidelines!
+                  </p>
+                )}
+              </div>
             </div>
 
             {/* Form Actions */}
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
+            <div className="shrink-0 flex items-center justify-end gap-2 pt-3 border-t border-white/10 mt-3">
               <Button
                 type="button"
                 variant="ghost"
@@ -473,10 +475,9 @@ export function KnowledgeClient({
               <Button
                 type="submit"
                 disabled={isSubmitting}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl h-10 px-5 font-mono text-xs shadow-lg shadow-indigo-600/30 cursor-pointer gap-2"
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs font-bold rounded-2xl h-10 px-6 shadow-lg shadow-indigo-600/30 cursor-pointer"
               >
-                {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>{editingEntry ? "Update Entry" : "Save Entry"}</span>
+                {isSubmitting ? "Saving..." : editingEntry ? "Save Changes" : "Create Entry"}
               </Button>
             </div>
           </form>

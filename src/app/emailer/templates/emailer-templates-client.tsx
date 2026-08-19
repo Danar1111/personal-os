@@ -463,70 +463,72 @@ export function EmailerTemplatesClient({
 
       {/* Test Email Modal */}
       <Dialog open={isTestModalOpen} onOpenChange={setIsTestModalOpen}>
-        <DialogContent className="bg-[#0e0e14] border-white/15 text-slate-100 rounded-3xl p-6 max-w-lg w-[94vw] shadow-2xl backdrop-blur-2xl font-sans">
-          <DialogTitle className="text-base font-bold text-white flex items-center gap-2 font-mono pb-2 border-b border-white/10">
+        <DialogContent className="bg-[#0e0e14] border-white/15 text-slate-100 rounded-3xl p-6 max-w-lg max-h-[88vh] w-[94vw] shadow-2xl backdrop-blur-2xl flex flex-col font-sans">
+          <DialogTitle className="shrink-0 text-base font-bold text-white flex items-center gap-2 font-mono pb-2 border-b border-white/10">
             <Send className="w-4 h-4 text-purple-400" />
             <span>Test Email Dispatch via Brevo SMTP</span>
           </DialogTitle>
 
-          <form onSubmit={handleSendTestEmail} className="space-y-4 mt-3 font-sans text-xs">
-            <div className="space-y-1.5">
-              <label className="text-slate-300 font-mono text-[11px] uppercase font-bold">
-                Recipient Email
-              </label>
-              <Input
-                type="email"
-                required
-                value={testRecipient}
-                onChange={(e) => setTestRecipient(e.target.value)}
-                placeholder="e.g. priyambodo02@gmail.com"
-                className="bg-white/[0.04] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-2xl h-10 font-mono"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-slate-300 font-mono text-[11px] uppercase font-bold">
-                Recipient Name (Optional)
-              </label>
-              <Input
-                type="text"
-                value={testRecipientName}
-                onChange={(e) => setTestRecipientName(e.target.value)}
-                placeholder="e.g. Danar"
-                className="bg-white/[0.04] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-2xl h-10 font-mono"
-              />
-            </div>
-
-            {/* Dynamic variable inputs */}
-            {currentVariables.length > 0 && (
-              <div className="space-y-2 p-3.5 rounded-2xl bg-white/[0.02] border border-white/10">
-                <label className="text-slate-300 font-mono text-[11px] uppercase font-bold block">
-                  Fill Template Variables
+          <form onSubmit={handleSendTestEmail} className="flex flex-col flex-1 min-h-0 overflow-hidden pt-3 font-sans text-xs">
+            <div className="overflow-y-auto flex-1 pr-1.5 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-slate-300 font-mono text-[11px] uppercase font-bold">
+                  Recipient Email
                 </label>
-                <div className="space-y-2">
-                  {currentVariables.map((v) => (
-                    <div key={v} className="flex items-center gap-2">
-                      <span className="text-[11px] font-mono text-purple-300 w-28 shrink-0 truncate">
-                        {`{{${v}}}`}
-                      </span>
-                      <Input
-                        value={testVariables[v] || ""}
-                        onChange={(e) =>
-                          setTestVariables((prev) => ({
-                            ...prev,
-                            [v]: e.target.value,
-                          }))
-                        }
-                        placeholder={`Value for ${v}...`}
-                        className="bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-8 px-3 font-mono"
-                      />
-                    </div>
-                  ))}
-                </div>
+                <Input
+                  type="email"
+                  required
+                  value={testRecipient}
+                  onChange={(e) => setTestRecipient(e.target.value)}
+                  placeholder="e.g. priyambodo02@gmail.com"
+                  className="bg-white/[0.04] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-2xl h-10 font-mono"
+                />
               </div>
-            )}
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/10 font-mono">
+              <div className="space-y-1.5">
+                <label className="text-slate-300 font-mono text-[11px] uppercase font-bold">
+                  Recipient Name (Optional)
+                </label>
+                <Input
+                  type="text"
+                  value={testRecipientName}
+                  onChange={(e) => setTestRecipientName(e.target.value)}
+                  placeholder="e.g. Danar"
+                  className="bg-white/[0.04] border-white/15 text-xs text-white placeholder:text-slate-500 rounded-2xl h-10 font-mono"
+                />
+              </div>
+
+              {/* Dynamic variable inputs */}
+              {currentVariables.length > 0 && (
+                <div className="space-y-2 p-3.5 rounded-2xl bg-white/[0.02] border border-white/10">
+                  <label className="text-slate-300 font-mono text-[11px] uppercase font-bold block">
+                    Fill Template Variables
+                  </label>
+                  <div className="space-y-2">
+                    {currentVariables.map((v) => (
+                      <div key={v} className="flex items-center gap-2">
+                        <span className="text-[11px] font-mono text-purple-300 w-28 shrink-0 truncate">
+                          {`{{${v}}}`}
+                        </span>
+                        <Input
+                          value={testVariables[v] || ""}
+                          onChange={(e) =>
+                            setTestVariables((prev) => ({
+                              ...prev,
+                              [v]: e.target.value,
+                            }))
+                          }
+                          placeholder={`Value for ${v}...`}
+                          className="bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-8 px-3 font-mono"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="shrink-0 flex items-center justify-end gap-2 pt-3 border-t border-white/10 mt-3 font-mono">
               <Button
                 type="button"
                 variant="ghost"
