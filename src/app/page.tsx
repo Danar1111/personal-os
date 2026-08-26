@@ -55,15 +55,69 @@ function WidgetSkeleton({ title }: { title: string }) {
 }
 
 import { getApplications } from "@/lib/actions/appActions";
+import { getCalendarClient, getGoogleRefreshToken } from "@/lib/google";
 
-async function fetchCalendarEvents() {
+async function fetchUnifiedUpcomingEvents() {
+  const now = new Date();
+  const upcomingUnified: { title: string; startTime: Date; source: "GCAL" | "LOCAL" }[] = [];
+
+  // 1. Fetch Local Drizzle Events
   try {
-    const events = await db.select().from(calendarEvents).orderBy(desc(calendarEvents.startTime));
-    return events;
-  } catch (error) {
-    console.error("[fetchCalendarEvents error]:", error);
-    return [];
+    const localRows = await db.select().from(calendarEvents);
+    for (const row of localRows) {
+      const end = new Date(row.endTime || row.startTime);
+      if (end.getTime() >= now.getTime()) {
+        upcomingUnified.push({
+          title: row.title,
+          startTime: new Date(row.startTime),
+          source: "LOCAL",
+        });
+      }
+    }
+  } catch (e) {
+    console.error("[Local events fetch error]:", e);
   }
+
+  // 2. Fetch Google Calendar Events if connected
+  try {
+    const refreshToken = await getGoogleRefreshToken();
+    if (refreshToken) {
+      const calendar = await getCalendarClient();
+      const endWindow = new Date();
+      endWindow.setDate(endWindow.getDate() + 30); // 30 days ahead
+
+      const gcalRes = await calendar.events.list({
+        calendarId: "primary",
+        timeMin: now.toISOString(),
+        timeMax: endWindow.toISOString(),
+        singleEvents: true,
+        orderBy: "startTime",
+        maxResults: 50,
+      });
+
+      const items = gcalRes.data.items || [];
+      for (const item of items) {
+        if (!item.summary) continue;
+        let startIso = item.start?.dateTime || item.start?.date;
+        if (!startIso) continue;
+        const startDate = new Date(startIso);
+        let endDate = item.end?.dateTime ? new Date(item.end.dateTime) : new Date(startDate.getTime() + 60 * 60 * 1000);
+        if (endDate.getTime() >= now.getTime()) {
+          upcomingUnified.push({
+            title: item.summary,
+            startTime: startDate,
+            source: "GCAL",
+          });
+        }
+      }
+    }
+  } catch (e: any) {
+    console.warn("[GCal events fetch warning]:", e?.message || e);
+  }
+
+  // Sort chronologically
+  upcomingUnified.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+  return upcomingUnified;
 }
 
 async function fetchTopThreeMovies() {
@@ -83,14 +137,15 @@ import { getUserNicknameAction } from "@/app/knowledge/actions";
 export default async function DashboardPage() {
   const userNickname = await getUserNicknameAction();
   // Fetch Tasks for Kanban Widget
+  let allTasksList: Task[] = [];
   let recentTasks: Task[] = [];
   let totalTasks = 0;
   let completedTasks = 0;
 
   try {
-    const allTasks = await db.select().from(tasks);
-    totalTasks = allTasks.length;
-    completedTasks = allTasks.filter((t) => t.status === "done").length;
+    allTasksList = await db.select().from(tasks);
+    totalTasks = allTasksList.length;
+    completedTasks = allTasksList.filter((t) => t.status === "done").length;
 
     // Prioritize status: in_progress (1), todo (2), done (3)
     const statusPriority: Record<string, number> = {
@@ -99,7 +154,7 @@ export default async function DashboardPage() {
       done: 3,
     };
 
-    const sortedTasks = [...allTasks].sort((a, b) => {
+    const sortedTasks = [...allTasksList].sort((a, b) => {
       const pA = statusPriority[a.status] || 2;
       const pB = statusPriority[b.status] || 2;
       if (pA !== pB) return pA - pB;
@@ -112,16 +167,37 @@ export default async function DashboardPage() {
   }
 
   const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-  const events = await fetchCalendarEvents();
+  const events = await db.select().from(calendarEvents).orderBy(desc(calendarEvents.startTime));
+  const upcomingEvents = await fetchUnifiedUpcomingEvents();
   const topMovies = await fetchTopThreeMovies();
   const apps = await getApplications();
 
-  // Find the next upcoming event (startTime or endTime >= now)
-  const now = new Date();
-  const upcomingEvents = events
-    .filter((ev) => new Date(ev.endTime || ev.startTime).getTime() >= now.getTime())
-    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
   const nextEvent = upcomingEvents.length > 0 ? upcomingEvents[0] : null;
+
+  // Active tasks sorted: tasks with deadlines first (earliest deadline first), then newest
+  const activeTasks = allTasksList.filter((t) => t.status !== "done");
+  activeTasks.sort((a, b) => {
+    if (a.dueDate && b.dueDate) {
+      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+    }
+    if (a.dueDate) return -1;
+    if (b.dueDate) return 1;
+    return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+  });
+
+  const activeTaskTitles = activeTasks.map((t) => {
+    if (t.dueDate) {
+      const d = new Date(t.dueDate);
+      const dateStr = d.toLocaleDateString("id-ID", { month: "short", day: "numeric" });
+      const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0;
+      if (hasTime) {
+        const timeStr = d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+        return `${t.title} (Deadline: ${dateStr} jam ${timeStr})`;
+      }
+      return `${t.title} (Deadline: ${dateStr})`;
+    }
+    return t.title;
+  });
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-16">
@@ -158,6 +234,7 @@ export default async function DashboardPage() {
             pendingTasksCount={totalTasks - completedTasks}
             totalTasksCount={totalTasks}
             completionRate={completionRate}
+            topTaskTitles={activeTaskTitles}
             nextEvent={nextEvent}
             aiSkillsCount={OMNI_AI_SKILLS_REGISTRY.length}
           />

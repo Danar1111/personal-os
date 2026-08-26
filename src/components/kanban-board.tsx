@@ -84,6 +84,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { GlassDatePicker } from "@/components/ui/glass-date-picker";
+import { GlassTimePicker } from "@/components/ui/glass-time-picker";
 import {
   Dialog,
   DialogContent,
@@ -237,6 +238,7 @@ export function KanbanBoard({
   const [newPriority, setNewPriority] = useState<"low" | "medium" | "high">("medium");
   const [newProjectId, setNewProjectId] = useState<string>("none");
   const [newDueDate, setNewDueDate] = useState<string>("");
+  const [newDueTime, setNewDueTime] = useState<string>("");
   const [newReferences, setNewReferences] = useState<ReferenceItem[]>([]);
 
   // Manage Projects & Create Project Modal State
@@ -265,6 +267,7 @@ export function KanbanBoard({
   const [editPriority, setEditPriority] = useState<"low" | "medium" | "high">("medium");
   const [editProjectId, setEditProjectId] = useState<string>("none");
   const [editDueDate, setEditDueDate] = useState<string>("");
+  const [editDueTime, setEditDueTime] = useState<string>("");
   const [editReferences, setEditReferences] = useState<ReferenceItem[]>([]);
 
   // Cool Custom Delete Confirmation Modal States
@@ -393,6 +396,16 @@ export function KanbanBoard({
 
     const fullDesc = formatDescriptionWithRefs(newDescription, newReferences);
 
+    let finalDueDate: Date | null = null;
+    if (newDueDate) {
+      const dateOnly = newDueDate.split("T")[0];
+      if (newDueTime) {
+        finalDueDate = new Date(`${dateOnly}T${newDueTime}:00`);
+      } else {
+        finalDueDate = new Date(`${dateOnly}T00:00:00`);
+      }
+    }
+
     startTransition(async () => {
       await createTaskAction({
         title: newTitle,
@@ -400,11 +413,12 @@ export function KanbanBoard({
         status: newStatus,
         priority: newPriority,
         projectId: newProjectId !== "none" ? parseInt(newProjectId, 10) : null,
-        dueDate: newDueDate ? new Date(newDueDate) : null,
+        dueDate: finalDueDate,
       });
       setNewTitle("");
       setNewDescription("");
       setNewDueDate("");
+      setNewDueTime("");
       setNewReferences([]);
       setIsTaskDialogOpen(false);
     });
@@ -420,7 +434,26 @@ export function KanbanBoard({
     setEditStatus((task.status as any) || "todo");
     setEditPriority((task.priority as any) || "medium");
     setEditProjectId(task.projectId ? task.projectId.toString() : "none");
-    setEditDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split("T")[0] : "");
+
+    if (task.dueDate) {
+      const d = new Date(task.dueDate);
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      const dateStr = `${d.getFullYear()}-${mm}-${dd}`;
+      setEditDueDate(dateStr);
+
+      const h = d.getHours();
+      const m = d.getMinutes();
+      if (h !== 0 || m !== 0) {
+        setEditDueTime(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+      } else {
+        setEditDueTime("");
+      }
+    } else {
+      setEditDueDate("");
+      setEditDueTime("");
+    }
+
     setEditReferences(references);
   };
 
@@ -430,6 +463,16 @@ export function KanbanBoard({
 
     const fullDesc = formatDescriptionWithRefs(editDescription, editReferences);
 
+    let finalDueDate: Date | null = null;
+    if (editDueDate) {
+      const dateOnly = editDueDate.split("T")[0];
+      if (editDueTime) {
+        finalDueDate = new Date(`${dateOnly}T${editDueTime}:00`);
+      } else {
+        finalDueDate = new Date(`${dateOnly}T00:00:00`);
+      }
+    }
+
     startTransition(async () => {
       await updateTaskFullAction(editingTask.id, {
         title: editTitle,
@@ -437,7 +480,7 @@ export function KanbanBoard({
         status: editStatus,
         priority: editPriority,
         projectId: editProjectId !== "none" ? parseInt(editProjectId, 10) : null,
-        dueDate: editDueDate ? new Date(editDueDate) : null,
+        dueDate: finalDueDate,
       });
       setEditingTask(null);
     });
@@ -833,21 +876,39 @@ export function KanbanBoard({
                 </div>
               </div>
 
-              {/* Optional Deadline / Due Date Field */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-bold text-slate-300 font-mono flex items-center gap-1.5">
-                    <CalendarIcon className="w-3.5 h-3.5 text-amber-400" />
-                    <span>DEADLINE / DUE DATE</span>
-                  </label>
-                  <span className="text-[10px] text-slate-400 font-mono">(Optional • Syncs to Master Calendar)</span>
+              {/* Optional Deadline / Due Date & Due Time Section */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-slate-300 font-mono flex items-center gap-1.5">
+                      <CalendarIcon className="w-3.5 h-3.5 text-amber-400" />
+                      <span>DEADLINE DATE</span>
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-mono">(Optional)</span>
+                  </div>
+                  <GlassDatePicker
+                    value={newDueDate}
+                    onChange={setNewDueDate}
+                    placeholder="Select date..."
+                    accentColor="amber"
+                  />
                 </div>
-                <GlassDatePicker
-                  value={newDueDate}
-                  onChange={setNewDueDate}
-                  placeholder="Select deadline date..."
-                  accentColor="amber"
-                />
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-slate-300 font-mono flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-amber-400" />
+                      <span>DUE TIME</span>
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-mono">(Optional)</span>
+                  </div>
+                  <GlassTimePicker
+                    value={newDueTime}
+                    onChange={setNewDueTime}
+                    placeholder="Select time..."
+                    accentColor="amber"
+                  />
+                </div>
               </div>
 
               {/* Multiple Linked References Section */}
@@ -1189,21 +1250,39 @@ export function KanbanBoard({
                   </div>
                 </div>
 
-                {/* Optional Deadline / Due Date Field */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-bold text-slate-300 font-mono flex items-center gap-1.5">
-                      <CalendarIcon className="w-3.5 h-3.5 text-amber-400" />
-                      <span>DEADLINE / DUE DATE</span>
-                    </label>
-                    <span className="text-[10px] text-slate-400 font-mono">(Optional • Syncs to Master Calendar)</span>
+                {/* Optional Deadline / Due Date & Due Time Section */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold text-slate-300 font-mono flex items-center gap-1.5">
+                        <CalendarIcon className="w-3.5 h-3.5 text-amber-400" />
+                        <span>DEADLINE DATE</span>
+                      </label>
+                      <span className="text-[10px] text-slate-400 font-mono">(Optional)</span>
+                    </div>
+                    <GlassDatePicker
+                      value={editDueDate}
+                      onChange={setEditDueDate}
+                      placeholder="Select date..."
+                      accentColor="amber"
+                    />
                   </div>
-                  <GlassDatePicker
-                    value={editDueDate}
-                    onChange={setEditDueDate}
-                    placeholder="Select deadline date..."
-                    accentColor="amber"
-                  />
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold text-slate-300 font-mono flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-amber-400" />
+                        <span>DUE TIME</span>
+                      </label>
+                      <span className="text-[10px] text-slate-400 font-mono">(Optional)</span>
+                    </div>
+                    <GlassTimePicker
+                      value={editDueTime}
+                      onChange={setEditDueTime}
+                      placeholder="Select time..."
+                      accentColor="amber"
+                    />
+                  </div>
                 </div>
 
                 {/* Multiple Linked References Editor */}
@@ -1744,23 +1823,6 @@ function SortableTaskCard({
         </div>
 
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
-          {task.dueDate && (
-            <span
-              className={cn(
-                "text-[10px] font-mono px-2 py-0.5 rounded-full border flex items-center gap-1 font-bold shadow-xs",
-                task.status === "done"
-                  ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
-                  : new Date(task.dueDate).getTime() < new Date().setHours(0, 0, 0, 0)
-                  ? "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"
-                  : "bg-amber-500/15 text-amber-300 border-amber-500/35"
-              )}
-              title={`Deadline: ${new Date(task.dueDate).toLocaleDateString([], { month: "long", day: "numeric", year: "numeric" })}`}
-            >
-              <CalendarIcon className="w-2.5 h-2.5" />
-              <span>{new Date(task.dueDate).toLocaleDateString([], { month: "short", day: "numeric" })}</span>
-            </span>
-          )}
-
           {projectName && (
             <span className="text-[10px] font-mono text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20 flex items-center gap-1">
               <Layers className="w-2.5 h-2.5 inline" /> {projectName}
@@ -1836,9 +1898,9 @@ function SortableTaskCard({
         </div>
       )}
 
-      {/* Footer Controls: Move Status & Delete */}
-      <div className="pt-2 border-t border-white/10 flex items-center justify-between">
-        <div className="flex items-center gap-1">
+      {/* Footer Controls: Move Status, Deadline, & Delete */}
+      <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
           {prevStatus && (
             <Button
               size="icon"
@@ -1848,7 +1910,7 @@ function SortableTaskCard({
                 e.stopPropagation();
                 onStatusChange(task.id, prevStatus);
               }}
-              className="w-7 h-7 rounded-xl text-slate-400 hover:text-white hover:bg-white/10"
+              className="w-7 h-7 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 shrink-0"
               title={`Move to ${prevStatus}`}
             >
               <MoveLeft className="w-3.5 h-3.5" />
@@ -1863,11 +1925,36 @@ function SortableTaskCard({
                 e.stopPropagation();
                 onStatusChange(task.id, nextStatus);
               }}
-              className="w-7 h-7 rounded-xl text-slate-400 hover:text-white hover:bg-white/10"
+              className="w-7 h-7 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 shrink-0"
               title={`Move to ${nextStatus}`}
             >
               <MoveRight className="w-3.5 h-3.5" />
             </Button>
+          )}
+
+          {task.dueDate && (
+            <span
+              className={cn(
+                "text-[10px] font-mono px-2 py-0.5 rounded-full border font-bold shadow-xs truncate",
+                task.status === "done"
+                  ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+                  : new Date(task.dueDate).getTime() < new Date().setHours(0, 0, 0, 0)
+                  ? "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"
+                  : "bg-amber-500/15 text-amber-300 border-amber-500/35"
+              )}
+              title={`Deadline: ${new Date(task.dueDate).toLocaleString([], { month: "long", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}`}
+            >
+              {(() => {
+                const d = new Date(task.dueDate);
+                const dateStr = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0;
+                if (hasTime) {
+                  const timeStr = d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+                  return `${dateStr} • ${timeStr}`;
+                }
+                return dateStr;
+              })()}
+            </span>
           )}
         </div>
 
@@ -1879,8 +1966,8 @@ function SortableTaskCard({
             e.stopPropagation();
             onDeleteTask(task);
           }}
-          className="w-7 h-7 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 opacity-70 group-hover:opacity-100 transition-opacity"
-          title="Delete task"
+          className="w-7 h-7 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-white/10 shrink-0"
+          title="Delete Task"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </Button>

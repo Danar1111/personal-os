@@ -155,21 +155,34 @@ export async function GET(req: NextRequest) {
       for (const t of taskRows) {
         if (!t.dueDate) continue;
         const d = new Date(t.dueDate);
-        const startDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-        const endDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+        
+        const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0;
+        let startIso: string;
+        let endIso: string;
+
+        if (hasTime) {
+          startIso = d.toISOString();
+          const end = new Date(d.getTime() + 60 * 60 * 1000); // 1 hour block
+          endIso = end.toISOString();
+        } else {
+          const startDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+          const endDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+          startIso = startDay.toISOString();
+          endIso = endDay.toISOString();
+        }
 
         unifiedEvents.push({
           id: `task-${t.id}`,
           taskId: t.id,
-          title: `📋 ${t.title}`,
+          title: t.title,
           description: t.description || null,
-          start: startDay.toISOString(),
-          end: endDay.toISOString(),
+          start: startIso,
+          end: endIso,
           source: "KANBAN",
           eventType: "task",
           taskStatus: t.status,
           taskPriority: t.priority,
-          isAllDay: true,
+          isAllDay: !hasTime,
         });
       }
     } catch (taskDbErr) {

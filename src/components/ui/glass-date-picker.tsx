@@ -8,7 +8,6 @@ import {
   ChevronRight,
   X,
   Check,
-  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -86,18 +85,18 @@ export function GlassDatePicker({
   }, [isOpen]);
 
   // Parse initial view date based on value or today
-  const selectedDateObj = value ? new Date(value + "T00:00:00") : null;
+  const selectedDateObj = value ? new Date(value + (value.includes("T") ? "" : "T00:00:00")) : null;
   const [viewYear, setViewYear] = useState<number>(() =>
-    selectedDateObj ? selectedDateObj.getFullYear() : new Date().getFullYear()
+    selectedDateObj && !isNaN(selectedDateObj.getTime()) ? selectedDateObj.getFullYear() : new Date().getFullYear()
   );
   const [viewMonth, setViewMonth] = useState<number>(() =>
-    selectedDateObj ? selectedDateObj.getMonth() : new Date().getMonth()
+    selectedDateObj && !isNaN(selectedDateObj.getTime()) ? selectedDateObj.getMonth() : new Date().getMonth()
   );
 
   // Sync view when value changes
   useEffect(() => {
     if (value) {
-      const d = new Date(value + "T00:00:00");
+      const d = new Date(value + (value.includes("T") ? "" : "T00:00:00"));
       if (!isNaN(d.getTime())) {
         setViewYear(d.getFullYear());
         setViewMonth(d.getMonth());
@@ -105,7 +104,7 @@ export function GlassDatePicker({
     }
   }, [value]);
 
-  // Click outside to close (handles document.body portaled popup as well)
+  // Click outside to close
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
@@ -207,6 +206,9 @@ export function GlassDatePicker({
 
   const currentTheme = themes[accentColor];
 
+  // Extract clean date string format YYYY-MM-DD
+  const rawDateOnly = value ? value.split("T")[0] : "";
+
   // Display formatted label
   const formattedDisplay = selectedDateObj && !isNaN(selectedDateObj.getTime())
     ? selectedDateObj.toLocaleDateString("en-US", {
@@ -282,7 +284,7 @@ export function GlassDatePicker({
         {Array.from({ length: daysInMonth }).map((_, i) => {
           const day = i + 1;
           const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-          const isSelected = value === dateStr;
+          const isSelected = rawDateOnly === dateStr;
 
           const today = new Date();
           const isToday =
@@ -342,7 +344,7 @@ export function GlassDatePicker({
         onClick={() => setIsOpen((prev) => !prev)}
         className={cn(
           "w-full h-10 px-3.5 rounded-2xl bg-white/[0.04] border border-white/15 hover:border-white/30 text-xs font-mono transition-all flex items-center justify-between gap-2 select-none cursor-pointer",
-          isOpen && "border-indigo-500/60 ring-2 ring-indigo-500/20 bg-white/[0.07]",
+          isOpen && "border-amber-500/60 ring-2 ring-amber-500/20 bg-white/[0.07]",
           currentTheme.activeBorder
         )}
       >
@@ -403,3 +405,4 @@ export function GlassDatePicker({
     </div>
   );
 }
+

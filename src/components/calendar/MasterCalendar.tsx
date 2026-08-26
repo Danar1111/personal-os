@@ -32,6 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { GlassDatePicker } from "@/components/ui/glass-date-picker";
+import { GlassTimePicker } from "@/components/ui/glass-time-picker";
 import {
   Dialog,
   DialogContent,
@@ -1084,20 +1085,20 @@ export function MasterCalendar({ initialEvents }: MasterCalendarProps) {
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-400 uppercase">Start Time</label>
-                    <Input
-                      type="time"
+                    <GlassTimePicker
                       value={newStartTime}
-                      onChange={(e) => setNewStartTime(e.target.value)}
-                      className="bg-white/[0.04] border-white/15 text-white rounded-2xl h-10 px-3 text-xs [color-scheme:dark]"
+                      onChange={setNewStartTime}
+                      placeholder="Start Time"
+                      accentColor="indigo"
                     />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-400 uppercase">End Time</label>
-                    <Input
-                      type="time"
+                    <GlassTimePicker
                       value={newEndTime}
-                      onChange={(e) => setNewEndTime(e.target.value)}
-                      className="bg-white/[0.04] border-white/15 text-white rounded-2xl h-10 px-3 text-xs [color-scheme:dark]"
+                      onChange={setNewEndTime}
+                      placeholder="End Time"
+                      accentColor="indigo"
                     />
                   </div>
                 </div>
@@ -1210,20 +1211,20 @@ export function MasterCalendar({ initialEvents }: MasterCalendarProps) {
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-400 uppercase">Start Time</label>
-                    <Input
-                      type="time"
+                    <GlassTimePicker
                       value={editStartTime}
-                      onChange={(e) => setEditStartTime(e.target.value)}
-                      className="bg-white/[0.04] border-white/15 text-white rounded-2xl h-10 px-3 text-xs [color-scheme:dark]"
+                      onChange={setEditStartTime}
+                      placeholder="Start Time"
+                      accentColor="indigo"
                     />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-400 uppercase">End Time</label>
-                    <Input
-                      type="time"
+                    <GlassTimePicker
                       value={editEndTime}
-                      onChange={(e) => setNewEndTime(e.target.value)}
-                      className="bg-white/[0.04] border-white/15 text-white rounded-2xl h-10 px-3 text-xs [color-scheme:dark]"
+                      onChange={setEditEndTime}
+                      placeholder="End Time"
+                      accentColor="indigo"
                     />
                   </div>
                 </div>
