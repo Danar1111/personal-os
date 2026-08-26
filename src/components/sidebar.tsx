@@ -144,7 +144,17 @@ export function Sidebar() {
 
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = pathname === item.href;
+          const isActive =
+            item.href === "/"
+              ? pathname === "/"
+              : pathname === item.href ||
+                (pathname.startsWith(item.href + "/") &&
+                  !navItems.some(
+                    (other) =>
+                      other.href !== item.href &&
+                      other.href.startsWith(item.href + "/") &&
+                      (pathname === other.href || pathname.startsWith(other.href + "/"))
+                  ));
           const isZenPage = item.href === "/zen";
           const isLocked = zenRunning && !isZenPage;
 

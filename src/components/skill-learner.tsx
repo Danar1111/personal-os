@@ -257,9 +257,18 @@ export function SkillLearner({
   const formatCategoryLabel = (cat: string) => {
     switch (cat) {
       case "creative": return "Creative & Design";
-      case "language": return "Languages";
-      case "soft_skill": return "Soft Skills & Mindset";
-      default: return "Hard & Technical Skills";
+      case "language": return "Language";
+      case "soft_skill": return "Soft Skill";
+      default: return "Hard / Technical";
+    }
+  };
+
+  const formatProficiencyLabel = (prof: string) => {
+    switch (prof) {
+      case "mastery": return "Mastery (100%)";
+      case "advanced": return "Advanced (75%)";
+      case "intermediate": return "Intermediate (50%)";
+      default: return "Beginner (25%)";
     }
   };
 
@@ -443,7 +452,10 @@ export function SkillLearner({
                   <label className="text-[11px] font-mono text-slate-300">Category</label>
                   <Select value={newCategory} onValueChange={(val: any) => setNewCategory(val)}>
                     <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
-                      <SelectValue />
+                      <span className="truncate flex items-center gap-1.5">
+                        {getCategoryIcon(newCategory)}
+                        <span>{formatCategoryLabel(newCategory)}</span>
+                      </span>
                     </SelectTrigger>
                     <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5">
                       <SelectItem value="hard_skill" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Hard / Technical</SelectItem>
@@ -458,7 +470,9 @@ export function SkillLearner({
                   <label className="text-[11px] font-mono text-slate-300">Initial Level</label>
                   <Select value={newProficiency} onValueChange={(val: any) => setNewProficiency(val)}>
                     <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
-                      <SelectValue />
+                      <span className="truncate">
+                        {formatProficiencyLabel(newProficiency)}
+                      </span>
                     </SelectTrigger>
                     <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5">
                       <SelectItem value="beginner" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Beginner (25%)</SelectItem>
@@ -981,7 +995,10 @@ export function SkillLearner({
                     <label className="text-[11px] font-mono text-slate-300">Category</label>
                     <Select value={editCategory} onValueChange={(val: any) => setEditCategory(val)}>
                       <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
-                        <SelectValue />
+                        <span className="truncate flex items-center gap-1.5">
+                          {getCategoryIcon(editCategory)}
+                          <span>{formatCategoryLabel(editCategory)}</span>
+                        </span>
                       </SelectTrigger>
                       <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5">
                         <SelectItem value="hard_skill" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Hard / Technical</SelectItem>
@@ -996,7 +1013,9 @@ export function SkillLearner({
                     <label className="text-[11px] font-mono text-slate-300">Proficiency Level</label>
                     <Select value={editProficiency} onValueChange={(val: any) => setEditProficiency(val)}>
                       <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
-                        <SelectValue />
+                        <span className="truncate">
+                          {formatProficiencyLabel(editProficiency)}
+                        </span>
                       </SelectTrigger>
                       <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5">
                         <SelectItem value="beginner" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Beginner (25%)</SelectItem>
