@@ -62,6 +62,7 @@ import {
 import { useUploadStore } from "@/lib/store/useUploadStore";
 import { useLocalUploadStore } from "@/lib/store/useLocalUploadStore";
 import { cn } from "@/lib/utils";
+import { useSearchParams } from "next/navigation";
 
 interface GoogleDriveFile {
   id: string;
@@ -311,9 +312,30 @@ export function UniversalDriveClient({
 }: UniversalDriveClientProps) {
   const [activeTab, setActiveTab] = useState("local");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const searchParams = useSearchParams();
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
+
+  // Sync search query from URL params (e.g. from Universal Omnibar Jump To)
+  useEffect(() => {
+    const q = searchParams.get("search") || searchParams.get("q");
+    if (q) {
+      setSearchQuery(q);
+      setDebouncedQuery(q.trim());
+      const lowerQ = q.toLowerCase();
+      const hasInLocal = initialAssets.some(
+        (a) =>
+          a.title.toLowerCase().includes(lowerQ) ||
+          a.urlOrPath.toLowerCase().includes(lowerQ) ||
+          (a.tags && a.tags.toLowerCase().includes(lowerQ))
+      );
+      if (hasInLocal) {
+        setActiveTab("local");
+      }
+    }
+  }, [searchParams, initialAssets]);
+
 
   // Local Assets State
   const [assetsList, setAssetsList] = useState<Asset[]>(initialAssets);

@@ -20,7 +20,11 @@ export async function GET(req: NextRequest) {
     "user-read-currently-playing",
     "user-read-playback-state",
     "user-modify-playback-state",
+    "playlist-read-private",
+    "playlist-read-collaborative",
+    "user-library-read",
   ].join(" ");
+
 
   const params = new URLSearchParams({
     response_type: "code",

@@ -36,7 +36,7 @@ import { globalSearchAction, GlobalSearchResult } from "@/app/actions/global-sea
 
 const PAGE_ITEMS = [
   { id: "page-overview", group: "Pages & Apps", title: "Overview Dashboard", subtitle: "Main Bento Dashboard", url: "/", icon: LayoutDashboard },
-  { id: "page-spotify", group: "Pages & Apps", title: "Spotify Music Player & Synced Lyrics", subtitle: "Real-time Now Playing, Synced Lyrics & Controls", url: "#spotify", icon: Music },
+  { id: "page-spotify", group: "Pages & Apps", title: "Spotify Music Player & Synced Lyrics", subtitle: "Real-time Now Playing, Synced Lyrics & Controls (Ctrl+M)", url: "#spotify", icon: Music },
   { id: "page-tasks", group: "Pages & Apps", title: "Task Omni-Kanban", subtitle: "Project & Task Management", url: "/tasks", icon: CheckSquare },
 
   { id: "page-skills", group: "Pages & Apps", title: "Skill Matrix", subtitle: "Learning & Progress Tracking", url: "/skills", icon: Brain },
@@ -179,6 +179,21 @@ export function Omnibar() {
 
   // Keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // ArrowLeft -> Direct jump to Spotify Search!
+    if (e.key === "ArrowLeft" && query.trim()) {
+      e.preventDefault();
+      const currentQuery = query.trim();
+      setIsOpen(false);
+      setQuery("");
+      setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent("open-spotify-search", { detail: { initialQuery: currentQuery } })
+        );
+      }, 50);
+      return;
+    }
+
+    // ArrowRight -> Direct jump to Omni AI Chat!
     if (e.key === "ArrowRight" && query.trim()) {
       e.preventDefault();
       handleSelectItem({
@@ -352,15 +367,22 @@ export function Omnibar() {
 
         {/* Footer Shortcut Bar */}
         <div className="px-4 py-2.5 border-t border-white/10 bg-white/[0.01] flex items-center justify-between text-[10px] font-mono text-slate-400 shrink-0">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             {query.trim() && (
-              <span><kbd className="px-1.5 py-0.5 bg-purple-500/20 text-purple-300 rounded border border-purple-500/30">→</kbd> Ask Omni</span>
+              <>
+                <span className="text-emerald-400 flex items-center gap-1">
+                  <kbd className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30">←</kbd> Spotify Search
+                </span>
+                <span className="text-purple-400 flex items-center gap-1">
+                  <kbd className="px-1.5 py-0.5 bg-purple-500/20 text-purple-300 rounded border border-purple-500/30">→</kbd> Ask Omni
+                </span>
+              </>
             )}
             <span><kbd className="px-1.5 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300">↑↓</kbd> Navigate</span>
             <span><kbd className="px-1.5 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300">↵</kbd> Select</span>
             <span><kbd className="px-1.5 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300">esc</kbd> Dismiss</span>
           </div>
-          <span>Universal OS Search</span>
+          <span className="hidden sm:inline">Universal OS Search</span>
         </div>
       </DialogContent>
     </Dialog>

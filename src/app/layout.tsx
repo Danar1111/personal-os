@@ -13,6 +13,7 @@ import { NavigationProgress } from "@/components/navigation-progress";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 import { RightSpotifySidebar } from "@/components/right-spotify-sidebar";
 import { SpotifyStatusPill } from "@/components/spotify-status-pill";
+import { SpotifySearchModal } from "@/components/spotify/SpotifySearchModal";
 import { GlobalUploadProgress } from "@/components/layout/GlobalUploadProgress";
 
 
@@ -94,6 +95,9 @@ export default function RootLayout({
 
         {/* Global Omni AI Assistant (Ctrl+J) */}
         <OmniAIChat />
+
+        {/* Global Spotify Music Search & Playback Popup (Alt+S / Ctrl+Shift+S) */}
+        <SpotifySearchModal />
 
 
 

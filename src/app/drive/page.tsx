@@ -52,10 +52,12 @@ export default async function DrivePage() {
       </div>
 
       {/* Universal Drive Client Component */}
-      <UniversalDriveClient
-        initialAssets={initialAssets}
-        initialSyncFolder={initialSyncFolder}
-      />
+      <React.Suspense fallback={null}>
+        <UniversalDriveClient
+          initialAssets={initialAssets}
+          initialSyncFolder={initialSyncFolder}
+        />
+      </React.Suspense>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getNowPlaying } from "@/lib/spotify";
+import { getNowPlaying, ensureQueuePopulated } from "@/lib/spotify";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +31,12 @@ export async function GET() {
     const songUrl = song.item.external_urls?.spotify || "";
     const progress_ms = song.progress_ms || 0;
     const duration_ms = song.item.duration_ms || 0;
+    const trackId = song.item.id;
+
+    // Continuous Autoplay Engine: Keep Spotify queue topped up in background
+    if (isPlaying && trackId && result.accessToken) {
+      ensureQueuePopulated(trackId, result.accessToken).catch(() => {});
+    }
 
     return NextResponse.json({
       isConnected: true,
@@ -43,6 +49,7 @@ export async function GET() {
       progress_ms,
       duration_ms,
     });
+
   } catch (error) {
     console.error("[SPOTIFY_NOW_PLAYING_ERROR]", error);
     return NextResponse.json({ isConnected: false, isPlaying: false });
