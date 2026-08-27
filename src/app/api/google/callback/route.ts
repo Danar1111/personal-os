@@ -5,6 +5,11 @@ import {
   getGoogleRefreshToken,
   saveGoogleRefreshToken,
 } from "@/lib/google";
+import dns from "node:dns";
+
+try {
+  dns.setDefaultResultOrder("ipv4first");
+} catch {}
 
 export const dynamic = "force-dynamic";
 
