@@ -4,11 +4,9 @@ import { OAuth2Client } from "google-auth-library";
 import { db } from "@/db";
 import { systemSettings } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import dns from "node:dns";
+import "@/lib/ipv4";
 
-try {
-  dns.setDefaultResultOrder("ipv4first");
-} catch {}
+
 
 export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/drive.file",

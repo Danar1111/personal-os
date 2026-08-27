@@ -30,5 +30,6 @@ jobs:
             npm install
             npx drizzle-kit push
             NODE_OPTIONS="--max-old-space-size=1536" npm run build
-            pm2 restart personal-os || pm2 start npm --name "personal-os" -- start
+            pm2 restart personal-os --update-env || pm2 start npm --name "personal-os" -- start
             pm2 save
+
