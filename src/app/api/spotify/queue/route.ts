@@ -1,53 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addToQueue } from "@/lib/spotify";
+import { getQueue, addToQueue } from "@/lib/spotify";
 
 export const dynamic = "force-dynamic";
+
+export async function GET() {
+  try {
+    const result = await getQueue();
+    return NextResponse.json(result);
+  } catch (err: any) {
+    console.error("[SPOTIFY_QUEUE_GET_ERROR]", err);
+    return NextResponse.json(
+      { success: false, currentlyPlaying: null, queue: [], error: err.message || "Failed to fetch queue." },
+      { status: 500 }
+    );
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const trackUri = body?.trackUri || body?.uri;
-    const deviceId = body?.deviceId;
+    const trackUri: string | undefined = body?.trackUri;
 
     if (!trackUri) {
       return NextResponse.json(
-        { success: false, error: "trackUri is required" },
+        { success: false, error: "MISSING_URI", message: "trackUri is required." },
         { status: 400 }
       );
     }
 
-    const result = await addToQueue(trackUri, deviceId);
-
+    const result = await addToQueue(trackUri);
     if (!result.success) {
-      const status =
-        result.error === "NO_ACTIVE_DEVICE"
-          ? 404
-          : result.error === "PREMIUM_REQUIRED"
-          ? 403
-          : result.error === "NOT_CONNECTED"
-          ? 401
-          : 400;
-
-      return NextResponse.json(
-        {
-          success: false,
-          error: result.error,
-          message:
-            result.message ||
-            "No active Spotify device found. Please open Spotify first.",
-        },
-        { status }
-      );
+      return NextResponse.json(result, { status: 500 });
     }
-
-    return NextResponse.json({
-      success: true,
-      message: result.message || "Added to queue.",
-    });
+    return NextResponse.json(result);
   } catch (err: any) {
-    console.error("[SPOTIFY_QUEUE_API_ERROR]", err);
+    console.error("[SPOTIFY_QUEUE_POST_ERROR]", err);
     return NextResponse.json(
-      { success: false, message: err.message || "Failed to add track to Spotify queue." },
+      { success: false, error: err.message || "Failed to add track to queue." },
       { status: 500 }
     );
   }

@@ -806,3 +806,87 @@ export async function setShuffle(
   }
 }
 
+export async function getQueue(): Promise<{
+  success: boolean;
+  currentlyPlaying: SpotifyTrackResult | null;
+  manualQueue: SpotifyTrackResult[];
+  nextUp: SpotifyTrackResult[];
+  queue: SpotifyTrackResult[];
+  error?: string;
+}> {
+  const accessToken = await getAccessToken();
+  if (!accessToken) {
+    return {
+      success: false,
+      currentlyPlaying: null,
+      manualQueue: [],
+      nextUp: [],
+      queue: [],
+      error: "NOT_CONNECTED",
+    };
+  }
+
+  try {
+    const [queueRes, playerRes] = await Promise.all([
+      fetch("https://api.spotify.com/v1/me/player/queue", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: "no-store",
+      }),
+      fetch("https://api.spotify.com/v1/me/player", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: "no-store",
+      }),
+    ]);
+
+    if (!queueRes.ok) {
+      return {
+        success: false,
+        currentlyPlaying: null,
+        manualQueue: [],
+        nextUp: [],
+        queue: [],
+        error: `Failed to fetch queue (${queueRes.status})`,
+      };
+    }
+
+    const data = await queueRes.json().catch(() => null);
+    const playerData = playerRes.ok ? await playerRes.json().catch(() => null) : null;
+
+    const mapTrack = (item: any): SpotifyTrackResult => ({
+      id: item?.id || "",
+      name: item?.name || "Unknown Track",
+      artists: item?.artists?.map((a: any) => a.name).join(", ") || "Unknown Artist",
+      albumName: item?.album?.name || "Unknown Album",
+      albumUri: item?.album?.uri || "",
+      imageUrl: item?.album?.images?.[0]?.url || "",
+      durationMs: item?.duration_ms || 0,
+      uri: item?.uri || "",
+      externalUrl: item?.external_urls?.spotify || "",
+    });
+
+    const currentlyPlaying = data?.currently_playing ? mapTrack(data.currently_playing) : null;
+    const rawQueue: SpotifyTrackResult[] = Array.isArray(data?.queue) ? data.queue.map(mapTrack) : [];
+
+    // No heuristic splitting — Spotify's API provides a flat queue with no reliable
+    // way to distinguish "manually queued" from "auto-radio / context" tracks.
+    // We expose the entire queue as-is.
+    return {
+      success: true,
+      currentlyPlaying,
+      manualQueue: [],
+      nextUp: rawQueue,
+      queue: rawQueue,
+    };
+
+  } catch (err: any) {
+    console.error("[SPOTIFY_GET_QUEUE_ERROR]", err);
+    return {
+      success: false,
+      currentlyPlaying: null,
+      manualQueue: [],
+      nextUp: [],
+      queue: [],
+      error: err.message || "Network error fetching queue",
+    };
+  }
+}

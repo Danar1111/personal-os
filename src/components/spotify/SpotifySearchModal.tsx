@@ -19,6 +19,7 @@ import {
   Heart,
   Sparkles,
   ArrowLeft,
+  Trash2,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -61,7 +62,7 @@ interface NowPlayingState {
   duration_ms?: number;
 }
 
-type ViewMode = "search" | "playlists" | "playlist-detail" | "liked-songs";
+type ViewMode = "search" | "playlists" | "playlist-detail" | "liked-songs" | "queue";
 
 function formatDuration(ms?: number): string {
   if (!ms || isNaN(ms)) return "0:00";
@@ -315,6 +316,13 @@ export function SpotifySearchModal() {
   });
   const [isActionPending, startTransition] = useTransition();
 
+  // Live Queue State
+  const [manualQueueTracks, setManualQueueTracks] = useState<SpotifyTrack[]>([]);
+  const [nextUpTracks, setNextUpTracks] = useState<SpotifyTrack[]>([]);
+  const [currentlyPlayingInQueue, setCurrentlyPlayingInQueue] = useState<SpotifyTrack | null>(null);
+  const [isLoadingQueue, setIsLoadingQueue] = useState(false);
+  const [isClearingQueue, setIsClearingQueue] = useState(false);
+
   const searchInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -327,6 +335,61 @@ export function SpotifySearchModal() {
   }, []);
 
   const isDetailView = viewMode === "playlist-detail" || viewMode === "liked-songs";
+
+  const fetchLiveQueue = useCallback(async (silent = false) => {
+    if (!silent) {
+      setIsLoadingQueue(true);
+    }
+    try {
+      const res = await fetch("/api/spotify/queue", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.success) {
+        setManualQueueTracks(data.manualQueue || []);
+        setNextUpTracks(data.nextUp || []);
+        setCurrentlyPlayingInQueue(data.currentlyPlaying || null);
+      }
+    } catch (err) {
+      console.warn("[SPOTIFY_FETCH_QUEUE_ERROR]", err);
+    } finally {
+      if (!silent) {
+        setIsLoadingQueue(false);
+      }
+    }
+  }, []);
+
+  const handleOpenQueueView = () => {
+    setViewMode("queue");
+    setSelectedPlaylist(null);
+    setSelectedIndex(0);
+    setSelectedActionIndex(2);
+    setSearchQuery("");
+    setScrollTop(0);
+    if (containerRef.current) {
+      containerRef.current.scrollTop = 0;
+    }
+    fetchLiveQueue();
+    setTimeout(() => searchInputRef.current?.focus(), 60);
+  };
+
+  const handleClearQueue = async () => {
+    setIsClearingQueue(true);
+    try {
+      const res = await fetch("/api/spotify/queue", { method: "DELETE" });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSuccessMessage("Manual queue cleared successfully!");
+        setManualQueueTracks([]);
+        fetchLiveQueue(true);
+      } else {
+        setErrorMessage(data.error || data.message || "Failed to clear queue.");
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || "Network error while clearing queue.");
+    } finally {
+      setIsClearingQueue(false);
+    }
+  };
 
   // Background Deep Search: when searching in a playlist/liked-songs, automatically stream in remaining pages
   useEffect(() => {
@@ -413,6 +476,39 @@ export function SpotifySearchModal() {
         (t.albumName && t.albumName.toLowerCase().includes(q))
     );
   }, [isDetailView, searchQuery, detailTracks]);
+
+  // Live Manual Queue contextual filtering
+  const filteredManualQueueTracks = React.useMemo(() => {
+    if (viewMode !== "queue") return [];
+    if (!searchQuery.trim()) return manualQueueTracks;
+    const q = searchQuery.toLowerCase().trim();
+    return manualQueueTracks.filter(
+      (t) =>
+        t.name.toLowerCase().includes(q) ||
+        t.artists.toLowerCase().includes(q) ||
+        (t.albumName && t.albumName.toLowerCase().includes(q))
+    );
+  }, [viewMode, searchQuery, manualQueueTracks]);
+
+  // Live Next Up (Context stream) filtering
+  const filteredNextUpTracks = React.useMemo(() => {
+    if (viewMode !== "queue") return [];
+    if (!searchQuery.trim()) return nextUpTracks;
+    const q = searchQuery.toLowerCase().trim();
+    return nextUpTracks.filter(
+      (t) =>
+        t.name.toLowerCase().includes(q) ||
+        t.artists.toLowerCase().includes(q) ||
+        (t.albumName && t.albumName.toLowerCase().includes(q))
+    );
+  }, [viewMode, searchQuery, nextUpTracks]);
+
+  // Combined tracks for queue keyboard navigation
+  const allVisibleQueueTracks = React.useMemo(() => {
+    return [...filteredManualQueueTracks, ...filteredNextUpTracks];
+  }, [filteredManualQueueTracks, filteredNextUpTracks]);
+
+
 
 
   // Virtual Window Calculation for 120 FPS high-performance track list
@@ -527,6 +623,9 @@ export function SpotifySearchModal() {
         const data: NowPlayingState = await res.json();
         if (isMounted) {
           setNowPlaying(data);
+          if (viewMode === "queue" && data.title && data.title !== currentlyPlayingInQueue?.name) {
+            fetchLiveQueue(true);
+          }
         }
       } catch (err) {
         // Silently ignore polling network errors
@@ -540,7 +639,7 @@ export function SpotifySearchModal() {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [isOpen]);
+  }, [isOpen, viewMode, currentlyPlayingInQueue?.name, fetchLiveQueue]);
 
   // Debounced search effect: In-playlist filter is instant in-memory, while library search triggers Spotify API
   useEffect(() => {
@@ -648,7 +747,7 @@ export function SpotifySearchModal() {
         el.scrollIntoView({ block: "nearest", behavior: "auto" });
       }
     }
-  }, [selectedIndex, viewMode, detailTracks.length]);
+  }, [selectedIndex, viewMode, detailTracks.length, allVisibleQueueTracks.length]);
 
   // Ensure loading banner is smoothly in view when triggered near bottom
   useEffect(() => {
@@ -885,6 +984,14 @@ export function SpotifySearchModal() {
             duration_ms: track.durationMs,
             songUrl: track.externalUrl,
           }));
+          setCurrentlyPlayingInQueue(track);
+          if (viewMode === "queue") {
+            setManualQueueTracks((prev) => prev.filter((t) => t.uri !== track.uri));
+            setNextUpTracks((prev) => prev.filter((t) => t.uri !== track.uri));
+            setTimeout(() => {
+              fetchLiveQueue(true);
+            }, 600);
+          }
           setTimeout(() => setSuccessMessage(null), 3000);
         } else {
           setErrorMessage(
@@ -928,8 +1035,17 @@ export function SpotifySearchModal() {
             isPlaying: true,
             title: track.name,
             artist: track.artists,
+            album: track.albumName,
             albumImageUrl: track.imageUrl,
+            duration_ms: track.durationMs,
+            songUrl: track.externalUrl,
           }));
+          setCurrentlyPlayingInQueue(track);
+          if (viewMode === "queue") {
+            setTimeout(() => {
+              fetchLiveQueue(true);
+            }, 600);
+          }
           setTimeout(() => setSuccessMessage(null), 3500);
         } else {
           setErrorMessage(data.message || "No active Spotify device found.");
@@ -1062,7 +1178,16 @@ export function SpotifySearchModal() {
 
         if (res.ok && data.success) {
           setSuccessMessage(`Added "${track.name}" to Queue`);
-          setTimeout(() => setSuccessMessage(null), 3000);
+          // Optimistic update: append to manual queue immediately so UI reflects the action
+          setManualQueueTracks((prev) => {
+            // Avoid duplicates
+            if (prev.some((t) => t.uri === track.uri)) return prev;
+            return [...prev, track];
+          });
+          // Always schedule a background refetch to get the real Spotify queue state
+          setTimeout(() => {
+            fetchLiveQueue(true);
+          }, 800);
         } else {
           setErrorMessage(data.message || "Failed to add track to Spotify queue.");
         }
@@ -1074,6 +1199,7 @@ export function SpotifySearchModal() {
     });
   };
 
+
   // Keyboard navigation controller with row, header, and action selection
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     // '/' shortcut: Focus Search input instantly when not typing inside input
@@ -1081,6 +1207,17 @@ export function SpotifySearchModal() {
       e.preventDefault();
       searchInputRef.current?.focus();
       searchInputRef.current?.select();
+      return;
+    }
+
+    // Alt+Q or Ctrl+Q shortcut: Toggle Live Queue view from anywhere (even when focused in search input)
+    if ((e.altKey || e.ctrlKey) && (e.key === "q" || e.key === "Q" || e.code === "KeyQ")) {
+      e.preventDefault();
+      if (viewMode === "queue") {
+        handleGoBack();
+      } else {
+        handleOpenQueueView();
+      }
       return;
     }
 
@@ -1097,11 +1234,11 @@ export function SpotifySearchModal() {
       return;
     }
 
-    // Backspace to return to playlists if input is empty and in detail view
+    // Backspace to return to playlists if input is empty and in detail or queue view
     if (
       e.key === "Backspace" &&
       !searchQuery &&
-      (viewMode === "playlist-detail" || viewMode === "liked-songs")
+      (viewMode === "playlist-detail" || viewMode === "liked-songs" || viewMode === "queue")
     ) {
       e.preventDefault();
       handleGoBack();
@@ -1254,6 +1391,20 @@ export function SpotifySearchModal() {
           }
         }
       }
+    } else if (viewMode === "queue") {
+      const tracksToNavigate = allVisibleQueueTracks;
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (selectedIndex < tracksToNavigate.length - 1) {
+          setSelectedIndex((prev) => prev + 1);
+        }
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (selectedIndex > 0) {
+          setSelectedIndex((prev) => prev - 1);
+        }
+      }
     }
   };
 
@@ -1287,6 +1438,11 @@ export function SpotifySearchModal() {
         const data = await res.json();
         if (data.success) {
           setSuccessMessage("Skipped to next track.");
+          if (viewMode === "queue") {
+            setTimeout(() => {
+              fetchLiveQueue(true);
+            }, 600);
+          }
           setTimeout(() => setSuccessMessage(null), 2500);
         } else {
           setErrorMessage(data.message || "Could not skip track.");
@@ -1321,7 +1477,7 @@ export function SpotifySearchModal() {
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogContent
         showCloseButton={false}
-        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-transparent border-none ring-0 shadow-none text-slate-100 max-w-2xl w-[92vw] max-h-[84vh] p-0 flex flex-col overflow-visible font-mono focus-visible:outline-none"
+        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-transparent border-none ring-0 shadow-none text-slate-100 max-w-2xl w-[92vw] h-[580px] max-h-[85vh] p-0 flex flex-col overflow-visible font-mono focus-visible:outline-none"
         onKeyDown={handleKeyDown}
       >
         <DialogTitle className="sr-only">Spotify Music Search &amp; Playback Command</DialogTitle>
@@ -1357,10 +1513,10 @@ export function SpotifySearchModal() {
         )}
 
         {/* Main Modal Box Container */}
-        <div className="w-full flex-1 max-h-[84vh] rounded-3xl bg-[#0a0a12]/90 border border-white/10 shadow-2xl backdrop-blur-3xl flex flex-col overflow-hidden">
+        <div className="w-full h-full rounded-3xl bg-[#0a0a12]/90 border border-white/10 shadow-2xl backdrop-blur-3xl flex flex-col overflow-hidden">
           {/* Search Header Input */}
-          <div className="p-3.5 border-b border-white/10 flex items-center gap-3 bg-white/[0.02]">
-            {viewMode === "playlist-detail" || viewMode === "liked-songs" ? (
+          <div className="p-3.5 border-b border-white/10 flex items-center gap-3 bg-white/[0.02] shrink-0">
+            {viewMode === "playlist-detail" || viewMode === "liked-songs" || viewMode === "queue" ? (
               <button
                 onClick={handleGoBack}
                 className="w-7 h-7 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-colors cursor-pointer shrink-0"
@@ -1389,6 +1545,13 @@ export function SpotifySearchModal() {
               >
                 Playlist Filter
               </Badge>
+            ) : viewMode === "queue" ? (
+              <Badge
+                variant="outline"
+                className="bg-indigo-500/15 border-indigo-500/30 text-indigo-300 text-[10px] font-mono px-2 py-0.5 shrink-0 hidden sm:inline-flex"
+              >
+                Live Queue
+              </Badge>
             ) : null}
 
             <Input
@@ -1400,6 +1563,8 @@ export function SpotifySearchModal() {
                   ? "Filter Liked Songs (title, artist, album)..."
                   : viewMode === "playlist-detail"
                   ? `Filter in "${selectedPlaylist?.name || "playlist"}"...`
+                  : viewMode === "queue"
+                  ? "Filter tracks in live queue..."
                   : "Search tracks, artists, albums on Spotify..."
               }
               className="bg-transparent border-none text-sm text-white placeholder:text-slate-500 focus-visible:ring-0 p-1.5 h-auto font-mono flex-1 shadow-none"
@@ -1407,6 +1572,23 @@ export function SpotifySearchModal() {
 
             {isSearching && (
               <Loader2 className="w-4 h-4 text-emerald-400 animate-spin shrink-0" />
+            )}
+
+            {/* Quick Action: Open Live Queue (Alt+Q) */}
+            {viewMode !== "queue" && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleOpenQueueView}
+                className="h-6 px-2 text-[10px] font-mono text-slate-300 hover:text-indigo-300 bg-white/5 hover:bg-indigo-500/15 border border-white/10 rounded-lg shrink-0 gap-1.5 cursor-pointer transition-colors"
+                title="View Live Playback Queue (Alt+Q)"
+              >
+                <ListMusic className="w-2.5 h-2.5 text-indigo-400" />
+                <span className="hidden md:inline">Queue</span>
+                <kbd className="px-1 py-0.2 bg-black/40 border border-white/15 rounded text-[8px] text-slate-400 font-mono">
+                  Alt+Q
+                </kbd>
+              </Button>
             )}
 
             {/* Quick Action: Search Globally from Playlist Filter (Ctrl+Enter) */}
@@ -1448,7 +1630,7 @@ export function SpotifySearchModal() {
         <div
           ref={containerRef}
           onScroll={handleContainerScroll}
-          className="flex-1 overflow-y-auto p-3 space-y-1 scrollbar-thin max-h-[50vh]"
+          className="flex-1 overflow-y-auto p-3 space-y-1 scrollbar-thin min-h-0"
         >
           {/* 1. SEARCH RESULTS VIEW */}
           {viewMode === "search" && (
@@ -2010,6 +2192,160 @@ export function SpotifySearchModal() {
               )}
             </div>
           )}
+
+          {/* 4. LIVE PLAYBACK QUEUE VIEW */}
+          {viewMode === "queue" && (
+            <div className="space-y-3">
+              {/* Unified Elegant Now Playing & Queue Header Banner */}
+              <div className="relative overflow-hidden p-3.5 rounded-2xl bg-gradient-to-r from-[#0d121c] via-[#101827]/90 to-[#0a0e17] border border-white/10 shadow-xl flex items-center justify-between gap-4 group">
+                {/* Ambient background cover image bleeding from right to center */}
+                {(currentlyPlayingInQueue?.imageUrl || nowPlaying.albumImageUrl) && (
+                  <>
+                    <img
+                      src={currentlyPlayingInQueue?.imageUrl || nowPlaying.albumImageUrl}
+                      alt=""
+                      className="absolute -right-6 top-0 bottom-0 w-72 h-full object-cover object-center opacity-25 filter blur-[2px] pointer-events-none transition-transform duration-700 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-r from-[#0d121c] via-[#0d121c]/85 to-transparent pointer-events-none" />
+                  </>
+                )}
+
+                {/* Left side: Header Badge + Track Title & Artist Info */}
+                <div className="relative z-10 min-w-0 flex-1 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[9px] font-mono font-bold tracking-wider uppercase shadow-inner">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      NOW PLAYING
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      • {searchQuery.trim() ? "Filtering..." : `${filteredNextUpTracks.length} lagu di antrean`}
+                    </span>
+                  </div>
+
+                  <div className="min-w-0 pt-0.5">
+                    <p className="text-sm font-bold text-white truncate font-sans tracking-tight">
+                      {currentlyPlayingInQueue?.name || nowPlaying.title || "Tidak ada lagu yang sedang diputar"}
+                    </p>
+                    <p className="text-xs text-slate-400 truncate font-sans">
+                      {currentlyPlayingInQueue?.artists || nowPlaying.artist || "Spotify Player"}
+                      {(currentlyPlayingInQueue?.albumName || nowPlaying.album) && (
+                        <span className="text-slate-500 font-normal">
+                          {" "}• {currentlyPlayingInQueue?.albumName || nowPlaying.album}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Right side: Crisp Album Thumbnail with subtle glow */}
+                <div className="relative z-10 shrink-0">
+                  <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl overflow-hidden bg-white/5 border border-white/20 shadow-2xl relative">
+                    {currentlyPlayingInQueue?.imageUrl || nowPlaying.albumImageUrl ? (
+                      <img
+                        src={currentlyPlayingInQueue?.imageUrl || nowPlaying.albumImageUrl}
+                        alt={currentlyPlayingInQueue?.name || nowPlaying.title || "Now Playing"}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-emerald-400 bg-emerald-500/10">
+                        <Music className="w-6 h-6" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Queue Track List */}
+              {isLoadingQueue ? (
+                <div className="space-y-1.5 pt-2">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="h-12 rounded-2xl bg-white/[0.02] animate-pulse border border-white/5"
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-1 pt-1 pb-4">
+                  {/* Section label */}
+                  {filteredNextUpTracks.length > 0 && (
+                    <div className="px-2 pb-1 text-[10px] font-mono text-emerald-300/90 font-semibold uppercase tracking-wider">
+                      Queue ({filteredNextUpTracks.length})
+                    </div>
+                  )}
+
+                  {filteredNextUpTracks.length > 0 ? (
+                    filteredNextUpTracks.map((track, idx) => {
+                      const isSelected = selectedIndex === idx;
+
+                      return (
+                        <div
+                          key={`queue-${track.id}-${idx}`}
+                          ref={(el) => {
+                            if (el) itemRefs.current.set(idx, el);
+                            else itemRefs.current.delete(idx);
+                          }}
+                          className={cn(
+                            "flex items-center justify-between px-3 py-2 rounded-2xl transition-all text-xs font-mono border",
+                            isSelected
+                              ? "bg-emerald-500/15 border-emerald-500/40 text-white shadow-md shadow-emerald-500/10"
+                              : "bg-white/[0.02] border-white/5 text-slate-300"
+                          )}
+                        >
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <span className="w-5 text-center text-[10px] text-slate-500 font-mono shrink-0">
+                              {idx + 1}
+                            </span>
+                            <div className="w-8 h-8 rounded-xl overflow-hidden bg-white/5 border border-white/10 relative shrink-0">
+                              {track.imageUrl ? (
+                                <img
+                                  src={track.imageUrl}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-slate-600">
+                                  <Music className="w-3.5 h-3.5" />
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex flex-col min-w-0 flex-1">
+                              <span
+                                className={cn(
+                                  "font-bold truncate text-slate-100 transition-colors",
+                                  isSelected ? "text-emerald-300" : "text-white"
+                                )}
+                              >
+                                {track.name}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-sans truncate">
+                                {track.artists}
+                                {track.albumName && (
+                                  <span className="text-slate-500"> • {track.albumName}</span>
+                                )}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0 ml-2">
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {formatDuration(track.durationMs)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="py-10 text-center space-y-2 font-mono text-xs text-slate-500">
+                      <ListMusic className="w-8 h-8 mx-auto opacity-30" />
+                      <p>Queue kosong.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Modal Footer: Live Now Playing & Remote Player Controls */}
@@ -2051,6 +2387,22 @@ export function SpotifySearchModal() {
 
               {/* Controls */}
               <div className="flex items-center gap-1.5 shrink-0">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  disabled={isActionPending}
+                  onClick={handleOpenQueueView}
+                  className={cn(
+                    "w-7 h-7 rounded-xl border transition-all cursor-pointer",
+                    viewMode === "queue"
+                      ? "bg-indigo-500/20 text-indigo-400 border-indigo-500/40"
+                      : "bg-white/[0.03] text-slate-400 hover:text-white border-white/10 hover:bg-white/10"
+                  )}
+                  title="View Live Queue (Alt+Q)"
+                >
+                  <ListMusic className="w-3.5 h-3.5" />
+                </Button>
+
                 <Button
                   size="icon"
                   variant="ghost"
@@ -2099,7 +2451,7 @@ export function SpotifySearchModal() {
         {/* Footer Shortcut Bar with Arrow Navigation Hints */}
         <div className="mt-2 px-4 py-2.5 border-t border-white/10 bg-black/40 flex items-center justify-between text-[10px] font-mono text-slate-400 shrink-0">
           <div className="flex items-center gap-3">
-            {viewMode === "playlist-detail" || viewMode === "liked-songs" ? (
+            {viewMode === "playlist-detail" || viewMode === "liked-songs" || viewMode === "queue" ? (
               <>
                 <span>
                   <kbd className="px-1.5 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300">
@@ -2132,6 +2484,12 @@ export function SpotifySearchModal() {
                 ↵
               </kbd>{" "}
               Select
+            </span>
+            <span>
+              <kbd className="px-1.5 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300">
+                Alt+Q
+              </kbd>{" "}
+              Queue
             </span>
             <span>
               <kbd className="px-1.5 py-0.5 bg-white/10 rounded border border-white/10 text-slate-300">
