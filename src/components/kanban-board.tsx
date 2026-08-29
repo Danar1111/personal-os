@@ -1965,15 +1965,15 @@ function SortableTaskCard({
         isDragging && "ring-2 ring-indigo-500/60 bg-indigo-500/10 shadow-2xl z-50 scale-[1.02]"
       )}
     >
-      {/* Header: Drag Grip, Priority, Project, Phase, Edit & Delete Buttons */}
+      {/* Header: Drag Grip, Priority on Left, Edit Button on Right */}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 min-w-0">
           <button
             type="button"
             {...attributes}
             {...listeners}
             onClick={(e) => e.stopPropagation()}
-            className="p-1 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/10 cursor-grab active:cursor-grabbing touch-none transition-colors"
+            className="p-1 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/10 cursor-grab active:cursor-grabbing touch-none transition-colors shrink-0"
             title="Hold & drag handle to reorder task"
           >
             <GripVertical className="w-3.5 h-3.5" />
@@ -1981,35 +1981,45 @@ function SortableTaskCard({
           {getPriorityBadge(task.priority)}
         </div>
 
-        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+        {/* Separate Edit Button Pinned to Top-Right */}
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEditTask(task);
+          }}
+          className="w-7 h-7 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 shrink-0"
+          title="Edit Task"
+        >
+          <Edit3 className="w-3.5 h-3.5" />
+        </Button>
+      </div>
+
+      {/* Project & Phase Badges Row (Dedicated row with clean truncation & wrapping) */}
+      {(projectName || phase) && (
+        <div className="flex items-center gap-1.5 flex-wrap">
           {projectName && (
-            <span className="text-[10px] font-mono text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20 flex items-center gap-1">
-              <Layers className="w-2.5 h-2.5 inline" /> {projectName}
+            <span
+              className="text-[10px] font-mono text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20 flex items-center gap-1 max-w-[180px] min-w-0"
+              title={`Project: ${projectName}`}
+            >
+              <Layers className="w-2.5 h-2.5 inline shrink-0" />
+              <span className="truncate">{projectName}</span>
             </span>
           )}
 
           {phase && (
-            <span className="text-[10px] font-mono text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded-full border border-purple-500/20 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-              <span className="truncate max-w-[110px]">{phase.title}</span>
+            <span
+              className="text-[10px] font-mono text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded-full border border-purple-500/20 flex items-center gap-1 max-w-[160px] min-w-0"
+              title={`Phase: ${phase.title}`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" />
+              <span className="truncate">{phase.title}</span>
             </span>
           )}
-
-          {/* Separate Edit Button */}
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={(e) => {
-              e.stopPropagation();
-              onEditTask(task);
-            }}
-            className="w-7 h-7 rounded-xl text-slate-400 hover:text-white hover:bg-white/10"
-            title="Edit Task"
-          >
-            <Edit3 className="w-3.5 h-3.5" />
-          </Button>
         </div>
-      </div>
+      )}
 
       {/* Body: Title & Description */}
       <div className="space-y-1">

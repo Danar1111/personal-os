@@ -169,26 +169,37 @@ interface SecondBrainVaultProps {
   initialNotes: Note[];
   initialFolders: Folder[];
   initialAssets?: Asset[];
+  initialNoteId?: number;
 }
 
-export function SecondBrainVault({ initialNotes, initialFolders, initialAssets = [] }: SecondBrainVaultProps) {
-
-
-
+export function SecondBrainVault({
+  initialNotes,
+  initialFolders,
+  initialAssets = [],
+  initialNoteId,
+}: SecondBrainVaultProps) {
   const [isPending, startTransition] = useTransition();
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const searchParams = useSearchParams();
 
-  // Navigation History Stack State (array of Note IDs) — empty on first load
-  const [history, setHistory] = useState<number[]>([]);
+  // Navigation History Stack State (array of Note IDs)
+  const [history, setHistory] = useState<number[]>(() => {
+    if (initialNoteId && initialNotes.some((n) => n.id === initialNoteId)) {
+      return [initialNoteId];
+    }
+    return [];
+  });
 
   const currentActiveNoteId = history.length > 0 ? history[history.length - 1] : null;
   const activeNote = initialNotes.find((n) => n.id === currentActiveNoteId) || null;
 
-  // Handle URL deep-linking (e.g., /vault?noteId=123 or /vault?search=query)
+  // Handle URL deep-linking (e.g., /vault?note=123, /vault?noteId=123 or /vault?search=query)
   useEffect(() => {
-    const noteIdParam = searchParams.get("noteId");
+    const noteIdParam =
+      searchParams.get("note") ||
+      searchParams.get("noteId") ||
+      searchParams.get("id");
     const queryParam = searchParams.get("search") || searchParams.get("q");
 
     if (noteIdParam) {

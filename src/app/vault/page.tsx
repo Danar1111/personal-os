@@ -6,7 +6,21 @@ import { Badge } from "@/components/ui/badge";
 
 export const revalidate = 0; // Disable static cache for live data updates
 
-export default async function VaultPage() {
+export default async function VaultPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const params = await searchParams;
+  const noteParam =
+    typeof params.note === "string"
+      ? params.note
+      : typeof params.noteId === "string"
+      ? params.noteId
+      : typeof params.id === "string"
+      ? params.id
+      : undefined;
+  const initialNoteId = noteParam ? parseInt(noteParam, 10) : undefined;
   const { notes: initialNotes, folders: initialFolders, assets: initialAssets } = await getVaultData();
 
   return (
@@ -37,7 +51,12 @@ export default async function VaultPage() {
       </div>
 
       {/* Zettelkasten Vault Component */}
-      <SecondBrainVault initialNotes={initialNotes} initialFolders={initialFolders} initialAssets={initialAssets} />
+      <SecondBrainVault
+        initialNotes={initialNotes}
+        initialFolders={initialFolders}
+        initialAssets={initialAssets}
+        initialNoteId={Number.isNaN(initialNoteId) ? undefined : initialNoteId}
+      />
     </div>
   );
 }
