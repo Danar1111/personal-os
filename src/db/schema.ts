@@ -168,10 +168,36 @@ export const pinnedTickers = mysqlTable('pinned_tickers', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
+export const projectAssetLinks = mysqlTable('project_asset_links', {
+  id: int('id').autoincrement().primaryKey(),
+  projectId: int('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  assetId: int('asset_id').notNull().references(() => assets.id, { onDelete: 'cascade' }),
+  phaseId: int('phase_id').references(() => projectPhases.id, { onDelete: 'set null' }),
+  docVersion: varchar('doc_version', { length: 50 }).default('v1.0'),
+  docStatus: varchar('doc_status', { length: 50 }).default('DRAFT'), // 'DRAFT' | 'FINAL'
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const projectAssetLinksRelations = relations(projectAssetLinks, ({ one }) => ({
+  project: one(projects, {
+    fields: [projectAssetLinks.projectId],
+    references: [projects.id],
+  }),
+  asset: one(assets, {
+    fields: [projectAssetLinks.assetId],
+    references: [assets.id],
+  }),
+  phase: one(projectPhases, {
+    fields: [projectAssetLinks.phaseId],
+    references: [projectPhases.id],
+  }),
+}));
+
 export const projectsRelations = relations(projects, ({ many }) => ({
   tasks: many(tasks),
   phases: many(projectPhases),
   assets: many(assets),
+  assetLinks: many(projectAssetLinks),
 }));
 
 export const projectPhasesRelations = relations(projectPhases, ({ one, many }) => ({
@@ -181,6 +207,11 @@ export const projectPhasesRelations = relations(projectPhases, ({ one, many }) =
   }),
   tasks: many(tasks),
   assets: many(assets),
+  assetLinks: many(projectAssetLinks),
+}));
+
+export const assetsRelations = relations(assets, ({ many }) => ({
+  projectLinks: many(projectAssetLinks),
 }));
 
 export const tasksRelations = relations(tasks, ({ one }) => ({
@@ -279,3 +310,5 @@ export type EmailTemplate = typeof emailTemplates.$inferSelect;
 export type NewEmailTemplate = typeof emailTemplates.$inferInsert;
 export type Notification = typeof notifications.$inferSelect;
 export type NewNotification = typeof notifications.$inferInsert;
+export type ProjectAssetLink = typeof projectAssetLinks.$inferSelect;
+export type NewProjectAssetLink = typeof projectAssetLinks.$inferInsert;

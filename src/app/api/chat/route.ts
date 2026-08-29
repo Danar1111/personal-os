@@ -17,6 +17,7 @@ import {
   systemSettings,
   knowledgeVault,
   emailTemplates,
+  projectAssetLinks,
 } from "@/db/schema";
 import { sendBrevoEmail, interpolateHandlebars } from "@/lib/brevo";
 import { getEmailTemplates, createEmailTemplate } from "@/app/emailer/actions";
@@ -2233,11 +2234,52 @@ export async function POST(req: Request) {
               .from(tasks)
               .where(eq(tasks.projectId, targetProject.id));
 
-            const pAssets = await db
+            // Query assets via projectAssetLinks joined with assets OR legacy projectId
+            const linkedAssetRows = await db
+              .select({
+                asset: assets,
+                phaseId: projectAssetLinks.phaseId,
+                docVersion: projectAssetLinks.docVersion,
+                docStatus: projectAssetLinks.docStatus,
+              })
+              .from(projectAssetLinks)
+              .innerJoin(assets, eq(projectAssetLinks.assetId, assets.id))
+              .where(eq(projectAssetLinks.projectId, targetProject.id));
+
+            const legacyAssets = await db
               .select()
               .from(assets)
               .where(eq(assets.projectId, targetProject.id));
 
+            // Group by asset ID to aggregate all linked phaseIds
+            const assetMap = new Map<number, any>();
+            for (const row of linkedAssetRows) {
+              const existing = assetMap.get(row.asset.id);
+              if (existing) {
+                if (row.phaseId && !existing.phaseIds.includes(row.phaseId)) {
+                  existing.phaseIds.push(row.phaseId);
+                }
+              } else {
+                assetMap.set(row.asset.id, {
+                  ...row.asset,
+                  phaseIds: row.phaseId ? [row.phaseId] : [],
+                  phaseId: row.phaseId ?? row.asset.phaseId,
+                  docVersion: row.docVersion ?? row.asset.docVersion,
+                  docStatus: row.docStatus ?? row.asset.docStatus,
+                });
+              }
+            }
+
+            for (const la of legacyAssets) {
+              if (!assetMap.has(la.id)) {
+                assetMap.set(la.id, {
+                  ...la,
+                  phaseIds: la.phaseId ? [la.phaseId] : [],
+                });
+              }
+            }
+
+            const pAssets = Array.from(assetMap.values());
             const totalTasks = pTasks.length;
             const doneTasks = pTasks.filter((t) => t.status === "done").length;
             const overallProgress = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
@@ -2255,9 +2297,16 @@ export async function POST(req: Request) {
                 ? phaseTasks.map((t) => `    - [${t.status.toUpperCase()}] ${t.title} (${t.priority})`).join("\n")
                 : "    - _(No tasks assigned)_";
 
+              const phaseDocs = docs.filter((d) => d.phaseIds.includes(phase.id) || d.phaseId === phase.id);
+              const phaseLinks = links.filter((l) => l.phaseIds.includes(phase.id) || l.phaseId === phase.id);
+              const assetListText = (phaseDocs.length || phaseLinks.length)
+                ? `  • Linked Assets: ${phaseDocs.length} Docs, ${phaseLinks.length} Links\n`
+                : "";
+
               return `**${idx + 1}. ${phase.title}** [${phase.status}] (${phase.startDate} → ${phase.endDate})\n` +
                 `  • Progress: **${phase.progress}%** (${phaseDone}/${phaseTasks.length} tasks done)\n` +
                 (depPhase ? `  • Depends on: **${depPhase.title}**\n` : "") +
+                assetListText +
                 `  • Tasks:\n${taskList}`;
             }).join("\n\n");
 
@@ -2296,6 +2345,7 @@ export async function POST(req: Request) {
             const allPhases = await db.select().from(projectPhases);
             const allTasks = await db.select().from(tasks);
             const allAssets = await db.select().from(assets);
+            const allAssetLinks = await db.select().from(projectAssetLinks);
 
             if (!allProjects.length) {
               return {
@@ -2309,13 +2359,15 @@ export async function POST(req: Request) {
             const list = allProjects.map((p) => {
               const pPhases = allPhases.filter((ph) => ph.projectId === p.id);
               const pTasks = allTasks.filter((t) => t.projectId === p.id);
-              const pAssets = allAssets.filter((a) => a.projectId === p.id);
+              const pAssetLinks = allAssetLinks.filter((al) => al.projectId === p.id);
+              const pLegacyAssets = allAssets.filter((a) => a.projectId === p.id);
+              const linkedAssetCount = new Set([...pAssetLinks.map((l) => l.assetId), ...pLegacyAssets.map((a) => a.id)]).size;
               const doneTasks = pTasks.filter((t) => t.status === "done").length;
               const progress = pTasks.length > 0 ? Math.round((doneTasks / pTasks.length) * 100) : 0;
 
               return `• **[${p.name}](/projects/${p.id})** [${p.status}]\n` +
                 `  - Target: ${p.targetDate || "No target date"} | Progress: **${progress}%** (${doneTasks}/${pTasks.length} tasks)\n` +
-                `  - Roadmap: ${pPhases.length} phases | Assets: ${pAssets.length} linked`;
+                `  - Roadmap: ${pPhases.length} phases | Assets: ${linkedAssetCount} linked`;
             }).join("\n\n");
 
             return {
@@ -2431,7 +2483,7 @@ export async function POST(req: Request) {
       }),
 
       add_project_link: makeTool({
-        description: "Attaches a reference link (e.g. Figma, GitHub, PRD, docs) directly to a project or specific roadmap phase.",
+        description: "Attaches a reference link (e.g. Figma, GitHub, PRD, docs) directly to a project or one/more roadmap phases.",
         inputSchema: jsonSchema({
           type: "object",
           properties: {
@@ -2439,8 +2491,18 @@ export async function POST(req: Request) {
             projectId: { type: "number", description: "ID of the project (optional if projectName provided)" },
             title: { type: "string", description: "Link title / label (e.g. 'Figma Design System', 'API Documentation')" },
             url: { type: "string", description: "URL address (http/https)" },
-            phaseTitle: { type: "string", description: "Title keyword of the phase to attach to (optional)" },
+            phaseTitle: { type: "string", description: "Single phase title keyword (optional)" },
+            phaseTitles: {
+              type: "array",
+              items: { type: "string" },
+              description: "List of phase title keywords to attach to simultaneously",
+            },
             phaseId: { type: "number", description: "ID of the phase to attach to (optional)" },
+            phaseIds: {
+              type: "array",
+              items: { type: "number" },
+              description: "List of phase IDs to attach to simultaneously",
+            },
             docStatus: { type: "string", enum: ["DRAFT", "FINAL"], description: "Document status (default: FINAL)" },
           },
           required: ["title", "url"],
@@ -2449,8 +2511,6 @@ export async function POST(req: Request) {
           try {
             const pid = args?.projectId ? Number(args.projectId) : null;
             const pName = args?.projectName ? String(args.projectName).trim() : "";
-            const phId = args?.phaseId ? Number(args.phaseId) : null;
-            const phTitle = args?.phaseTitle ? String(args.phaseTitle).trim() : "";
             const title = String(args?.title || "").trim();
             const url = String(args?.url || "").trim();
             const docStatus = args?.docStatus || "FINAL";
@@ -2472,29 +2532,77 @@ export async function POST(req: Request) {
               return { success: false, message: `Project "${pName || pid}" not found.` };
             }
 
-            let targetPhase = null;
-            if (phId) {
-              const [found] = await db.select().from(projectPhases).where(and(eq(projectPhases.id, phId), eq(projectPhases.projectId, targetProject.id))).limit(1);
-              targetPhase = found;
-            } else if (phTitle) {
-              const [found] = await db.select().from(projectPhases).where(and(like(projectPhases.title, `%${phTitle}%`), eq(projectPhases.projectId, targetProject.id))).limit(1);
-              targetPhase = found;
+            // Fetch all phases for project to resolve matches
+            const allPhases = await db
+              .select()
+              .from(projectPhases)
+              .where(eq(projectPhases.projectId, targetProject.id));
+
+            const matchedPhases: typeof allPhases = [];
+
+            if (Array.isArray(args?.phaseIds)) {
+              for (const phId of args.phaseIds) {
+                const found = allPhases.find((p) => p.id === Number(phId));
+                if (found && !matchedPhases.some((m) => m.id === found.id)) matchedPhases.push(found);
+              }
+            } else if (args?.phaseId) {
+              const found = allPhases.find((p) => p.id === Number(args.phaseId));
+              if (found && !matchedPhases.some((m) => m.id === found.id)) matchedPhases.push(found);
             }
 
-            await db.insert(assets).values({
+            if (Array.isArray(args?.phaseTitles)) {
+              for (const pt of args.phaseTitles) {
+                const q = String(pt).toLowerCase().trim();
+                const found = allPhases.find((p) => p.title.toLowerCase().includes(q));
+                if (found && !matchedPhases.some((m) => m.id === found.id)) matchedPhases.push(found);
+              }
+            } else if (args?.phaseTitle) {
+              const q = String(args.phaseTitle).toLowerCase().trim();
+              const found = allPhases.find((p) => p.title.toLowerCase().includes(q));
+              if (found && !matchedPhases.some((m) => m.id === found.id)) matchedPhases.push(found);
+            }
+
+            // 1. Insert into assets table
+            const [ins] = await db.insert(assets).values({
               title,
               type: "link",
               urlOrPath: url,
               projectId: targetProject.id,
-              phaseId: targetPhase?.id || null,
+              phaseId: matchedPhases[0]?.id || null,
               docStatus,
             });
+
+            const assetId = (ins as any)?.insertId;
+
+            // 2. Insert into projectAssetLinks junction table for all matched phases
+            if (assetId) {
+              if (matchedPhases.length > 0) {
+                for (const ph of matchedPhases) {
+                  await db.insert(projectAssetLinks).values({
+                    projectId: targetProject.id,
+                    assetId,
+                    phaseId: ph.id,
+                    docStatus,
+                  });
+                }
+              } else {
+                await db.insert(projectAssetLinks).values({
+                  projectId: targetProject.id,
+                  assetId,
+                  phaseId: null,
+                  docStatus,
+                });
+              }
+            }
 
             revalidatePath(`/projects/${targetProject.id}`);
             revalidatePath("/projects");
             revalidatePath("/drive");
+            revalidatePath("/inventory");
 
-            const phaseText = targetPhase ? ` to phase **${targetPhase.title}**` : "";
+            const phaseText = matchedPhases.length > 0
+              ? ` linked to **${matchedPhases.map((p) => p.title).join(", ")}**`
+              : " (General Project Link)";
 
             return {
               success: true,

@@ -574,46 +574,28 @@ export function ProjectsDashboard({ initialProjects, initialImageAssets = [] }: 
                 </div>
 
                 <div className="p-5.5 space-y-4 flex-1">
-                  {/* Card Header: Icon + Title + Status + Delete Action */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <ProjectIconDisplay
-                        icon={project.icon}
-                        className="w-10 h-10 rounded-2xl group-hover:scale-105 transition-transform"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <h3 className="text-white font-bold text-base font-mono leading-snug group-hover:text-indigo-300 transition-colors truncate">
-                          {project.name}
-                        </h3>
-                        {(project.startDate || project.targetDate) && (
-                          <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-mono mt-0.5">
-                            <Calendar className="w-3 h-3 text-slate-500 shrink-0" />
-                            <span className="truncate">
-                              {formatDate(project.startDate as string | null) ?? "—"} &rarr;{" "}
-                              {formatDate(project.targetDate as string | null) ?? "TBD"}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <Badge className={`border text-[10px] font-mono px-2.5 py-1 flex items-center gap-1.5 shadow-sm ${cfg.color}`}>
-                        {cfg.icon}
-                        {cfg.label}
-                      </Badge>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setDeletingProjectConfirm(project);
-                        }}
-                        className="p-1.5 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                        title="Delete Project"
+                  {/* Card Header: Icon + Full Width Title & Timeline */}
+                  <div className="flex items-start gap-3 w-full">
+                    <ProjectIconDisplay
+                      icon={project.icon}
+                      className="w-11 h-11 rounded-2xl group-hover:scale-105 transition-transform shrink-0"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <h3
+                        className="text-white font-bold text-base font-mono leading-snug group-hover:text-indigo-300 transition-colors line-clamp-2"
+                        title={project.name}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                        {project.name}
+                      </h3>
+                      {(project.startDate || project.targetDate) && (
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-mono mt-1">
+                          <Calendar className="w-3 h-3 text-slate-500 shrink-0" />
+                          <span className="truncate">
+                            {formatDate(project.startDate as string | null) ?? "—"} &rarr;{" "}
+                            {formatDate(project.targetDate as string | null) ?? "TBD"}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -647,20 +629,36 @@ export function ProjectsDashboard({ initialProjects, initialImageAssets = [] }: 
                   </div>
                 </div>
 
-                {/* Footer Metrics & Open Indicator */}
-                <div className="px-5.5 py-3.5 border-t border-white/5 bg-white/[0.01] flex items-center justify-between font-mono text-xs text-slate-400">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-[10px]">
-                      {docCount} docs
-                    </span>
-                    <span className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-[10px]">
-                      {linkCount} links
-                    </span>
+                {/* Footer: Status Badge (Left) + Metrics & Delete (Right) */}
+                <div className="px-5.5 py-3 border-t border-white/5 bg-white/[0.01] flex items-center justify-between font-mono text-xs text-slate-400 gap-2">
+                  <div className="flex items-center shrink-0">
+                    <Badge className={`border text-[10px] font-mono px-2.5 py-0.5 flex items-center gap-1.5 shadow-sm rounded-xl ${cfg.color}`}>
+                      {cfg.icon}
+                      <span>{cfg.label}</span>
+                    </Badge>
                   </div>
 
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-400 group-hover:text-indigo-300 transition-colors">
-                    <span>Open Hub</span>
-                    <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-[10px] text-slate-300 font-mono">
+                        {docCount} docs
+                      </span>
+                      <span className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-[10px] text-slate-300 font-mono">
+                        {linkCount} links
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDeletingProjectConfirm(project);
+                      }}
+                      className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                      title="Delete Project"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
               </Link>

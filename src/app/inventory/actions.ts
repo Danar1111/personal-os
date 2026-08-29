@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/db";
-import { assets, Asset } from "@/db/schema";
+import { assets, Asset, projectAssetLinks } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
@@ -116,13 +116,24 @@ export async function createAssetAction(data: {
     phaseId: data.phaseId || null,
   });
 
+  const assetId = result.insertId;
+  if (data.projectId && assetId) {
+    await db.insert(projectAssetLinks).values({
+      projectId: data.projectId,
+      assetId: assetId,
+      phaseId: data.phaseId || null,
+      docVersion: "v1.0",
+      docStatus: "DRAFT",
+    });
+  }
+
   revalidatePath("/inventory");
   revalidatePath("/");
   if (data.projectId) {
     revalidatePath(`/projects/${data.projectId}`);
     revalidatePath("/projects");
   }
-  return { success: true, id: result.insertId, thumbnailUrl: finalThumbnail };
+  return { success: true, id: assetId, thumbnailUrl: finalThumbnail };
 }
 
 export async function updateAssetAction(

@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/db";
-import { assets, Asset, systemSettings } from "@/db/schema";
+import { assets, Asset, systemSettings, projectAssetLinks } from "@/db/schema";
 import { ne, eq, desc, inArray, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import fs from "fs";
@@ -297,6 +297,17 @@ export async function createDriveAssetAction(data: {
     docStatus: data.docStatus ?? "DRAFT",
   });
 
+  const assetId = (inserted as any)?.insertId;
+  if (data.projectId && assetId) {
+    await db.insert(projectAssetLinks).values({
+      projectId: data.projectId,
+      assetId: assetId,
+      phaseId: data.phaseId ?? null,
+      docVersion: data.docVersion ?? "v1.0",
+      docStatus: data.docStatus ?? "DRAFT",
+    });
+  }
+
   revalidatePath("/drive");
   revalidatePath("/inventory");
   if (data.projectId) {
@@ -304,7 +315,7 @@ export async function createDriveAssetAction(data: {
     revalidatePath("/projects");
   }
   revalidatePath("/");
-  return { success: true, id: (inserted as any)?.insertId };
+  return { success: true, id: assetId };
 }
 
 export async function updateDriveAssetAction(

@@ -11,6 +11,10 @@ import {
   updateProjectAction,
   deleteProjectHubAction,
   uploadProjectMediaAction,
+  attachExistingAssetsAction,
+  detachAssetFromProjectAction,
+  updateProjectAssetLinkAction,
+  deleteProjectAssetAction,
 } from "@/app/projects/actions";
 import { isAssetImage, isImageIcon, ProjectIconDisplay, resolveAssetMediaUrl } from "@/components/projects-dashboard";
 import {
@@ -45,6 +49,11 @@ import {
   SelectItem,
   SelectTrigger,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+} from "@/components/ui/dropdown-menu";
 import {
   Layers,
   Plus,
@@ -91,6 +100,7 @@ import {
   ChevronUp,
   FolderOpen,
   Filter,
+  Link2Off,
 } from "lucide-react";
 import { useUploadStore } from "@/lib/store/useUploadStore";
 import { useLocalUploadStore } from "@/lib/store/useLocalUploadStore";
@@ -98,11 +108,18 @@ import { FilePreviewModal, PreviewableFile } from "@/components/file-preview-mod
 import { cn } from "@/lib/utils";
 
 // ── Types ──────────────────────────────────────────────────────────────────
+export type ProjectHubAsset = Asset & {
+  phaseIds?: number[];
+  linkId?: number;
+  linkIds?: number[];
+  phaseLinkMap?: { linkId: number; phaseId: number | null }[];
+};
+
 interface ProjectHubProps {
   project: Project;
   initialPhases: ProjectPhase[];
   initialTasks: Task[];
-  initialAssets: Asset[];
+  initialAssets: ProjectHubAsset[];
   allProjects?: Project[];
   allAssets?: Asset[];
   allNotes?: Note[];
@@ -233,15 +250,133 @@ function CustomCheckbox({
         onChange();
       }}
       className={cn(
-        "w-4 h-4 rounded-md flex items-center justify-center transition-all cursor-pointer select-none shrink-0 outline-none",
+        "w-4 h-4 rounded-full flex items-center justify-center transition-all cursor-pointer select-none shrink-0 outline-none",
         checked
-          ? "bg-indigo-600 border border-indigo-400 text-white shadow-md shadow-indigo-600/50 scale-105"
-          : "bg-white/[0.05] border border-white/20 hover:border-indigo-400/80 hover:bg-white/10 text-transparent",
+          ? "bg-purple-600 border border-purple-400 text-white shadow-md shadow-purple-600/50 scale-105"
+          : "bg-white/[0.05] border border-white/25 hover:border-purple-400/80 hover:bg-white/10 text-transparent",
         className
       )}
     >
-      {checked ? <Check className="w-3 h-3 stroke-[3]" /> : <span className="w-3 h-3" />}
+      {checked ? <Check className="w-2.5 h-2.5 stroke-[3]" /> : <span className="w-2.5 h-2.5" />}
     </button>
+  );
+}
+
+/**
+ * Clean & Compact Multi-Phase Badge Component
+ * Prevents UI clutter/breakage when an asset is linked to multiple phases.
+ * Shows first 2 phases + "+N more" popover/dropdown badge.
+ * Includes inline quick-unlink (✕) button for each phase.
+ */
+function MultiPhaseBadges({
+  phases,
+  phaseIds,
+  phaseId,
+  onUnlinkPhase,
+  fallbackLabel = "General Project",
+}: {
+  phases: ProjectPhase[];
+  phaseIds?: number[];
+  phaseId?: number | null;
+  onUnlinkPhase?: (phaseId: number) => void;
+  fallbackLabel?: string;
+}) {
+  const targetPids: number[] = useMemo(() => {
+    if (phaseIds && phaseIds.length > 0) return phaseIds;
+    if (phaseId) return [phaseId];
+    return [];
+  }, [phaseIds, phaseId]);
+
+  if (targetPids.length === 0) {
+    return <span className="text-slate-500 text-[10px] italic">{fallbackLabel}</span>;
+  }
+
+  const linkedPhases = targetPids
+    .map((pId) => phases.find((p) => p.id === pId))
+    .filter((p): p is ProjectPhase => p !== undefined);
+
+  if (linkedPhases.length === 0) {
+    return <span className="text-slate-500 text-[10px] italic">{fallbackLabel}</span>;
+  }
+
+  const visiblePhases = linkedPhases.slice(0, 2);
+  const overflowPhases = linkedPhases.slice(2);
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      {visiblePhases.map((p) => (
+        <Badge
+          key={p.id}
+          variant="outline"
+          className="text-[9.5px] border-purple-500/40 text-purple-300 bg-purple-500/10 gap-1 font-mono py-0.5 px-1.5 shrink-0 group/pbadge hover:border-purple-400/70 transition-all max-w-[140px]"
+        >
+          <Layers className="w-2.5 h-2.5 text-purple-400 shrink-0" />
+          <span className="truncate">{p.title}</span>
+          {onUnlinkPhase && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onUnlinkPhase(p.id);
+              }}
+              className="ml-0.5 p-0.5 rounded hover:bg-purple-400/30 text-purple-400 hover:text-white transition-colors cursor-pointer"
+              title={`Unlink from ${p.title}`}
+            >
+              <X className="w-2.5 h-2.5" />
+            </button>
+          )}
+        </Badge>
+      ))}
+
+      {overflowPhases.length > 0 && (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            onClick={(e) => e.stopPropagation()}
+            className="text-[9.5px] font-mono border border-purple-500/30 text-purple-300 bg-purple-500/15 hover:bg-purple-500/25 px-1.5 py-0.5 rounded-full flex items-center gap-1 transition-colors cursor-pointer outline-none"
+            title="View all linked phases"
+          >
+            <span>+{overflowPhases.length} more</span>
+            <ChevronDown className="w-2.5 h-2.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            side="bottom"
+            sideOffset={6}
+            className="bg-[#12121c] border border-purple-500/30 rounded-2xl p-2 shadow-2xl backdrop-blur-xl min-w-[220px] max-w-xs space-y-1 font-mono text-xs z-[9999]"
+          >
+            <div className="text-[10px] text-slate-400 uppercase tracking-wider px-1 pb-1 border-b border-white/5 font-semibold">
+              All Linked Phases ({linkedPhases.length})
+            </div>
+            <div className="space-y-1 max-h-48 overflow-y-auto py-1">
+              {linkedPhases.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between p-1.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] text-slate-200 text-[11px]"
+                >
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <Layers className="w-3 h-3 text-purple-400 shrink-0" />
+                    <span className="truncate">{p.title}</span>
+                  </div>
+                  {onUnlinkPhase && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onUnlinkPhase(p.id);
+                      }}
+                      className="p-1 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors ml-1.5 shrink-0 cursor-pointer"
+                      title={`Unlink from ${p.title}`}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </div>
   );
 }
 
@@ -378,8 +513,12 @@ export function ProjectHub({
   const router = useRouter();
   const [project, setProject] = useState<Project>(initialProject);
   const [phases, setPhases] = useState<ProjectPhase[]>(initialPhases);
-  const [assetList, setAssetList] = useState<Asset[]>(initialAssets);
+  const [assetList, setAssetList] = useState<ProjectHubAsset[]>(initialAssets);
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    setAssetList(initialAssets);
+  }, [initialAssets]);
 
   // Active Tab state for programmatic switching
   const [activeTab, setActiveTab] = useState<string>("roadmap");
@@ -487,7 +626,18 @@ export function ProjectHub({
   const [deletingPhaseConfirm, setDeletingPhaseConfirm] = useState<ProjectPhase | null>(null);
   const [deletingAssetConfirm, setDeletingAssetConfirm] = useState<Asset | null>(null);
   const [deletingLinkConfirm, setDeletingLinkConfirm] = useState<Asset | null>(null);
+  const [detachingDocConfirm, setDetachingDocConfirm] = useState<Asset | null>(null);
+  const [detachingLinkConfirm, setDetachingLinkConfirm] = useState<Asset | null>(null);
   const [deletingProjectConfirm, setDeletingProjectConfirm] = useState<boolean>(false);
+
+  // ── Attach from Vault Modal States ─────────────────────────────────────────
+  const [isAttachDocModalOpen, setIsAttachDocModalOpen] = useState(false);
+  const [isAttachLinkModalOpen, setIsAttachLinkModalOpen] = useState(false);
+  const [selectedAttachAssetIds, setSelectedAttachAssetIds] = useState<number[]>([]);
+  const [attachTargetPhaseIds, setAttachTargetPhaseIds] = useState<number[]>([]);
+  const [searchAttachDocQuery, setSearchAttachDocQuery] = useState("");
+  const [searchAttachLinkQuery, setSearchAttachLinkQuery] = useState("");
+  const [isSubmittingAttach, setIsSubmittingAttach] = useState(false);
 
   // ── Project Edit / Settings Dialog ───────────────────────────────────────
   const coverInputRef = useRef<HTMLInputElement>(null);
@@ -737,7 +887,7 @@ export function ProjectHub({
   const [isUploadDocModalOpen, setIsUploadDocModalOpen] = useState(false);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadMode, setUploadMode] = useState<"local_only" | "auto_sync" | "drive_only">("local_only");
-  const [uploadPhaseId, setUploadPhaseId] = useState<number | null>(null);
+  const [uploadPhaseIds, setUploadPhaseIds] = useState<number[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isSubmittingUpload, setIsSubmittingUpload] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -753,16 +903,17 @@ export function ProjectHub({
   const [isEditDocModalOpen, setIsEditDocModalOpen] = useState(false);
   const [editDocForm, setEditDocForm] = useState({
     title: "",
-    phaseId: null as number | null,
+    phaseIds: [] as number[],
     docVersion: "v1.0",
     docStatus: "DRAFT",
     tags: "",
   });
 
   const openEditDocumentModal = (asset: Asset) => {
+    const pIds: number[] = (asset as any).phaseIds || (asset.phaseId ? [asset.phaseId] : []);
     setEditDocForm({
       title: asset.title,
-      phaseId: asset.phaseId || null,
+      phaseIds: pIds,
       docVersion: asset.docVersion || "v1.0",
       docStatus: asset.docStatus || "DRAFT",
       tags: asset.tags || "",
@@ -776,14 +927,18 @@ export function ProjectHub({
     if (!editingDoc || !editDocForm.title.trim()) return;
 
     startTransition(async () => {
-      await updateDriveAssetAction(editingDoc.id, {
-        title: editDocForm.title.trim(),
-        phaseId: editDocForm.phaseId,
-        docVersion: editDocForm.docVersion.trim() || null,
-        docStatus: editDocForm.docStatus.trim() || null,
-        tags: editDocForm.tags.trim(),
-        projectId: project.id,
-      });
+      await updateProjectAssetLinkAction(
+        (editingDoc as any).linkId,
+        editingDoc.id,
+        project.id,
+        {
+          title: editDocForm.title.trim(),
+          phaseIds: editDocForm.phaseIds,
+          docVersion: editDocForm.docVersion.trim() || undefined,
+          docStatus: editDocForm.docStatus.trim() || undefined,
+          tags: editDocForm.tags.trim(),
+        }
+      );
 
       setAssetList((prev) =>
         prev.map((a) =>
@@ -791,7 +946,8 @@ export function ProjectHub({
             ? {
                 ...a,
                 title: editDocForm.title.trim(),
-                phaseId: editDocForm.phaseId,
+                phaseIds: editDocForm.phaseIds,
+                phaseId: editDocForm.phaseIds[0] || null,
                 docVersion: editDocForm.docVersion.trim() || null,
                 docStatus: editDocForm.docStatus.trim() || null,
                 tags: editDocForm.tags.trim(),
@@ -830,10 +986,16 @@ export function ProjectHub({
     setIsPreviewOpen(true);
   };
 
-  const handleOpenUploadModal = (prefillPhaseId?: number | null) => {
+  const handleOpenUploadModal = (prefillPhaseIds?: number[] | number | null) => {
     setUploadFiles([]);
     setUploadMode("local_only");
-    setUploadPhaseId(prefillPhaseId ?? null);
+    if (Array.isArray(prefillPhaseIds)) {
+      setUploadPhaseIds(prefillPhaseIds);
+    } else if (typeof prefillPhaseIds === "number") {
+      setUploadPhaseIds([prefillPhaseIds]);
+    } else {
+      setUploadPhaseIds([]);
+    }
     setUploadError("");
     setIsUploadDocModalOpen(true);
   };
@@ -868,7 +1030,7 @@ export function ProjectHub({
     localUpload.clearCompleted();
 
     const queuedItems: any[] = [];
-    const createdAssets: Asset[] = [];
+    const createdAssets: ProjectHubAsset[] = [];
 
     try {
       for (let index = 0; index < filesToUpload.length; index++) {
@@ -885,12 +1047,20 @@ export function ProjectHub({
               sizeBytes: file.size,
               syncStatus: "CLOUD_ONLY",
               projectId: project.id,
-              phaseId: uploadPhaseId || null,
+              phaseId: uploadPhaseIds[0] || null,
               docVersion: "v1.0",
               docStatus: "DRAFT",
             });
 
-            const assetObj: Asset = {
+            if (uploadPhaseIds.length > 0) {
+              await attachExistingAssetsAction({
+                projectId: project.id,
+                assetIds: [created.id],
+                phaseIds: uploadPhaseIds,
+              });
+            }
+
+            const assetObj: ProjectHubAsset = {
               id: created.id || Date.now() + index,
               title: file.name,
               type: category,
@@ -901,11 +1071,12 @@ export function ProjectHub({
               syncStatus: "CLOUD_ONLY",
               gdriveId: null,
               projectId: project.id,
-              phaseId: uploadPhaseId || null,
+              phaseId: uploadPhaseIds[0] || null,
+              phaseIds: uploadPhaseIds,
               docVersion: "v1.0",
               docStatus: "DRAFT",
               createdAt: new Date(),
-            } as any;
+            };
             createdAssets.push(assetObj);
 
             queuedItems.push({
@@ -974,12 +1145,20 @@ export function ProjectHub({
             sizeBytes: fileData.size || file.size,
             syncStatus: "LOCAL_UNSYNCED",
             projectId: project.id,
-            phaseId: uploadPhaseId || null,
+            phaseId: uploadPhaseIds[0] || null,
             docVersion: "v1.0",
             docStatus: "DRAFT",
           });
 
-          const assetObj: Asset = {
+          if (uploadPhaseIds.length > 0) {
+            await attachExistingAssetsAction({
+              projectId: project.id,
+              assetIds: [created.id],
+              phaseIds: uploadPhaseIds,
+            });
+          }
+
+          const assetObj: ProjectHubAsset = {
             id: created.id || Date.now() + index,
             title: file.name,
             type: category,
@@ -990,11 +1169,12 @@ export function ProjectHub({
             syncStatus: "LOCAL_UNSYNCED",
             gdriveId: null,
             projectId: project.id,
-            phaseId: uploadPhaseId || null,
+            phaseId: uploadPhaseIds[0] || null,
+            phaseIds: uploadPhaseIds,
             docVersion: "v1.0",
             docStatus: "DRAFT",
             createdAt: new Date(),
-          } as any;
+          };
           createdAssets.push(assetObj);
 
           if (uploadMode === "auto_sync") {
@@ -1103,8 +1283,9 @@ export function ProjectHub({
       if (docFilter === "unsynced" && isSynced) return false;
 
       if (docPhaseFilter !== "all") {
-        if (docPhaseFilter === "none" && asset.phaseId) return false;
-        if (docPhaseFilter !== "none" && asset.phaseId?.toString() !== docPhaseFilter) return false;
+        const pIds: number[] = (asset as any).phaseIds || (asset.phaseId ? [asset.phaseId] : []);
+        if (docPhaseFilter === "none" && pIds.length > 0) return false;
+        if (docPhaseFilter !== "none" && !pIds.includes(parseInt(docPhaseFilter, 10))) return false;
       }
 
       return true;
@@ -1138,7 +1319,7 @@ export function ProjectHub({
     url: "",
     thumbnailUrl: "",
     tags: "",
-    phaseId: null as number | null,
+    phaseIds: [] as number[],
   });
 
   const openAddLinkModal = (prefillPhaseId?: number | null) => {
@@ -1147,19 +1328,20 @@ export function ProjectHub({
       url: "",
       thumbnailUrl: "",
       tags: "",
-      phaseId: prefillPhaseId ?? null,
+      phaseIds: prefillPhaseId ? [prefillPhaseId] : [],
     });
     setEditingLink(null);
     setIsLinkDialogOpen(true);
   };
 
   const openEditLinkModal = (asset: Asset) => {
+    const pIds: number[] = (asset as any).phaseIds || (asset.phaseId ? [asset.phaseId] : []);
     setLinkForm({
       title: asset.title,
       url: asset.urlOrPath,
       thumbnailUrl: asset.thumbnailUrl || "",
       tags: asset.tags || "",
-      phaseId: asset.phaseId || null,
+      phaseIds: pIds,
     });
     setEditingLink(asset);
     setIsLinkDialogOpen(true);
@@ -1177,8 +1359,19 @@ export function ProjectHub({
           thumbnailUrl: linkForm.thumbnailUrl.trim() || undefined,
           tags: linkForm.tags.trim(),
           projectId: project.id,
-          phaseId: linkForm.phaseId,
+          phaseId: linkForm.phaseIds[0] || null,
         });
+
+        await updateProjectAssetLinkAction(
+          (editingLink as any).linkId,
+          editingLink.id,
+          project.id,
+          {
+            title: linkForm.title.trim(),
+            phaseIds: linkForm.phaseIds,
+            tags: linkForm.tags.trim(),
+          }
+        );
 
         setAssetList((prev) =>
           prev.map((a) =>
@@ -1189,7 +1382,8 @@ export function ProjectHub({
                   urlOrPath: linkForm.url.trim(),
                   thumbnailUrl: res.thumbnailUrl || linkForm.thumbnailUrl.trim() || a.thumbnailUrl,
                   tags: linkForm.tags.trim(),
-                  phaseId: linkForm.phaseId,
+                  phaseIds: linkForm.phaseIds,
+                  phaseId: linkForm.phaseIds[0] || null,
                 }
               : a
           )
@@ -1201,8 +1395,16 @@ export function ProjectHub({
           thumbnailUrl: linkForm.thumbnailUrl.trim() || undefined,
           tags: linkForm.tags.trim(),
           projectId: project.id,
-          phaseId: linkForm.phaseId,
+          phaseId: linkForm.phaseIds[0] || null,
         });
+
+        if (linkForm.phaseIds.length > 0) {
+          await attachExistingAssetsAction({
+            projectId: project.id,
+            assetIds: [(res as any).id],
+            phaseIds: linkForm.phaseIds,
+          });
+        }
 
         const newLinkObj: Asset = {
           id: (res as any).id || Date.now(),
@@ -1215,7 +1417,8 @@ export function ProjectHub({
           syncStatus: "LOCAL_UNSYNCED",
           gdriveId: null,
           projectId: project.id,
-          phaseId: linkForm.phaseId,
+          phaseId: linkForm.phaseIds[0] || null,
+          phaseIds: linkForm.phaseIds,
           docVersion: null,
           docStatus: null,
           createdAt: new Date(),
@@ -1232,10 +1435,152 @@ export function ProjectHub({
     const id = deletingLinkConfirm.id;
     setAssetList((prev) => prev.filter((a) => a.id !== id));
     startTransition(async () => {
-      await deleteAssetAction(id);
+      await deleteProjectAssetAction(id, project.id);
       setDeletingLinkConfirm(null);
     });
   };
+
+  const handleDetachDocConfirmed = () => {
+    if (!detachingDocConfirm) return;
+    const doc = detachingDocConfirm;
+    setAssetList((prev) => prev.filter((a) => a.id !== doc.id));
+    setSelectedDocIds((prev) => prev.filter((i) => i !== doc.id));
+    startTransition(async () => {
+      await detachAssetFromProjectAction({
+        projectId: project.id,
+        assetId: doc.id,
+        linkId: (doc as any).linkId,
+      });
+      setDetachingDocConfirm(null);
+    });
+  };
+
+  const handleDetachLinkConfirmed = () => {
+    if (!detachingLinkConfirm) return;
+    const link = detachingLinkConfirm;
+    setAssetList((prev) => prev.filter((a) => a.id !== link.id));
+    startTransition(async () => {
+      await detachAssetFromProjectAction({
+        projectId: project.id,
+        assetId: link.id,
+        linkId: (link as any).linkId,
+      });
+      setDetachingLinkConfirm(null);
+    });
+  };
+
+  const handleUnlinkSpecificPhase = (asset: Asset, targetPhaseId: number) => {
+    setAssetList((prev) =>
+      prev.map((a) => {
+        if (a.id !== asset.id) return a;
+        const currentPids: number[] = (a as any).phaseIds || (a.phaseId ? [a.phaseId] : []);
+        const nextPids = currentPids.filter((p) => p !== targetPhaseId);
+        return {
+          ...a,
+          phaseIds: nextPids,
+          phaseId: nextPids[0] || null,
+        };
+      })
+    );
+
+    startTransition(async () => {
+      await detachAssetFromProjectAction({
+        projectId: project.id,
+        assetId: asset.id,
+        phaseId: targetPhaseId,
+      });
+      router.refresh();
+    });
+  };
+
+  const handleAttachSubmit = async (isLinkType = false) => {
+    if (selectedAttachAssetIds.length === 0) return;
+    setIsSubmittingAttach(true);
+
+    const attachedIds = [...selectedAttachAssetIds];
+    const targetPhases = [...attachTargetPhaseIds];
+
+    // Optimistic local state update so it appears instantly without reload
+    setAssetList((prev) => {
+      let nextList = [...prev];
+      for (const id of attachedIds) {
+        const existingIdx = nextList.findIndex((a) => a.id === id);
+        if (existingIdx >= 0) {
+          const item = nextList[existingIdx];
+          const existingPids: number[] = (item as any).phaseIds || (item.phaseId ? [item.phaseId] : []);
+          const combinedPids = Array.from(new Set([...existingPids, ...targetPhases]));
+          nextList[existingIdx] = {
+            ...item,
+            phaseIds: combinedPids,
+            phaseId: combinedPids[0] || null,
+          };
+        } else {
+          const vaultAsset = allAssets.find((a) => a.id === id);
+          if (vaultAsset) {
+            nextList.unshift({
+              ...vaultAsset,
+              projectId: project.id,
+              phaseIds: targetPhases,
+              phaseId: targetPhases[0] || null,
+              docVersion: (vaultAsset as any).docVersion || "v1.0",
+              docStatus: (vaultAsset as any).docStatus || "DRAFT",
+            });
+          }
+        }
+      }
+      return nextList;
+    });
+
+    try {
+      await attachExistingAssetsAction({
+        projectId: project.id,
+        assetIds: attachedIds,
+        phaseIds: targetPhases,
+      });
+      router.refresh();
+      if (isLinkType) {
+        setIsAttachLinkModalOpen(false);
+      } else {
+        setIsAttachDocModalOpen(false);
+      }
+      setSelectedAttachAssetIds([]);
+    } catch (err: any) {
+      console.error("Attach error:", err);
+    } finally {
+      setIsSubmittingAttach(false);
+    }
+  };
+
+  // Available Vault Documents for Attaching (Excludes links)
+  const availableVaultDocs = useMemo(() => {
+    return (allAssets || []).filter((asset) => {
+      if (asset.type === "link") return false;
+      if (searchAttachDocQuery) {
+        const q = searchAttachDocQuery.toLowerCase();
+        const match =
+          asset.title.toLowerCase().includes(q) ||
+          (asset.tags && asset.tags.toLowerCase().includes(q));
+        if (!match) return false;
+      }
+      return true;
+    });
+  }, [allAssets, searchAttachDocQuery]);
+
+  // Available Vault Links for Attaching
+  const availableVaultLinks = useMemo(() => {
+    return (allAssets || []).filter((asset) => {
+      if (asset.type !== "link") return false;
+      if (searchAttachLinkQuery) {
+        const q = searchAttachLinkQuery.toLowerCase();
+        const match =
+          asset.title.toLowerCase().includes(q) ||
+          asset.urlOrPath.toLowerCase().includes(q) ||
+          (asset.tags && asset.tags.toLowerCase().includes(q));
+        if (!match) return false;
+      }
+      return true;
+    });
+  }, [allAssets, searchAttachLinkQuery]);
 
   // Filtered Project Links
   const filteredLinks = useMemo(() => {
@@ -1249,8 +1594,9 @@ export function ProjectHub({
       if (!matchSearch) return false;
 
       if (linkPhaseFilter !== "all") {
-        if (linkPhaseFilter === "none" && link.phaseId) return false;
-        if (linkPhaseFilter !== "none" && link.phaseId?.toString() !== linkPhaseFilter) return false;
+        const pIds: number[] = (link as any).phaseIds || (link.phaseId ? [link.phaseId] : []);
+        if (linkPhaseFilter === "none" && pIds.length > 0) return false;
+        if (linkPhaseFilter !== "none" && !pIds.includes(parseInt(linkPhaseFilter, 10))) return false;
       }
 
       return true;
@@ -1409,8 +1755,8 @@ export function ProjectHub({
               const isExpanded = expandedPhaseIds.includes(phase.id);
               const isHighlighted = highlightedPhaseId === phase.id;
               const phaseTasks = initialTasks.filter((t) => t.phaseId === phase.id);
-              const phaseDocs = documentList.filter((d) => d.phaseId === phase.id);
-              const phaseLinks = linkList.filter((l) => l.phaseId === phase.id);
+              const phaseDocs = documentList.filter((d) => (d as any).phaseIds?.includes(phase.id) || d.phaseId === phase.id);
+              const phaseLinks = linkList.filter((l) => (l as any).phaseIds?.includes(phase.id) || l.phaseId === phase.id);
 
               return (
                 <div
@@ -1548,15 +1894,26 @@ export function ProjectHub({
                                 <CheckSquare className="w-3.5 h-3.5 text-indigo-400" />
                                 <span>Tasks ({phaseTasks.length})</span>
                               </div>
-                              <button
-                                onClick={() => {
-                                  setActiveTab("kanban");
-                                }}
-                                className="text-[10px] text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
-                              >
-                                <span>View in Kanban</span>
-                                <ExternalLink className="w-2.5 h-2.5" />
-                              </button>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    setActiveTab("kanban");
+                                  }}
+                                  className="text-[10px] text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Plus className="w-2.5 h-2.5" />
+                                  <span>Task</span>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setActiveTab("kanban");
+                                  }}
+                                  className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                                >
+                                  <span>Kanban</span>
+                                  <ExternalLink className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
                             </div>
 
                             {phaseTasks.length === 0 ? (
@@ -1602,6 +1959,18 @@ export function ProjectHub({
                               </div>
                               <div className="flex items-center gap-2">
                                 <button
+                                  onClick={() => {
+                                    setSelectedAttachAssetIds([]);
+                                    setAttachTargetPhaseIds([phase.id]);
+                                    setSearchAttachDocQuery("");
+                                    setIsAttachDocModalOpen(true);
+                                  }}
+                                  className="text-[10px] text-purple-400 hover:underline flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Bookmark className="w-2.5 h-2.5" />
+                                  <span>Attach</span>
+                                </button>
+                                <button
                                   onClick={() => handleOpenUploadModal(phase.id)}
                                   className="text-[10px] text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
                                 >
@@ -1615,7 +1984,7 @@ export function ProjectHub({
                                   }}
                                   className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
                                 >
-                                  <span>Filter Tab</span>
+                                  <span>Filter</span>
                                   <ExternalLink className="w-2.5 h-2.5" />
                                 </button>
                               </div>
@@ -1633,13 +2002,26 @@ export function ProjectHub({
                                     <div
                                       key={doc.id}
                                       onClick={() => openAssetPreview(doc)}
-                                      className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 cursor-pointer transition-colors"
+                                      className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 cursor-pointer transition-colors group/pdoc"
                                     >
                                       <div className="flex items-center gap-2 min-w-0 flex-1">
                                         <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                                         <span className="truncate text-white text-[11px]">{doc.title}</span>
                                       </div>
-                                      <span className="text-[10px] text-slate-500 shrink-0">{formatBytes(doc.sizeBytes)}</span>
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                        <span className="text-[10px] text-slate-500">{formatBytes(doc.sizeBytes)}</span>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleUnlinkSpecificPhase(doc, phase.id);
+                                          }}
+                                          className="p-1 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors opacity-0 group-hover/pdoc:opacity-100 cursor-pointer"
+                                          title={`Unlink from ${phase.title}`}
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      </div>
                                     </div>
                                   );
                                 })}
@@ -1656,6 +2038,18 @@ export function ProjectHub({
                               </div>
                               <div className="flex items-center gap-2">
                                 <button
+                                  onClick={() => {
+                                    setSelectedAttachAssetIds([]);
+                                    setAttachTargetPhaseIds([phase.id]);
+                                    setSearchAttachLinkQuery("");
+                                    setIsAttachLinkModalOpen(true);
+                                  }}
+                                  className="text-[10px] text-purple-400 hover:underline flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Bookmark className="w-2.5 h-2.5" />
+                                  <span>Attach</span>
+                                </button>
+                                <button
                                   onClick={() => openAddLinkModal(phase.id)}
                                   className="text-[10px] text-pink-400 hover:underline flex items-center gap-1 cursor-pointer"
                                 >
@@ -1669,7 +2063,7 @@ export function ProjectHub({
                                   }}
                                   className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
                                 >
-                                  <span>Filter Tab</span>
+                                  <span>Filter</span>
                                   <ExternalLink className="w-2.5 h-2.5" />
                                 </button>
                               </div>
@@ -1682,21 +2076,43 @@ export function ProjectHub({
                             ) : (
                               <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                                 {phaseLinks.map((link) => {
-                                  const domain = getDomainFromUrl(link.urlOrPath);
                                   return (
-                                    <a
+                                    <div
                                       key={link.id}
-                                      href={link.urlOrPath}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 transition-colors"
+                                      className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 transition-colors group/plink"
                                     >
-                                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                                      <a
+                                        href={link.urlOrPath}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-2 min-w-0 flex-1 hover:text-indigo-300 transition-colors"
+                                      >
                                         <Globe className="w-3.5 h-3.5 text-pink-400 shrink-0" />
                                         <span className="truncate text-white text-[11px] font-medium">{link.title}</span>
+                                      </a>
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            handleUnlinkSpecificPhase(link, phase.id);
+                                          }}
+                                          className="p-1 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors opacity-0 group-hover/plink:opacity-100 cursor-pointer"
+                                          title={`Unlink from ${phase.title}`}
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                        <a
+                                          href={link.urlOrPath}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="p-1 text-slate-500 hover:text-white transition-colors"
+                                        >
+                                          <ExternalLink className="w-3 h-3" />
+                                        </a>
                                       </div>
-                                      <ExternalLink className="w-3 h-3 text-slate-500 shrink-0" />
-                                    </a>
+                                    </div>
                                   );
                                 })}
                               </div>
@@ -1827,15 +2243,32 @@ export function ProjectHub({
                 <span>Unsynced ({unsyncedCount})</span>
               </button>
 
-              {/* Upload Button */}
-              <Button
-                size="sm"
-                onClick={() => handleOpenUploadModal()}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 px-4 gap-2 shadow-lg shadow-indigo-600/30 cursor-pointer ml-auto md:ml-2"
-              >
-                <UploadCloud className="w-4 h-4" />
-                Upload File
-              </Button>
+              {/* Attach from Vault & Upload Buttons */}
+              <div className="flex items-center gap-2 ml-auto md:ml-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setSelectedAttachAssetIds([]);
+                    setAttachTargetPhaseIds(docPhaseFilter !== "all" && docPhaseFilter !== "none" ? [parseInt(docPhaseFilter, 10)] : []);
+                    setSearchAttachDocQuery("");
+                    setIsAttachDocModalOpen(true);
+                  }}
+                  className="bg-white/5 border-white/10 hover:bg-white/10 text-slate-200 font-mono text-xs rounded-2xl h-11 px-3.5 gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <FolderOpen className="w-4 h-4 text-purple-400" />
+                  <span>Attach from Vault</span>
+                </Button>
+
+                <Button
+                  size="sm"
+                  onClick={() => handleOpenUploadModal(docPhaseFilter !== "all" && docPhaseFilter !== "none" ? parseInt(docPhaseFilter, 10) : null)}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 px-4 gap-2 shadow-lg shadow-indigo-600/30 cursor-pointer"
+                >
+                  <UploadCloud className="w-4 h-4" />
+                  <span>Upload File</span>
+                </Button>
+              </div>
             </div>
           </div>
 
@@ -1975,17 +2408,13 @@ export function ProjectHub({
                             </div>
                           </td>
                           <td className="p-3">
-                            {phaseObj ? (
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] border-purple-500/40 text-purple-300 bg-purple-500/10 gap-1 font-mono"
-                              >
-                                <Layers className="w-2.5 h-2.5 text-purple-400" />
-                                <span className="truncate max-w-[140px]">{phaseObj.title}</span>
-                              </Badge>
-                            ) : (
-                              <span className="text-slate-500 text-[10px] italic">General Doc</span>
-                            )}
+                            <MultiPhaseBadges
+                              phases={phases}
+                              phaseIds={(asset as any).phaseIds}
+                              phaseId={asset.phaseId}
+                              fallbackLabel="General Doc"
+                              onUnlinkPhase={(phaseId) => handleUnlinkSpecificPhase(asset, phaseId)}
+                            />
                           </td>
                           <td className="p-3">
                             <div className="flex items-center gap-1.5 flex-wrap">
@@ -2091,9 +2520,17 @@ export function ProjectHub({
                               )}
                               <button
                                 type="button"
+                                onClick={() => setDetachingDocConfirm(asset)}
+                                className="p-1.5 rounded-xl bg-white/5 hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 transition-colors cursor-pointer"
+                                title="Detach from Project (keep in Vault)"
+                              >
+                                <Link2Off className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => setDeletingAssetConfirm(asset)}
                                 className="p-1.5 rounded-xl bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
-                                title="Delete Document"
+                                title="Delete Permanently"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -2170,15 +2607,32 @@ export function ProjectHub({
               </Select>
             )}
 
-            {/* Register Link Button */}
-            <Button
-              size="sm"
-              onClick={() => openAddLinkModal()}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 px-4 gap-2 shadow-lg shadow-indigo-600/30 cursor-pointer ml-auto md:ml-2"
-            >
-              <Plus className="w-4 h-4" />
-              Register Link
-            </Button>
+            {/* Attach from Vault & Register Link Buttons */}
+            <div className="flex items-center gap-2 ml-auto md:ml-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setSelectedAttachAssetIds([]);
+                  setAttachTargetPhaseIds(linkPhaseFilter !== "all" && linkPhaseFilter !== "none" ? [parseInt(linkPhaseFilter, 10)] : []);
+                  setSearchAttachLinkQuery("");
+                  setIsAttachLinkModalOpen(true);
+                }}
+                className="bg-white/5 border-white/10 hover:bg-white/10 text-slate-200 font-mono text-xs rounded-2xl h-11 px-3.5 gap-1.5 cursor-pointer shadow-sm"
+              >
+                <Bookmark className="w-4 h-4 text-purple-400" />
+                <span>Attach from Vault</span>
+              </Button>
+
+              <Button
+                size="sm"
+                onClick={() => openAddLinkModal(linkPhaseFilter !== "all" && linkPhaseFilter !== "none" ? parseInt(linkPhaseFilter, 10) : null)}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 px-4 gap-2 shadow-lg shadow-indigo-600/30 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Register Link</span>
+              </Button>
+            </div>
           </div>
 
           {/* Asset Vault Card Grid */}
@@ -2191,17 +2645,33 @@ export function ProjectHub({
               <p className="text-slate-600 text-xs mt-1 font-mono">
                 {searchLinkQuery
                   ? `No links match "${searchLinkQuery}".`
-                  : "Save references to Figma designs, GitHub PRs, Miro boards, and external specifications."}
+                  : "Attach existing bookmarks from your Vault or register new references to Figma, GitHub, and specifications."}
               </p>
               {!searchLinkQuery && (
-                <Button
-                  size="sm"
-                  onClick={() => openAddLinkModal()}
-                  className="mt-4 bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-10 px-5 gap-2 shadow-lg shadow-indigo-600/30 cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  Register Link
-                </Button>
+                <div className="flex items-center justify-center gap-2.5 mt-4">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setSelectedAttachAssetIds([]);
+                      setAttachTargetPhaseIds([]);
+                      setSearchAttachLinkQuery("");
+                      setIsAttachLinkModalOpen(true);
+                    }}
+                    className="bg-white/5 border-white/10 hover:bg-white/10 text-slate-200 font-mono text-xs rounded-2xl h-10 px-4 gap-1.5 cursor-pointer"
+                  >
+                    <Bookmark className="w-4 h-4 text-purple-400" />
+                    <span>Attach from Vault</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => openAddLinkModal()}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-10 px-4 gap-2 shadow-lg shadow-indigo-600/30 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Register Link</span>
+                  </Button>
+                </div>
               )}
             </div>
           ) : (
@@ -2260,15 +2730,16 @@ export function ProjectHub({
                         {link.urlOrPath}
                       </div>
 
-                      {/* Phase Badge if Linked */}
-                      {phaseObj && (
-                        <div className="mb-2.5">
-                          <Badge variant="outline" className="border-purple-500/40 text-purple-300 bg-purple-500/10 text-[9px] font-mono flex items-center gap-1 w-fit">
-                            <Layers className="w-2.5 h-2.5 text-purple-400" />
-                            <span>{phaseObj.title}</span>
-                          </Badge>
-                        </div>
-                      )}
+                      {/* Phase Badges if Linked */}
+                      <div className="mb-2.5">
+                        <MultiPhaseBadges
+                          phases={phases}
+                          phaseIds={(link as any).phaseIds}
+                          phaseId={link.phaseId}
+                          fallbackLabel="General Link"
+                          onUnlinkPhase={(phaseId) => handleUnlinkSpecificPhase(link, phaseId)}
+                        />
+                      </div>
 
                       {/* Tags */}
                       {tagList.length > 0 && (
@@ -2308,9 +2779,17 @@ export function ProjectHub({
                         </button>
                         <button
                           type="button"
+                          onClick={() => setDetachingLinkConfirm(link)}
+                          className="p-1.5 rounded-xl hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 transition-colors cursor-pointer"
+                          title="Detach from Project (keep in Vault)"
+                        >
+                          <Link2Off className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => setDeletingLinkConfirm(link)}
                           className="p-1.5 rounded-xl hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
-                          title="Delete Link"
+                          title="Delete Permanently"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -2354,37 +2833,66 @@ export function ProjectHub({
                 />
               </div>
 
-              {/* Link to Phase */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300 flex items-center gap-1.5">
-                  <Layers className="w-3.5 h-3.5 text-purple-400" />
-                  <span>Assign to Project Phase</span>
-                </label>
-                <Select
-                  value={editDocForm.phaseId ? String(editDocForm.phaseId) : "none"}
-                  onValueChange={(val: any) =>
-                    setEditDocForm((f) => ({ ...f, phaseId: !val || val === "none" ? null : parseInt(val, 10) }))
-                  }
-                >
-                  <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono focus:border-indigo-500">
-                    <span className="truncate">
-                      {editDocForm.phaseId
-                        ? phases.find((p) => p.id === editDocForm.phaseId)?.title || "Selected Phase"
-                        : "None (General Project Doc)"}
-                    </span>
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#14141e] border-white/15 text-slate-100 rounded-2xl p-1.5 min-w-[220px] font-mono">
-                    <SelectItem value="none" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer hover:bg-white/10">
-                      None (General Project Doc)
-                    </SelectItem>
-                    {phases.map((p) => (
-                      <SelectItem key={p.id} value={p.id.toString()} className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer hover:bg-white/10">
-                        {p.title}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* Assign to Phases (Multi-select) */}
+              {phases.length > 0 && (
+                <div className="space-y-2">
+                  <label className="text-xs font-mono text-slate-300 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Linked Phases ({editDocForm.phaseIds.length})</span>
+                    </div>
+                    {editDocForm.phaseIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setEditDocForm((f) => ({ ...f, phaseIds: [] }))}
+                        className="text-[10px] text-slate-500 hover:text-slate-300 cursor-pointer"
+                      >
+                        Clear (General Doc)
+                      </button>
+                    )}
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-2 rounded-2xl bg-white/[0.02] border border-white/10 max-h-32 overflow-y-auto">
+                    {phases.map((p) => {
+                      const isChecked = editDocForm.phaseIds.includes(p.id);
+                      return (
+                        <div
+                          key={p.id}
+                          onClick={() => {
+                            setEditDocForm((f) => ({
+                              ...f,
+                              phaseIds: isChecked
+                                ? f.phaseIds.filter((id) => id !== p.id)
+                                : [...f.phaseIds, p.id],
+                            }));
+                          }}
+                          className={cn(
+                            "flex items-center gap-2 p-2 rounded-xl border text-xs font-mono cursor-pointer transition-all select-none",
+                            isChecked
+                              ? "bg-purple-950/40 border-purple-500/60 text-white"
+                              : "bg-white/[0.02] border-white/5 text-slate-400 hover:text-slate-200"
+                          )}
+                        >
+                          <CustomCheckbox
+                            checked={isChecked}
+                            onChange={() => {
+                              setEditDocForm((f) => ({
+                                ...f,
+                                phaseIds: isChecked
+                                  ? f.phaseIds.filter((id) => id !== p.id)
+                                  : [...f.phaseIds, p.id],
+                              }));
+                            }}
+                          />
+                          <span className="truncate">{p.title}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {editDocForm.phaseIds.length === 0 && (
+                    <p className="text-[10px] text-slate-500 italic">No phases selected. Available as General Project Document.</p>
+                  )}
+                </div>
+              )}
 
               {/* Version & Status */}
               <div className="grid grid-cols-2 gap-3">
@@ -2517,37 +3025,64 @@ export function ProjectHub({
                 />
               </div>
 
-              {/* Link to Phase Selector */}
+              {/* Assign to Phases (Multi-select) */}
               {phases.length > 0 && (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-mono text-slate-300 flex items-center gap-1.5">
-                    <Layers className="w-3.5 h-3.5 text-purple-400" />
-                    <span>Link to Project Phase (Optional)</span>
+                <div className="space-y-2">
+                  <label className="text-xs font-mono text-slate-300 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Linked Phases ({linkForm.phaseIds.length})</span>
+                    </div>
+                    {linkForm.phaseIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setLinkForm((f) => ({ ...f, phaseIds: [] }))}
+                        className="text-[10px] text-slate-500 hover:text-slate-300 cursor-pointer"
+                      >
+                        Clear (General Link)
+                      </button>
+                    )}
                   </label>
-                  <Select
-                    value={linkForm.phaseId ? String(linkForm.phaseId) : "none"}
-                    onValueChange={(val: any) =>
-                      setLinkForm((f) => ({ ...f, phaseId: !val || val === "none" ? null : parseInt(val, 10) }))
-                    }
-                  >
-                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono focus:border-indigo-500">
-                      <span className="truncate">
-                        {linkForm.phaseId
-                          ? phases.find((p) => p.id === linkForm.phaseId)?.title || "Selected Phase"
-                          : "None (General Project Link)"}
-                      </span>
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-100 rounded-2xl p-1.5 min-w-[220px] font-mono">
-                      <SelectItem value="none" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer hover:bg-white/10">
-                        None (General Project Link)
-                      </SelectItem>
-                      {phases.map((p) => (
-                        <SelectItem key={p.id} value={p.id.toString()} className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer hover:bg-white/10">
-                          {p.title}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-2 rounded-2xl bg-white/[0.02] border border-white/10 max-h-32 overflow-y-auto">
+                    {phases.map((p) => {
+                      const isChecked = linkForm.phaseIds.includes(p.id);
+                      return (
+                        <div
+                          key={p.id}
+                          onClick={() => {
+                            setLinkForm((f) => ({
+                              ...f,
+                              phaseIds: isChecked
+                                ? f.phaseIds.filter((id) => id !== p.id)
+                                : [...f.phaseIds, p.id],
+                            }));
+                          }}
+                          className={cn(
+                            "flex items-center gap-2 p-2 rounded-xl border text-xs font-mono cursor-pointer transition-all select-none",
+                            isChecked
+                              ? "bg-purple-950/40 border-purple-500/60 text-white"
+                              : "bg-white/[0.02] border-white/5 text-slate-400 hover:text-slate-200"
+                          )}
+                        >
+                          <CustomCheckbox
+                            checked={isChecked}
+                            onChange={() => {
+                              setLinkForm((f) => ({
+                                ...f,
+                                phaseIds: isChecked
+                                  ? f.phaseIds.filter((id) => id !== p.id)
+                                  : [...f.phaseIds, p.id],
+                              }));
+                            }}
+                          />
+                          <span className="truncate">{p.title}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {linkForm.phaseIds.length === 0 && (
+                    <p className="text-[10px] text-slate-500 italic">No phases selected. Available as General Project Link.</p>
+                  )}
                 </div>
               )}
             </div>
@@ -2644,13 +3179,13 @@ export function ProjectHub({
                   <span>PROJECT ICON / LOGO</span>
                 </label>
                 {/* Icon Mode Tabs */}
-                <div className="flex items-center gap-1 p-0.5 bg-white/[0.04] border border-white/10 rounded-xl">
+                <div className="flex items-center gap-1.5 p-1 bg-white/[0.03] border border-white/10 rounded-xl w-fit">
                   <button
                     type="button"
                     onClick={() => setEditIconMode("presets")}
-                    className={`px-2.5 py-0.5 text-[11px] font-mono rounded-lg transition-colors cursor-pointer ${
+                    className={`px-3 py-1 text-xs font-mono rounded-lg transition-colors cursor-pointer ${
                       editIconMode === "presets"
-                        ? "bg-indigo-600 text-white font-bold"
+                        ? "bg-indigo-600 text-white font-bold shadow-sm"
                         : "text-slate-400 hover:text-white"
                     }`}
                   >
@@ -2659,21 +3194,21 @@ export function ProjectHub({
                   <button
                     type="button"
                     onClick={() => setEditIconMode("upload")}
-                    className={`px-2.5 py-0.5 text-[11px] font-mono rounded-lg transition-colors cursor-pointer flex items-center gap-1 ${
+                    className={`px-3 py-1 text-xs font-mono rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
                       editIconMode === "upload"
-                        ? "bg-indigo-600 text-white font-bold"
+                        ? "bg-indigo-600 text-white font-bold shadow-sm"
                         : "text-slate-400 hover:text-white"
                     }`}
                   >
-                    <UploadCloud className="w-3 h-3" />
-                    Upload Logo
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    <span>Upload Logo</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setEditIconMode("drive")}
-                    className={`px-2.5 py-0.5 text-[11px] font-mono rounded-lg transition-colors cursor-pointer ${
+                    className={`px-3 py-1 text-xs font-mono rounded-lg transition-colors cursor-pointer ${
                       editIconMode === "drive"
-                        ? "bg-indigo-600 text-white font-bold"
+                        ? "bg-indigo-600 text-white font-bold shadow-sm"
                         : "text-slate-400 hover:text-white"
                     }`}
                   >
@@ -2819,9 +3354,9 @@ export function ProjectHub({
                 <button
                   type="button"
                   onClick={() => setEditCoverSourceTab("drive")}
-                  className={`py-1.5 rounded-xl transition-all font-bold cursor-pointer ${
+                  className={`px-3 py-1 text-xs font-mono rounded-lg transition-colors cursor-pointer ${
                     editCoverSourceTab === "drive"
-                      ? "bg-indigo-600 text-white shadow-lg"
+                      ? "bg-indigo-600 text-white font-bold shadow-sm"
                       : "text-slate-400 hover:text-white"
                   }`}
                 >
@@ -2830,9 +3365,9 @@ export function ProjectHub({
                 <button
                   type="button"
                   onClick={() => setEditCoverSourceTab("url")}
-                  className={`py-1.5 rounded-xl transition-all font-bold cursor-pointer ${
+                  className={`px-3 py-1 text-xs font-mono rounded-lg transition-colors cursor-pointer ${
                     editCoverSourceTab === "url"
-                      ? "bg-indigo-600 text-white shadow-lg"
+                      ? "bg-indigo-600 text-white font-bold shadow-sm"
                       : "text-slate-400 hover:text-white"
                   }`}
                 >
@@ -3477,33 +4012,62 @@ export function ProjectHub({
                 </div>
               </div>
 
-              {/* Optional Phase Link */}
+              {/* Assign to Phases (Multi-select) */}
               {phases.length > 0 && (
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-300 uppercase flex items-center gap-1.5">
-                    <Layers className="w-3.5 h-3.5 text-purple-400" />
-                    <span>Link to Project Phase (Optional)</span>
+                <div className="space-y-2">
+                  <label className="text-xs font-mono text-slate-300 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Linked Phases ({uploadPhaseIds.length})</span>
+                    </div>
+                    {uploadPhaseIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setUploadPhaseIds([])}
+                        className="text-[10px] text-slate-500 hover:text-slate-300 cursor-pointer"
+                      >
+                        Clear (General Doc)
+                      </button>
+                    )}
                   </label>
-                  <Select
-                    value={uploadPhaseId ? String(uploadPhaseId) : "none"}
-                    onValueChange={(val: any) => setUploadPhaseId(!val || val === "none" ? null : parseInt(val, 10))}
-                  >
-                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono focus:border-indigo-500">
-                      <span className="truncate">
-                        {uploadPhaseId ? phases.find((p) => p.id === uploadPhaseId)?.title || "Selected Phase" : "None (General Project Doc)"}
-                      </span>
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-100 rounded-2xl p-1.5 min-w-[220px] font-mono">
-                      <SelectItem value="none" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer hover:bg-white/10">
-                        None (General Project Doc)
-                      </SelectItem>
-                      {phases.map((p) => (
-                        <SelectItem key={p.id} value={p.id.toString()} className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer hover:bg-white/10">
-                          {p.title}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-2 rounded-2xl bg-white/[0.02] border border-white/10 max-h-32 overflow-y-auto">
+                    {phases.map((p) => {
+                      const isChecked = uploadPhaseIds.includes(p.id);
+                      return (
+                        <div
+                          key={p.id}
+                          onClick={() => {
+                            setUploadPhaseIds((prev) =>
+                              isChecked
+                                ? prev.filter((id) => id !== p.id)
+                                : [...prev, p.id]
+                            );
+                          }}
+                          className={cn(
+                            "flex items-center gap-2 p-2 rounded-xl border text-xs font-mono cursor-pointer transition-all select-none",
+                            isChecked
+                              ? "bg-purple-950/40 border-purple-500/60 text-white"
+                              : "bg-white/[0.02] border-white/5 text-slate-400 hover:text-slate-200"
+                          )}
+                        >
+                          <CustomCheckbox
+                            checked={isChecked}
+                            onChange={() => {
+                              setUploadPhaseIds((prev) =>
+                                isChecked
+                                  ? prev.filter((id) => id !== p.id)
+                                  : [...prev, p.id]
+                              );
+                            }}
+                          />
+                          <span className="truncate">{p.title}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {uploadPhaseIds.length === 0 && (
+                    <p className="text-[10px] text-slate-500 italic">No phases selected. Available as General Project Document.</p>
+                  )}
                 </div>
               )}
 
@@ -3539,6 +4103,490 @@ export function ProjectHub({
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* ── ATTACH EXISTING DOCUMENTS FROM VAULT MODAL ── */}
+      <Dialog open={isAttachDocModalOpen} onOpenChange={setIsAttachDocModalOpen}>
+        <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-2xl max-h-[88vh] p-6 shadow-2xl backdrop-blur-2xl flex flex-col font-mono">
+          <DialogHeader className="shrink-0 flex flex-row items-center justify-between border-b border-white/10 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                <FolderOpen className="w-4 h-4" />
+              </div>
+              <div>
+                <DialogTitle className="text-sm font-bold text-white font-mono uppercase tracking-wide">
+                  Attach Documents from Vault / Drive
+                </DialogTitle>
+                <p className="text-[11px] text-slate-400 font-sans mt-0.5">
+                  Link existing files to this project without duplicate uploads
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsAttachDocModalOpen(false)}
+              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-colors border border-white/10 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </DialogHeader>
+
+          <div className="flex flex-col flex-1 min-h-0 space-y-3 pt-3 overflow-hidden">
+            {/* Multi-Phase Assignment + Search */}
+            <div className="space-y-3 shrink-0">
+              {/* Assign to Phases (Multi-select) */}
+              {phases.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-300 flex items-center gap-1.5 font-medium">
+                      <Layers className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Assign to Phases ({attachTargetPhaseIds.length})</span>
+                    </span>
+                    {attachTargetPhaseIds.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setAttachTargetPhaseIds([])}
+                        className="text-[10px] text-slate-500 hover:text-slate-300 cursor-pointer"
+                      >
+                        Clear (General Project)
+                      </button>
+                    ) : (
+                      <span className="text-[10px] text-slate-500 italic">General Project (No Phase)</span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 p-1.5 rounded-2xl bg-white/[0.02] border border-white/10 max-h-24 overflow-y-auto">
+                    {phases.map((p) => {
+                      const isChecked = attachTargetPhaseIds.includes(p.id);
+                      return (
+                        <div
+                          key={p.id}
+                          onClick={() => {
+                            setAttachTargetPhaseIds((prev) =>
+                              isChecked
+                                ? prev.filter((id) => id !== p.id)
+                                : [...prev, p.id]
+                            );
+                          }}
+                          className={cn(
+                            "flex items-center gap-2 p-1.5 rounded-xl border text-[11px] font-mono cursor-pointer transition-all select-none",
+                            isChecked
+                              ? "bg-purple-950/40 border-purple-500/60 text-white"
+                              : "bg-white/[0.02] border-white/5 text-slate-400 hover:text-slate-200"
+                          )}
+                        >
+                          <CustomCheckbox
+                            checked={isChecked}
+                            onChange={() => {
+                              setAttachTargetPhaseIds((prev) =>
+                                isChecked
+                                  ? prev.filter((id) => id !== p.id)
+                                  : [...prev, p.id]
+                              );
+                            }}
+                          />
+                          <span className="truncate">{p.title}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Search bar */}
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                <Input
+                  autoFocus
+                  placeholder="Search existing documents in Vault..."
+                  value={searchAttachDocQuery}
+                  onChange={(e) => setSearchAttachDocQuery(e.target.value)}
+                  className="pl-9 bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-10 font-mono focus:border-purple-500"
+                />
+              </div>
+            </div>
+
+            {/* List of Available Vault Documents */}
+            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 border border-white/10 rounded-2xl bg-white/[0.01] p-2 min-h-[220px] max-h-[360px]">
+              {availableVaultDocs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-48 text-slate-500 font-mono text-xs">
+                  <FileText className="w-8 h-8 text-slate-600 mb-2" />
+                  <span>No documents found matching filter</span>
+                </div>
+              ) : (
+                availableVaultDocs.map((asset) => {
+                  const ext = getFileExtension(asset.title, asset.urlOrPath);
+                  const isChecked = selectedAttachAssetIds.includes(asset.id);
+                  const isAlreadyInProject = documentList.some((d) => d.id === asset.id);
+
+                  return (
+                    <div
+                      key={asset.id}
+                      onClick={() => {
+                        setSelectedAttachAssetIds((prev) =>
+                          prev.includes(asset.id)
+                            ? prev.filter((id) => id !== asset.id)
+                            : [...prev, asset.id]
+                        );
+                      }}
+                      className={cn(
+                        "flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer font-mono select-none",
+                        isChecked
+                          ? "bg-purple-950/40 border-purple-500/60 shadow-sm"
+                          : "bg-white/[0.02] border-white/5 hover:bg-white/[0.05] hover:border-white/15"
+                      )}
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1 pr-2">
+                        <CustomCheckbox
+                          checked={isChecked}
+                          onChange={() => {
+                            setSelectedAttachAssetIds((prev) =>
+                              prev.includes(asset.id)
+                                ? prev.filter((id) => id !== asset.id)
+                                : [...prev, asset.id]
+                            );
+                          }}
+                        />
+                        <div className="shrink-0">{getRichFileIcon(ext)}</div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-white truncate">{asset.title}</p>
+                          <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                            <span>{formatBytes(asset.sizeBytes)}</span>
+                            <span>•</span>
+                            <span>{formatDate(asset.createdAt)}</span>
+                            {isAlreadyInProject && (() => {
+                              const existingDoc = documentList.find((d) => d.id === asset.id);
+                              const pIds: number[] = (existingDoc as any)?.phaseIds || (existingDoc?.phaseId ? [existingDoc.phaseId] : []);
+                              const phaseNames = pIds.map((id) => phases.find((p) => p.id === id)?.title).filter(Boolean);
+                              return (
+                                <Badge variant="outline" className="text-[9px] border-purple-500/40 text-purple-300 bg-purple-500/10 px-1.5 py-0 font-mono">
+                                  {phaseNames.length > 0 ? `Attached in: ${phaseNames.join(", ")}` : "Attached (General Doc)"}
+                                </Badge>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="shrink-0 pt-3 border-t border-white/10 mt-3 flex items-center justify-between">
+            <span className="text-xs font-mono text-slate-400">
+              {selectedAttachAssetIds.length} document(s) selected
+            </span>
+            <div className="flex items-center gap-2.5">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsAttachDocModalOpen(false)}
+                className="border-white/15 text-slate-300 hover:bg-white/10 rounded-2xl h-10 text-xs font-mono cursor-pointer px-4"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={isSubmittingAttach || selectedAttachAssetIds.length === 0}
+                onClick={() => handleAttachSubmit(false)}
+                className="bg-purple-600 hover:bg-purple-500 text-white font-mono text-xs font-bold rounded-2xl h-10 px-5 shadow-lg shadow-purple-600/30 cursor-pointer"
+              >
+                {isSubmittingAttach ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Attaching...</span>
+                  </>
+                ) : (
+                  <span>Attach to Project ({selectedAttachAssetIds.length})</span>
+                )}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── ATTACH EXISTING LINKS FROM VAULT MODAL ── */}
+      <Dialog open={isAttachLinkModalOpen} onOpenChange={setIsAttachLinkModalOpen}>
+        <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-2xl max-h-[88vh] p-6 shadow-2xl backdrop-blur-2xl flex flex-col font-mono">
+          <DialogHeader className="shrink-0 flex flex-row items-center justify-between border-b border-white/10 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                <Bookmark className="w-4 h-4" />
+              </div>
+              <div>
+                <DialogTitle className="text-sm font-bold text-white font-mono uppercase tracking-wide">
+                  Attach Bookmarks from Asset Vault
+                </DialogTitle>
+                <p className="text-[11px] text-slate-400 font-sans mt-0.5">
+                  Reuse references and URLs across multiple projects without creating duplicate links
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsAttachLinkModalOpen(false)}
+              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-colors border border-white/10 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </DialogHeader>
+
+          <div className="flex flex-col flex-1 min-h-0 space-y-3 pt-3 overflow-hidden">
+            {/* Multi-Phase Assignment + Search */}
+            <div className="space-y-3 shrink-0">
+              {/* Assign to Phases (Multi-select) */}
+              {phases.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-300 flex items-center gap-1.5 font-medium">
+                      <Layers className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Assign to Phases ({attachTargetPhaseIds.length})</span>
+                    </span>
+                    {attachTargetPhaseIds.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setAttachTargetPhaseIds([])}
+                        className="text-[10px] text-slate-500 hover:text-slate-300 cursor-pointer"
+                      >
+                        Clear (General Link)
+                      </button>
+                    ) : (
+                      <span className="text-[10px] text-slate-500 italic">General Project (No Phase)</span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 p-1.5 rounded-2xl bg-white/[0.02] border border-white/10 max-h-24 overflow-y-auto">
+                    {phases.map((p) => {
+                      const isChecked = attachTargetPhaseIds.includes(p.id);
+                      return (
+                        <div
+                          key={p.id}
+                          onClick={() => {
+                            setAttachTargetPhaseIds((prev) =>
+                              isChecked
+                                ? prev.filter((id) => id !== p.id)
+                                : [...prev, p.id]
+                            );
+                          }}
+                          className={cn(
+                            "flex items-center gap-2 p-1.5 rounded-xl border text-[11px] font-mono cursor-pointer transition-all select-none",
+                            isChecked
+                              ? "bg-purple-950/40 border-purple-500/60 text-white"
+                              : "bg-white/[0.02] border-white/5 text-slate-400 hover:text-slate-200"
+                          )}
+                        >
+                          <CustomCheckbox
+                            checked={isChecked}
+                            onChange={() => {
+                              setAttachTargetPhaseIds((prev) =>
+                                isChecked
+                                  ? prev.filter((id) => id !== p.id)
+                                  : [...prev, p.id]
+                              );
+                            }}
+                          />
+                          <span className="truncate">{p.title}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Search bar */}
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                <Input
+                  autoFocus
+                  placeholder="Search existing bookmarks in Vault..."
+                  value={searchAttachLinkQuery}
+                  onChange={(e) => setSearchAttachLinkQuery(e.target.value)}
+                  className="pl-9 bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-10 font-mono focus:border-purple-500"
+                />
+              </div>
+            </div>
+
+            {/* List of Available Vault Links */}
+            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 border border-white/10 rounded-2xl bg-white/[0.01] p-2 min-h-[220px] max-h-[360px]">
+              {availableVaultLinks.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-48 text-slate-500 font-mono text-xs">
+                  <Link2 className="w-8 h-8 text-slate-600 mb-2" />
+                  <span>No bookmarks found matching query</span>
+                </div>
+              ) : (
+                availableVaultLinks.map((link) => {
+                  const isChecked = selectedAttachAssetIds.includes(link.id);
+                  const isAlreadyInProject = linkList.some((l) => l.id === link.id);
+                  const domain = getDomainFromUrl(link.urlOrPath);
+
+                  return (
+                    <div
+                      key={link.id}
+                      onClick={() => {
+                        setSelectedAttachAssetIds((prev) =>
+                          prev.includes(link.id)
+                            ? prev.filter((id) => id !== link.id)
+                            : [...prev, link.id]
+                        );
+                      }}
+                      className={cn(
+                        "flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer font-mono select-none",
+                        isChecked
+                          ? "bg-purple-950/40 border-purple-500/60 shadow-sm"
+                          : "bg-white/[0.02] border-white/5 hover:bg-white/[0.05] hover:border-white/15"
+                      )}
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1 pr-2">
+                        <CustomCheckbox
+                          checked={isChecked}
+                          onChange={() => {
+                            setSelectedAttachAssetIds((prev) =>
+                              prev.includes(link.id)
+                                ? prev.filter((id) => id !== link.id)
+                                : [...prev, link.id]
+                            );
+                          }}
+                        />
+                        <div className="w-8 h-8 rounded-lg overflow-hidden bg-black/40 border border-white/10 flex items-center justify-center shrink-0">
+                          {link.thumbnailUrl ? (
+                            <img src={link.thumbnailUrl} alt={link.title} className="w-full h-full object-cover" />
+                          ) : (
+                            <Globe className="w-4 h-4 text-indigo-400" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-white truncate">{link.title}</p>
+                          <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                            <span className="text-indigo-400 truncate max-w-[150px]">{domain}</span>
+                            <span>•</span>
+                            <span className="truncate max-w-[200px] text-slate-500">{link.urlOrPath}</span>
+                            {isAlreadyInProject && (() => {
+                              const existingLink = linkList.find((l) => l.id === link.id);
+                              const pIds: number[] = (existingLink as any)?.phaseIds || (existingLink?.phaseId ? [existingLink.phaseId] : []);
+                              const phaseNames = pIds.map((id) => phases.find((p) => p.id === id)?.title).filter(Boolean);
+                              return (
+                                <Badge variant="outline" className="text-[9px] border-purple-500/40 text-purple-300 bg-purple-500/10 px-1.5 py-0 font-mono">
+                                  {phaseNames.length > 0 ? `Attached in: ${phaseNames.join(", ")}` : "Attached (General Link)"}
+                                </Badge>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="shrink-0 pt-3 border-t border-white/10 mt-3 flex items-center justify-between">
+            <span className="text-xs font-mono text-slate-400">
+              {selectedAttachAssetIds.length} link(s) selected
+            </span>
+            <div className="flex items-center gap-2.5">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsAttachLinkModalOpen(false)}
+                className="border-white/15 text-slate-300 hover:bg-white/10 rounded-2xl h-10 text-xs font-mono cursor-pointer px-4"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={isSubmittingAttach || selectedAttachAssetIds.length === 0}
+                onClick={() => handleAttachSubmit(true)}
+                className="bg-purple-600 hover:bg-purple-500 text-white font-mono text-xs font-bold rounded-2xl h-10 px-5 shadow-lg shadow-purple-600/30 cursor-pointer"
+              >
+                {isSubmittingAttach ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Attaching...</span>
+                  </>
+                ) : (
+                  <span>Attach to Project ({selectedAttachAssetIds.length})</span>
+                )}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── STANDARD GLASSMORPHIC DETACH DOCUMENT MODAL ── */}
+      {detachingDocConfirm && (
+        <Dialog open={!!detachingDocConfirm} onOpenChange={() => setDetachingDocConfirm(null)}>
+          <DialogContent showCloseButton={false} className="bg-[#14141e] border-amber-500/30 text-slate-100 rounded-3xl max-w-md p-6 shadow-2xl backdrop-blur-2xl font-mono text-center space-y-4">
+            <div className="mx-auto w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+              <Link2Off className="w-7 h-7" />
+            </div>
+
+            <div>
+              <h3 className="text-base font-bold text-white tracking-wide uppercase">DETACH DOCUMENT FROM PROJECT</h3>
+              <p className="text-xs text-slate-300 mt-2 leading-relaxed font-sans">
+                Are you sure you want to detach <span className="text-amber-300 font-bold">&quot;{detachingDocConfirm.title}&quot;</span> from this project?
+              </p>
+              <p className="text-[10px] text-slate-500 mt-1">
+                The file will remain safely preserved in your Digital Inventory &amp; Vault for other projects.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setDetachingDocConfirm(null)}
+                className="flex-1 border-white/15 text-slate-300 hover:bg-white/10 rounded-2xl h-11 text-xs font-mono cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={isPending}
+                onClick={handleDetachDocConfirmed}
+                className="flex-1 bg-amber-600 hover:bg-amber-500 text-white rounded-2xl h-11 text-xs font-mono font-bold shadow-lg shadow-amber-600/40 cursor-pointer"
+              >
+                {isPending ? "Detaching..." : "Detach from Project"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* ── STANDARD GLASSMORPHIC DETACH LINK MODAL ── */}
+      {detachingLinkConfirm && (
+        <Dialog open={!!detachingLinkConfirm} onOpenChange={() => setDetachingLinkConfirm(null)}>
+          <DialogContent showCloseButton={false} className="bg-[#14141e] border-amber-500/30 text-slate-100 rounded-3xl max-w-md p-6 shadow-2xl backdrop-blur-2xl font-mono text-center space-y-4">
+            <div className="mx-auto w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+              <Link2Off className="w-7 h-7" />
+            </div>
+
+            <div>
+              <h3 className="text-base font-bold text-white tracking-wide uppercase">DETACH LINK FROM PROJECT</h3>
+              <p className="text-xs text-slate-300 mt-2 leading-relaxed font-sans">
+                Are you sure you want to detach <span className="text-amber-300 font-bold">&quot;{detachingLinkConfirm.title}&quot;</span> from this project?
+              </p>
+              <p className="text-[10px] text-slate-500 mt-1">
+                The bookmark will remain safely in your Asset Vault for other projects.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setDetachingLinkConfirm(null)}
+                className="flex-1 border-white/15 text-slate-300 hover:bg-white/10 rounded-2xl h-11 text-xs font-mono cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={isPending}
+                onClick={handleDetachLinkConfirmed}
+                className="flex-1 bg-amber-600 hover:bg-amber-500 text-white rounded-2xl h-11 text-xs font-mono font-bold shadow-lg shadow-amber-600/40 cursor-pointer"
+              >
+                {isPending ? "Detaching..." : "Detach from Project"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* ── RICH FULL-FEATURED FILE PREVIEW MODAL (IDENTICAL TO DRIVE) ── */}
       <FilePreviewModal

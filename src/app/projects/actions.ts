@@ -7,11 +7,13 @@ import {
   tasks,
   assets,
   notes,
+  projectAssetLinks,
   Project,
   ProjectPhase,
   Task,
   Asset,
   Note,
+  ProjectAssetLink,
 } from "@/db/schema";
 import { eq, desc, asc, and, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -89,10 +91,11 @@ export async function getAllProjectsAction() {
       .where(eq(projects.isHub, true))
       .orderBy(desc(projects.createdAt));
 
-    const [allPhases, allTasks, allAssets] = await Promise.all([
+    const [allPhases, allTasks, allAssets, allAssetLinks] = await Promise.all([
       db.select().from(projectPhases),
       db.select().from(tasks),
       db.select().from(assets),
+      db.select().from(projectAssetLinks),
     ]);
 
     const updatesToSync: Promise<any>[] = [];
@@ -100,8 +103,15 @@ export async function getAllProjectsAction() {
     const enrichedProjects = allProjects.map((p) => {
       const pPhases = allPhases.filter((ph) => ph.projectId === p.id);
       const pTasks = allTasks.filter((t) => t.projectId === p.id);
-      const pDocs = allAssets.filter((a) => a.projectId === p.id && a.type !== "link");
-      const pLinks = allAssets.filter((a) => a.projectId === p.id && a.type === "link");
+      
+      const linkedAssetIds = new Set([
+        ...allAssetLinks.filter((al) => al.projectId === p.id).map((al) => al.assetId),
+        ...allAssets.filter((a) => a.projectId === p.id).map((a) => a.id),
+      ]);
+
+      const projectAssets = allAssets.filter((a) => linkedAssetIds.has(a.id));
+      const pDocs = projectAssets.filter((a) => a.type !== "link");
+      const pLinks = projectAssets.filter((a) => a.type === "link");
       const doneTasks = pTasks.filter((t) => t.status === "done");
 
       let calculatedProgress = 0;
@@ -194,11 +204,82 @@ export async function getProjectDetailAction(id: number) {
       .where(eq(tasks.projectId, id))
       .orderBy(asc(tasks.position), desc(tasks.createdAt));
 
-    const scopedAssets = await db
+    // Query assets via projectAssetLinks joined with assets
+    const linkRows = await db
+      .select({
+        linkId: projectAssetLinks.id,
+        projectId: projectAssetLinks.projectId,
+        assetId: projectAssetLinks.assetId,
+        phaseId: projectAssetLinks.phaseId,
+        docVersion: projectAssetLinks.docVersion,
+        docStatus: projectAssetLinks.docStatus,
+        linkCreatedAt: projectAssetLinks.createdAt,
+        asset: assets,
+      })
+      .from(projectAssetLinks)
+      .innerJoin(assets, eq(projectAssetLinks.assetId, assets.id))
+      .where(eq(projectAssetLinks.projectId, id))
+      .orderBy(desc(projectAssetLinks.createdAt));
+
+    // Backward-compatibility: auto-sync any legacy assets where assets.projectId = id
+    const legacyAssets = await db
       .select()
       .from(assets)
-      .where(eq(assets.projectId, id))
-      .orderBy(desc(assets.createdAt));
+      .where(eq(assets.projectId, id));
+
+    const existingLinkedAssetIds = new Set(linkRows.map((r) => r.assetId));
+    const unlinkedLegacy = legacyAssets.filter((la) => !existingLinkedAssetIds.has(la.id));
+
+    for (const la of unlinkedLegacy) {
+      try {
+        const [ins] = await db.insert(projectAssetLinks).values({
+          projectId: id,
+          assetId: la.id,
+          phaseId: la.phaseId ?? null,
+          docVersion: la.docVersion || "v1.0",
+          docStatus: la.docStatus || "DRAFT",
+        });
+        linkRows.push({
+          linkId: (ins as any)?.insertId || Date.now(),
+          projectId: id,
+          assetId: la.id,
+          phaseId: la.phaseId ?? null,
+          docVersion: la.docVersion || "v1.0",
+          docStatus: la.docStatus || "DRAFT",
+          linkCreatedAt: la.createdAt || new Date(),
+          asset: la,
+        });
+      } catch (e) {
+        console.warn("[getProjectDetailAction] Legacy link sync skipped:", e);
+      }
+    }
+
+    // Group links by assetId to produce unique asset records with full phaseIds list & link mappings
+    const assetMap = new Map<number, any>();
+    for (const row of linkRows) {
+      if (!assetMap.has(row.assetId)) {
+        assetMap.set(row.assetId, {
+          ...row.asset,
+          linkId: row.linkId,
+          linkIds: [row.linkId],
+          phaseLinkMap: [{ linkId: row.linkId, phaseId: row.phaseId }],
+          projectId: row.projectId,
+          phaseId: row.phaseId,
+          phaseIds: row.phaseId ? [row.phaseId] : [],
+          docVersion: row.docVersion || "v1.0",
+          docStatus: row.docStatus || "DRAFT",
+        });
+      } else {
+        const existing = assetMap.get(row.assetId);
+        existing.linkIds.push(row.linkId);
+        existing.phaseLinkMap.push({ linkId: row.linkId, phaseId: row.phaseId });
+        if (row.phaseId && !existing.phaseIds.includes(row.phaseId)) {
+          existing.phaseIds.push(row.phaseId);
+        }
+      }
+    }
+
+    const scopedAssets = Array.from(assetMap.values());
 
     const allProjects = await db.select().from(projects).orderBy(desc(projects.createdAt));
     const allAssets = await db.select().from(assets).orderBy(desc(assets.createdAt));
@@ -502,21 +583,149 @@ export async function createScopedTaskAction(data: {
 // PROJECT DOCUMENTS (assets with projectId)
 // ─────────────────────────────────────────────────────────────────────────────
 
+export async function attachExistingAssetsAction(data: {
+  projectId: number;
+  assetIds: number[];
+  phaseId?: number | null;
+  phaseIds?: number[];
+  docVersion?: string;
+  docStatus?: string;
+}) {
+  if (!data.assetIds || data.assetIds.length === 0) {
+    return { success: false, error: "No assets selected" };
+  }
+
+  const targetPhaseIds: (number | null)[] =
+    data.phaseIds && data.phaseIds.length > 0
+      ? data.phaseIds
+      : [data.phaseId ?? null];
+
+  for (const assetId of data.assetIds) {
+    for (const phaseId of targetPhaseIds) {
+      // Check if already linked to this project AND this specific phase
+      const [existing] = await db
+        .select()
+        .from(projectAssetLinks)
+        .where(
+          and(
+            eq(projectAssetLinks.projectId, data.projectId),
+            eq(projectAssetLinks.assetId, assetId),
+            phaseId !== null
+              ? eq(projectAssetLinks.phaseId, phaseId)
+              : isNull(projectAssetLinks.phaseId)
+          )
+        )
+        .limit(1);
+
+      if (!existing) {
+        await db.insert(projectAssetLinks).values({
+          projectId: data.projectId,
+          assetId: assetId,
+          phaseId: phaseId,
+          docVersion: data.docVersion || "v1.0",
+          docStatus: data.docStatus || "DRAFT",
+        });
+      }
+    }
+  }
+
+  revalidatePath(`/projects/${data.projectId}`);
+  revalidatePath("/projects");
+  return { success: true };
+}
+
+export async function detachAssetFromProjectAction(data: {
+  projectId: number;
+  assetId: number;
+  phaseId?: number | null;
+  linkId?: number;
+}) {
+  if (data.linkId) {
+    await db.delete(projectAssetLinks).where(eq(projectAssetLinks.id, data.linkId));
+  } else if (data.phaseId !== undefined) {
+    if (data.phaseId === null) {
+      await db
+        .delete(projectAssetLinks)
+        .where(
+          and(
+            eq(projectAssetLinks.projectId, data.projectId),
+            eq(projectAssetLinks.assetId, data.assetId),
+            isNull(projectAssetLinks.phaseId)
+          )
+        );
+    } else {
+      await db
+        .delete(projectAssetLinks)
+        .where(
+          and(
+            eq(projectAssetLinks.projectId, data.projectId),
+            eq(projectAssetLinks.assetId, data.assetId),
+            eq(projectAssetLinks.phaseId, data.phaseId)
+          )
+        );
+    }
+  } else {
+    // Detach from all phases in this project
+    await db
+      .delete(projectAssetLinks)
+      .where(
+        and(
+          eq(projectAssetLinks.projectId, data.projectId),
+          eq(projectAssetLinks.assetId, data.assetId)
+        )
+      );
+  }
+
+  // Check remaining links for this project
+  const remaining = await db
+    .select()
+    .from(projectAssetLinks)
+    .where(
+      and(
+        eq(projectAssetLinks.projectId, data.projectId),
+        eq(projectAssetLinks.assetId, data.assetId)
+      )
+    );
+
+  if (remaining.length === 0) {
+    // Clear legacy direct link on assets table if it matches this project
+    await db
+      .update(assets)
+      .set({ projectId: null, phaseId: null })
+      .where(and(eq(assets.id, data.assetId), eq(assets.projectId, data.projectId)));
+  } else {
+    // Update legacy phaseId to first remaining phase
+    const firstRemainingPhaseId = remaining[0]?.phaseId ?? null;
+    await db
+      .update(assets)
+      .set({ phaseId: firstRemainingPhaseId })
+      .where(and(eq(assets.id, data.assetId), eq(assets.projectId, data.projectId)));
+  }
+
+  revalidatePath(`/projects/${data.projectId}`);
+  revalidatePath("/projects");
+  return { success: true };
+}
+
 export async function createProjectAssetAction(data: {
   projectId: number;
   phaseId?: number | null;
+  phaseIds?: number[];
   title: string;
   type: string;
   urlOrPath: string;
+  thumbnailUrl?: string | null;
+  tags?: string;
   sizeBytes?: number;
   docVersion?: string;
   docStatus?: string;
 }) {
-  await db.insert(assets).values({
+  const [inserted] = await db.insert(assets).values({
     title: data.title,
     type: data.type as any,
     urlOrPath: data.urlOrPath,
-    tags: "",
+    thumbnailUrl: data.thumbnailUrl ?? null,
+    tags: data.tags || "",
     syncStatus: "LOCAL_UNSYNCED",
     sizeBytes: data.sizeBytes ?? null,
     projectId: data.projectId,
@@ -525,8 +734,137 @@ export async function createProjectAssetAction(data: {
     docStatus: data.docStatus || "DRAFT",
   });
 
+  const assetId = (inserted as any)?.insertId;
+  if (assetId) {
+    const targetPhaseIds: (number | null)[] =
+      data.phaseIds && data.phaseIds.length > 0
+        ? data.phaseIds
+        : [data.phaseId ?? null];
+
+    for (const pId of targetPhaseIds) {
+      await db.insert(projectAssetLinks).values({
+        projectId: data.projectId,
+        assetId: assetId,
+        phaseId: pId,
+        docVersion: data.docVersion || "v1.0",
+        docStatus: data.docStatus || "DRAFT",
+      });
+    }
+  }
+
   revalidatePath(`/projects/${data.projectId}`);
   revalidatePath("/drive");
+  revalidatePath("/inventory");
+  return { success: true, assetId };
+}
+
+export async function updateProjectAssetLinkAction(
+  linkId: number | undefined,
+  assetId: number,
+  projectId: number,
+  data: {
+    title?: string;
+    phaseId?: number | null;
+    phaseIds?: number[];
+    docVersion?: string;
+    docStatus?: string;
+    tags?: string;
+  }
+) {
+  // If multiple phaseIds are specified, synchronize projectAssetLinks for (projectId, assetId)
+  if (data.phaseIds !== undefined) {
+    const existingLinks = await db
+      .select()
+      .from(projectAssetLinks)
+      .where(
+        and(
+          eq(projectAssetLinks.projectId, projectId),
+          eq(projectAssetLinks.assetId, assetId)
+        )
+      );
+
+    const targetPhaseSet = new Set(data.phaseIds);
+
+    // Delete links whose phaseId is not in targetPhaseIds
+    for (const ex of existingLinks) {
+      if (ex.phaseId === null) {
+        if (data.phaseIds.length > 0) {
+          await db.delete(projectAssetLinks).where(eq(projectAssetLinks.id, ex.id));
+        }
+      } else if (!targetPhaseSet.has(ex.phaseId)) {
+        await db.delete(projectAssetLinks).where(eq(projectAssetLinks.id, ex.id));
+      }
+    }
+
+    // Insert links for newly selected phases
+    const existingPhaseSet = new Set(existingLinks.map((l) => l.phaseId).filter((p): p is number => p !== null));
+    if (data.phaseIds.length === 0) {
+      // General doc
+      const hasGeneral = existingLinks.some((l) => l.phaseId === null);
+      if (!hasGeneral) {
+        await db.insert(projectAssetLinks).values({
+          projectId,
+          assetId,
+          phaseId: null,
+          docVersion: data.docVersion || "v1.0",
+          docStatus: data.docStatus || "DRAFT",
+        });
+      }
+    } else {
+      for (const pId of data.phaseIds) {
+        if (!existingPhaseSet.has(pId)) {
+          await db.insert(projectAssetLinks).values({
+            projectId,
+            assetId,
+            phaseId: pId,
+            docVersion: data.docVersion || "v1.0",
+            docStatus: data.docStatus || "DRAFT",
+          });
+        }
+      }
+    }
+
+    // Update docVersion/docStatus across all links for this asset in this project
+    const linkUpdates: Record<string, unknown> = {};
+    if (data.docVersion !== undefined) linkUpdates.docVersion = data.docVersion;
+    if (data.docStatus !== undefined) linkUpdates.docStatus = data.docStatus;
+
+    if (Object.keys(linkUpdates).length > 0) {
+      await db
+        .update(projectAssetLinks)
+        .set(linkUpdates as any)
+        .where(
+          and(
+            eq(projectAssetLinks.projectId, projectId),
+            eq(projectAssetLinks.assetId, assetId)
+          )
+        );
+    }
+  } else {
+    // Single link update
+    const linkUpdates: Record<string, unknown> = {};
+    if (data.phaseId !== undefined) linkUpdates.phaseId = data.phaseId;
+    if (data.docVersion !== undefined) linkUpdates.docVersion = data.docVersion;
+    if (data.docStatus !== undefined) linkUpdates.docStatus = data.docStatus;
+
+    if (Object.keys(linkUpdates).length > 0 && linkId) {
+      await db
+        .update(projectAssetLinks)
+        .set(linkUpdates as any)
+        .where(eq(projectAssetLinks.id, linkId));
+    }
+  }
+
+  const assetUpdates: Record<string, unknown> = {};
+  if (data.title !== undefined) assetUpdates.title = data.title;
+  if (data.tags !== undefined) assetUpdates.tags = data.tags;
+
+  if (Object.keys(assetUpdates).length > 0) {
+    await db.update(assets).set(assetUpdates as any).where(eq(assets.id, assetId));
+  }
+
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/projects");
   return { success: true };
 }
 
@@ -551,9 +889,11 @@ export async function updateProjectAssetAction(
 }
 
 export async function deleteProjectAssetAction(assetId: number, projectId: number) {
+  await db.delete(projectAssetLinks).where(eq(projectAssetLinks.assetId, assetId));
   await db.delete(assets).where(eq(assets.id, assetId));
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/drive");
+  revalidatePath("/inventory");
   return { success: true };
 }
 
