@@ -816,7 +816,7 @@ export function ProjectGantt({ project, phases, onPhaseUpdate, onPhaseSelect }: 
             {/* Rows list with Frozen / Sticky Left Sidebar Columns */}
             {phaseLayouts.map((item) => {
               const { phase, palette, left, width, progress, dependsOn, isBeingDragged } = item;
-              const isNarrow = width < 85;
+              const isVeryNarrow = width < 120;
               const durationDays = Math.max(1, daysDiff(item.start, item.end) + 1);
 
               return (
@@ -940,11 +940,27 @@ export function ProjectGantt({ project, phases, onPhaseUpdate, onPhaseSelect }: 
                         <div className="w-1 h-3.5 rounded-full bg-white/70" />
                       </div>
 
-                      {/* Phase Title Inside Bar (Hidden on very tiny width) */}
-                      <span className="relative z-10 px-3 text-[11px] font-mono text-white font-medium truncate pointer-events-none drop-shadow-sm">
+                      {/* Phase Title Inside Bar (Rendered when width >= 55px) */}
+                      {!isVeryNarrow && (
+                        <span className="relative z-10 px-3 text-[11px] font-mono text-white font-medium truncate pointer-events-none drop-shadow-sm">
+                          {phase.title}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Phase Title Beside Bar (Rendered on the right when bar is narrow < 120px) */}
+                    {isVeryNarrow && (
+                      <span
+                        className="absolute z-10 text-[11px] font-mono text-slate-300 font-medium whitespace-nowrap pointer-events-none drop-shadow-sm flex items-center"
+                        style={{
+                          left: left + width + 10,
+                          top: 11,
+                          height: 34,
+                        }}
+                      >
                         {phase.title}
                       </span>
-                    </div>
+                    )}
                   </div>
                 </div>
               );
@@ -1009,27 +1025,29 @@ export function ProjectGantt({ project, phases, onPhaseUpdate, onPhaseSelect }: 
       {/* ── Floating Hover Tooltip (Safely clamped inside right canvas) ── */}
       {hoveredPhase && !dragState && (
         <div
-          className="fixed z-50 pointer-events-none p-3.5 rounded-2xl bg-[#12111d]/95 border border-white/15 text-white font-mono shadow-2xl backdrop-blur-xl max-w-xs animate-in fade-in zoom-in-95 duration-150"
+          className="fixed z-50 pointer-events-none p-3.5 rounded-2xl bg-[#12111d]/95 border border-white/15 text-white font-mono shadow-2xl backdrop-blur-xl max-w-sm w-80 animate-in fade-in zoom-in-95 duration-150"
           style={{
-            left: Math.max(sidebarWidth + 20, Math.min(hoveredPhase.x, window.innerWidth - 300)),
-            top: Math.min(hoveredPhase.y, window.innerHeight - 150),
+            left: Math.max(sidebarWidth + 20, Math.min(hoveredPhase.x, window.innerWidth - 340)),
+            top: Math.min(hoveredPhase.y, window.innerHeight - 180),
             borderColor: hoveredPhase.palette.hex,
           }}
         >
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-start gap-2 mb-1.5">
             <span
-              className="w-2.5 h-2.5 rounded-full"
+              className="w-2.5 h-2.5 rounded-full shrink-0 mt-1"
               style={{ backgroundColor: hoveredPhase.palette.hex }}
             />
-            <h4 className="font-bold text-xs truncate text-white">{hoveredPhase.phase.title}</h4>
+            <h4 className="font-bold text-xs text-white leading-snug break-words flex-1">
+              {hoveredPhase.phase.title}
+            </h4>
           </div>
           {(hoveredPhase.phase as any).description && (
-            <p className="text-[10px] text-slate-300 line-clamp-2 mb-1.5 font-sans leading-relaxed">
+            <p className="text-[10px] text-slate-300 line-clamp-3 mb-1.5 font-sans leading-relaxed break-words">
               {(hoveredPhase.phase as any).description}
             </p>
           )}
           <p className="text-[11px] text-slate-400 flex items-center gap-1.5 font-mono">
-            <Clock className="w-3 h-3 text-slate-500" />
+            <Clock className="w-3 h-3 text-slate-500 shrink-0" />
             <span>
               {formatPrettyDate(hoveredPhase.phase.startDate)} &rarr; {formatPrettyDate(hoveredPhase.phase.endDate)}
             </span>
