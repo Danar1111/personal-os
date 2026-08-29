@@ -1,12 +1,13 @@
 "use server";
 
 import { db } from "@/db";
-import { notes, tasks, skills, transactions, assets, calendarEvents, folders, applications } from "@/db/schema";
-import { like, or } from "drizzle-orm";
+import { notes, tasks, skills, transactions, assets, calendarEvents, folders, applications, projects, projectPhases } from "@/db/schema";
+import { like, or, and, eq } from "drizzle-orm";
+import { computeProjectAutoStatus } from "@/lib/project-status-engine";
 
 export interface GlobalSearchResult {
   id: string | number;
-  type: "page" | "note" | "task" | "skill" | "finance" | "asset" | "drive" | "calendar" | "folder" | "app";
+  type: "page" | "note" | "task" | "skill" | "finance" | "asset" | "drive" | "calendar" | "folder" | "app" | "project";
   group: string;
   title: string;
   subtitle?: string;
@@ -28,7 +29,9 @@ export async function globalSearchAction(query: string): Promise<GlobalSearchRes
       assetsRes,
       calRes,
       foldersRes,
-      appsRes
+      appsRes,
+      projectsRes,
+      phasesRes
     ] = await Promise.all([
       db.select().from(notes).where(or(like(notes.title, pattern), like(notes.tags, pattern), like(notes.content, pattern))).limit(8),
       db.select().from(tasks).where(or(like(tasks.title, pattern), like(tasks.description, pattern))).limit(8),
@@ -38,9 +41,26 @@ export async function globalSearchAction(query: string): Promise<GlobalSearchRes
       db.select().from(calendarEvents).where(like(calendarEvents.title, pattern)).limit(5),
       db.select().from(folders).where(like(folders.name, pattern)).limit(5),
       db.select().from(applications).where(or(like(applications.name, pattern), like(applications.category, pattern), like(applications.url, pattern))).limit(8),
+      db.select().from(projects).where(and(eq(projects.isHub, true), or(like(projects.name, pattern), like(projects.description, pattern)))).limit(6),
+      db.select().from(projectPhases),
     ]);
 
     const results: GlobalSearchResult[] = [];
+
+    projectsRes.forEach((p) => {
+      const pPhases = phasesRes.filter((ph) => ph.projectId === p.id);
+      const pTasks = tasksRes.filter((t) => t.projectId === p.id);
+      const autoStatus = computeProjectAutoStatus(p, pPhases, pTasks);
+
+      results.push({
+        id: `project-${p.id}`,
+        type: "project",
+        group: "Project & Strategy Hub",
+        title: p.name,
+        subtitle: `Status: ${autoStatus.label} ${p.description ? "• " + p.description : ""}`,
+        url: `/projects/${p.id}`,
+      });
+    });
 
     notesRes.forEach((n) => {
       results.push({

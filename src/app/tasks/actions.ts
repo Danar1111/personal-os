@@ -1,7 +1,7 @@
 "use server";
 
 import { db, poolConnection } from "@/db";
-import { tasks, projects, assets, notes, Task, Project, Asset, Note } from "@/db/schema";
+import { tasks, projects, projectPhases, assets, notes, Task, Project, ProjectPhase, Asset, Note } from "@/db/schema";
 import { eq, desc, asc } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
@@ -21,10 +21,11 @@ export async function getTasksWithProjects() {
 
     const allTasks = await db.select().from(tasks).orderBy(asc(tasks.position), desc(tasks.createdAt));
     const allProjects = await db.select().from(projects).orderBy(desc(projects.createdAt));
+    const allPhases = await db.select().from(projectPhases).orderBy(asc(projectPhases.orderIndex));
     const allAssets = await db.select().from(assets).orderBy(desc(assets.createdAt));
     const allNotes = await db.select().from(notes).orderBy(desc(notes.createdAt));
     
-    return { tasks: allTasks, projects: allProjects, assets: allAssets, notes: allNotes };
+    return { tasks: allTasks, projects: allProjects, phases: allPhases, assets: allAssets, notes: allNotes };
   } catch (error) {
     console.error("Failed to fetch tasks/projects:", error);
     return { tasks: [], projects: [], assets: [], notes: [] };
@@ -76,6 +77,7 @@ export async function createTaskAction(data: {
   status?: "todo" | "in_progress" | "done";
   priority?: "low" | "medium" | "high";
   projectId?: number | null;
+  phaseId?: number | null;
   dueDate?: Date | string | null;
 }) {
   if (!data.title || data.title.trim() === "") {
@@ -94,12 +96,17 @@ export async function createTaskAction(data: {
     status: data.status || "todo",
     priority: data.priority || "medium",
     projectId: data.projectId || null,
+    phaseId: data.phaseId || null,
     position: 0,
     dueDate: finalDueDate,
   });
 
   revalidatePath("/tasks");
   revalidatePath("/calendar");
+  revalidatePath("/projects");
+  if (data.projectId) {
+    revalidatePath(`/projects/${data.projectId}`);
+  }
   revalidatePath("/");
   return { success: true };
 }
@@ -108,6 +115,8 @@ export async function updateTaskStatusAction(
   taskId: number,
   newStatus: "todo" | "in_progress" | "done"
 ) {
+  const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId)).limit(1);
+
   await db
     .update(tasks)
     .set({ status: newStatus })
@@ -115,6 +124,10 @@ export async function updateTaskStatusAction(
 
   revalidatePath("/tasks");
   revalidatePath("/calendar");
+  revalidatePath("/projects");
+  if (task?.projectId) {
+    revalidatePath(`/projects/${task.projectId}`);
+  }
   revalidatePath("/");
   return { success: true };
 }
@@ -127,6 +140,7 @@ export async function updateTaskFullAction(
     status?: "todo" | "in_progress" | "done";
     priority?: "low" | "medium" | "high";
     projectId?: number | null;
+    phaseId?: number | null;
     dueDate?: Date | string | null;
   }
 ) {
@@ -140,20 +154,29 @@ export async function updateTaskFullAction(
     if (!isNaN(d.getTime())) finalDueDate = d;
   }
 
-  await db
-    .update(tasks)
-    .set({
-      title: data.title.trim(),
-      description: data.description?.trim() || null,
-      status: data.status || "todo",
-      priority: data.priority || "medium",
-      projectId: data.projectId || null,
-      dueDate: finalDueDate,
-    })
-    .where(eq(tasks.id, taskId));
+  const updatePayload: Record<string, unknown> = {
+    title: data.title.trim(),
+    description: data.description?.trim() || null,
+    status: data.status || "todo",
+    priority: data.priority || "medium",
+    dueDate: finalDueDate,
+  };
+
+  if (data.projectId !== undefined) {
+    updatePayload.projectId = data.projectId || null;
+  }
+  if (data.phaseId !== undefined) {
+    updatePayload.phaseId = data.phaseId || null;
+  }
+
+  await db.update(tasks).set(updatePayload as any).where(eq(tasks.id, taskId));
 
   revalidatePath("/tasks");
   revalidatePath("/calendar");
+  revalidatePath("/projects");
+  if (data.projectId) {
+    revalidatePath(`/projects/${data.projectId}`);
+  }
   revalidatePath("/");
   return { success: true };
 }

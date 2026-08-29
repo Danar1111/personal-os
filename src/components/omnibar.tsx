@@ -27,6 +27,7 @@ import {
   BrainCircuit,
   Mail,
   Music,
+  Target,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -37,6 +38,7 @@ import { globalSearchAction, GlobalSearchResult } from "@/app/actions/global-sea
 const PAGE_ITEMS = [
   { id: "page-overview", group: "Pages & Apps", title: "Overview Dashboard", subtitle: "Main Bento Dashboard", url: "/", icon: LayoutDashboard },
   { id: "page-spotify", group: "Pages & Apps", title: "Spotify Music Player & Synced Lyrics", subtitle: "Real-time Now Playing, Synced Lyrics & Controls (Ctrl+M)", url: "#spotify", icon: Music },
+  { id: "page-projects", group: "Pages & Apps", title: "Project & Strategy Hub", subtitle: "Macro-level Command Center & Roadmaps", url: "/projects", icon: Target },
   { id: "page-tasks", group: "Pages & Apps", title: "Task Omni-Kanban", subtitle: "Project & Task Management", url: "/tasks", icon: CheckSquare },
 
   { id: "page-skills", group: "Pages & Apps", title: "Skill Matrix", subtitle: "Learning & Progress Tracking", url: "/skills", icon: Brain },
@@ -138,6 +140,8 @@ export function Omnibar() {
       icon:
         d.type === "app"
           ? AppWindow
+          : d.type === "project"
+          ? Target
           : d.type === "note"
           ? FileText
           : d.type === "task"

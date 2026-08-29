@@ -89,6 +89,15 @@ const MONTH_NAMES = [
 
 const WEEKDAY_NAMES = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
+function formatStatusLabel(s?: string | null): string {
+  if (!s) return "";
+  const clean = s.replace(/_/g, " ").toLowerCase();
+  return clean
+    .split(" ")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 export function MasterCalendar({ initialEvents }: MasterCalendarProps) {
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
@@ -98,8 +107,8 @@ export function MasterCalendar({ initialEvents }: MasterCalendarProps) {
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
 
-  // Source Filter: 'ALL' | 'LOCAL' | 'GCAL' | 'KANBAN'
-  const [sourceFilter, setSourceFilter] = useState<"ALL" | "LOCAL" | "GCAL" | "KANBAN">("ALL");
+  // Source Filter: 'ALL' | 'LOCAL' | 'GCAL' | 'KANBAN' | 'MILESTONE'
+  const [sourceFilter, setSourceFilter] = useState<"ALL" | "LOCAL" | "GCAL" | "KANBAN" | "MILESTONE">("ALL");
 
   // Create Event Modal State
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -176,6 +185,9 @@ export function MasterCalendar({ initialEvents }: MasterCalendarProps) {
     }
     if (sourceFilter === "KANBAN") {
       return allEvents.filter((e) => e.source === "KANBAN");
+    }
+    if (sourceFilter === "MILESTONE") {
+      return allEvents.filter((e) => e.source === "MILESTONE");
     }
     return allEvents;
   }, [allEvents, sourceFilter]);
@@ -316,7 +328,7 @@ export function MasterCalendar({ initialEvents }: MasterCalendarProps) {
     setEditStartTime(`${sHours}:${sMins}`);
     setEditEndTime(`${eHours}:${eMins}`);
     setEditIsAllDay(event.isAllDay);
-    setEditEventType(event.eventType || "task");
+    setEditEventType((event.eventType as "task" | "learning" | "general") || "task");
   };
 
   // Handle Edit Event Submit
@@ -368,6 +380,7 @@ export function MasterCalendar({ initialEvents }: MasterCalendarProps) {
   const localCount = allEvents.filter((e) => e.source === "LOCAL").length;
   const gcalCount = allEvents.filter((e) => e.source === "GCAL").length;
   const kanbanCount = allEvents.filter((e) => e.source === "KANBAN").length;
+  const milestoneCount = allEvents.filter((e) => e.source === "MILESTONE").length;
 
   return (
     <div className="space-y-4 font-mono">
@@ -485,6 +498,8 @@ export function MasterCalendar({ initialEvents }: MasterCalendarProps) {
                               const isLocal = ev.source === "LOCAL";
                               const isGcal = ev.source === "GCAL";
                               const isKanban = ev.source === "KANBAN";
+                              const isMilestone = ev.source === "MILESTONE";
+                              const isKickoff = ev.milestoneType === "PHASE_START" || ev.milestoneType === "PROJECT_START";
 
                               return (
                                 <button
@@ -496,27 +511,39 @@ export function MasterCalendar({ initialEvents }: MasterCalendarProps) {
                                     setSelectedEventId(ev.id);
                                   }}
                                   className={cn(
-                                    "w-full text-left px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] truncate flex items-center gap-1 transition-all cursor-pointer",
+                                    "w-full text-left px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] truncate flex items-center gap-1 transition-all cursor-pointer font-medium",
                                     isLocal && "bg-indigo-500/15 text-indigo-200 border border-indigo-500/30 hover:bg-indigo-500/25",
                                     isGcal && "bg-emerald-500/15 text-emerald-200 border border-emerald-500/30 hover:bg-emerald-500/25",
                                     isKanban && "bg-amber-500/20 text-amber-200 border border-amber-500/40 hover:bg-amber-500/30",
+                                    isMilestone && (
+                                      isKickoff
+                                        ? "bg-emerald-500/25 text-emerald-200 border border-emerald-500/50 hover:bg-emerald-500/35"
+                                        : "bg-purple-500/25 text-purple-200 border border-purple-500/50 hover:bg-purple-500/35"
+                                    ),
                                     selectedEventId === ev.id && (
                                       isLocal ? "ring-1.5 ring-indigo-400 bg-indigo-500/30 shadow-xs" :
                                       isGcal ? "ring-1.5 ring-emerald-400 bg-emerald-500/30 shadow-xs" :
-                                      "ring-1.5 ring-amber-400 bg-amber-500/35 shadow-xs"
+                                      isKanban ? "ring-1.5 ring-amber-400 bg-amber-500/35 shadow-xs" :
+                                      isKickoff ? "ring-1.5 ring-emerald-400 bg-emerald-500/40 shadow-xs" :
+                                      "ring-1.5 ring-purple-400 bg-purple-500/40 shadow-xs"
                                     )
                                   )}
-                                  title={`${ev.title} (${formatTime(ev.start)})`}
+                                  title={`${ev.title} (${ev.isAllDay ? "All Day" : formatTime(ev.start)})`}
                                 >
                                   <span
                                     className={cn(
                                       "w-1.5 h-1.5 rounded-full shrink-0",
-                                      isLocal ? "bg-indigo-400" : isGcal ? "bg-emerald-400" : "bg-amber-400"
+                                      isLocal ? "bg-indigo-400" :
+                                      isGcal ? "bg-emerald-400" :
+                                      isKanban ? "bg-amber-400" :
+                                      isKickoff ? "bg-emerald-400 animate-pulse" : "bg-purple-400 animate-pulse"
                                     )}
                                   />
-                                  <span className="font-bold text-[8px] sm:text-[9px] opacity-80 shrink-0">
-                                    {formatTime(ev.start)}
-                                  </span>
+                                  {!ev.isAllDay && (
+                                    <span className="font-bold text-[8px] sm:text-[9px] opacity-80 shrink-0">
+                                      {formatTime(ev.start)}
+                                    </span>
+                                  )}
                                   <span className="truncate font-medium">{ev.title}</span>
                                 </button>
                               );
@@ -682,59 +709,82 @@ export function MasterCalendar({ initialEvents }: MasterCalendarProps) {
               )}
             </div>
 
-            {/* Source Filter Tabs */}
-            <div className="grid grid-cols-4 bg-white/[0.04] border border-white/10 rounded-2xl p-0.5 text-xs">
+            {/* Source Filter Tabs: Top All Events, Bottom Category Filters */}
+            <div className="space-y-1 bg-white/[0.03] border border-white/10 rounded-2xl p-1 text-xs font-mono">
+              {/* Top: All Events (Full Width) */}
               <button
                 type="button"
                 onClick={() => setSourceFilter("ALL")}
                 className={cn(
-                  "py-1 rounded-xl font-bold transition-all text-center cursor-pointer text-[10px]",
+                  "w-full py-1.5 px-3 rounded-xl font-bold transition-all text-center cursor-pointer text-[10px] flex items-center justify-center gap-1.5",
                   sourceFilter === "ALL"
                     ? "bg-white/15 text-white shadow-sm"
-                    : "text-slate-400 hover:text-slate-200"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
                 )}
               >
-                All ({allEvents.length})
+                <span>All Events</span>
+                <span className="text-[10px] text-slate-400 font-mono">({allEvents.length})</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setSourceFilter("LOCAL")}
-                className={cn(
-                  "py-1 rounded-xl font-bold flex items-center justify-center gap-1 transition-all text-center cursor-pointer text-[10px]",
-                  sourceFilter === "LOCAL"
-                    ? "bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 shadow-sm"
-                    : "text-slate-400 hover:text-slate-200"
-                )}
-              >
-                <Database className="w-2.5 h-2.5 text-indigo-400" />
-                <span>Local ({localCount})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSourceFilter("GCAL")}
-                className={cn(
-                  "py-1 rounded-xl font-bold flex items-center justify-center gap-1 transition-all text-center cursor-pointer text-[10px]",
-                  sourceFilter === "GCAL"
-                    ? "bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 shadow-sm"
-                    : "text-slate-400 hover:text-slate-200"
-                )}
-              >
-                <GoogleIcon className="w-2.5 h-2.5" />
-                <span>Google ({gcalCount})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSourceFilter("KANBAN")}
-                className={cn(
-                  "py-1 rounded-xl font-bold flex items-center justify-center gap-1 transition-all text-center cursor-pointer text-[10px]",
-                  sourceFilter === "KANBAN"
-                    ? "bg-amber-500/30 text-amber-300 border border-amber-500/40 shadow-sm"
-                    : "text-slate-400 hover:text-slate-200"
-                )}
-              >
-                <CheckSquare className="w-2.5 h-2.5 text-amber-400" />
-                <span>Tasks ({kanbanCount})</span>
-              </button>
+
+              {/* Bottom: 4 Categories Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setSourceFilter("LOCAL")}
+                  className={cn(
+                    "py-1.5 px-2 rounded-xl font-bold flex items-center justify-center gap-1 transition-all text-center cursor-pointer text-[10px] whitespace-nowrap",
+                    sourceFilter === "LOCAL"
+                      ? "bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 shadow-sm"
+                      : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+                  )}
+                >
+                  <Database className="w-2.5 h-2.5 text-indigo-400 shrink-0" />
+                  <span>Local</span>
+                  <span className="text-[9px] text-slate-400 font-mono">({localCount})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSourceFilter("GCAL")}
+                  className={cn(
+                    "py-1.5 px-2 rounded-xl font-bold flex items-center justify-center gap-1 transition-all text-center cursor-pointer text-[10px] whitespace-nowrap",
+                    sourceFilter === "GCAL"
+                      ? "bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 shadow-sm"
+                      : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+                  )}
+                >
+                  <GoogleIcon className="w-2.5 h-2.5 shrink-0" />
+                  <span>Google</span>
+                  <span className="text-[9px] text-slate-400 font-mono">({gcalCount})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSourceFilter("KANBAN")}
+                  className={cn(
+                    "py-1.5 px-2 rounded-xl font-bold flex items-center justify-center gap-1 transition-all text-center cursor-pointer text-[10px] whitespace-nowrap",
+                    sourceFilter === "KANBAN"
+                      ? "bg-amber-500/30 text-amber-300 border border-amber-500/40 shadow-sm"
+                      : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+                  )}
+                >
+                  <CheckSquare className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+                  <span>Tasks</span>
+                  <span className="text-[9px] text-slate-400 font-mono">({kanbanCount})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSourceFilter("MILESTONE")}
+                  className={cn(
+                    "py-1.5 px-2 rounded-xl font-bold flex items-center justify-center gap-1 transition-all text-center cursor-pointer text-[10px] whitespace-nowrap",
+                    sourceFilter === "MILESTONE"
+                      ? "bg-purple-500/30 text-purple-300 border border-purple-500/40 shadow-sm"
+                      : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+                  )}
+                >
+                  <Sparkles className="w-2.5 h-2.5 text-purple-400 shrink-0" />
+                  <span>Phases</span>
+                  <span className="text-[9px] text-slate-400 font-mono">({milestoneCount})</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -804,6 +854,8 @@ export function MasterCalendar({ initialEvents }: MasterCalendarProps) {
                   const isLocal = ev.source === "LOCAL";
                   const isGcal = ev.source === "GCAL";
                   const isKanban = ev.source === "KANBAN";
+                  const isMilestone = ev.source === "MILESTONE";
+                  const isKickoff = ev.milestoneType === "PHASE_START" || ev.milestoneType === "PROJECT_START";
                   const isSelected = selectedEventId === ev.id;
                   const isMulti = isMultiDayEvent(ev);
 
@@ -827,6 +879,19 @@ export function MasterCalendar({ initialEvents }: MasterCalendarProps) {
                           isSelected
                             ? "bg-amber-950/40 border-amber-400 ring-2 ring-amber-500/80 shadow-lg shadow-amber-500/20"
                             : "bg-amber-950/20 border-amber-500/30 hover:border-amber-500/50 hover:bg-amber-950/30"
+                        ),
+                        isMilestone && (
+                          isKickoff
+                            ? (
+                              isSelected
+                                ? "bg-emerald-950/50 border-emerald-400 ring-2 ring-emerald-500/80 shadow-lg shadow-emerald-500/25"
+                                : "bg-emerald-950/25 border-emerald-500/40 hover:border-emerald-500/60 hover:bg-emerald-950/35"
+                            )
+                            : (
+                              isSelected
+                                ? "bg-purple-950/50 border-purple-400 ring-2 ring-purple-500/80 shadow-lg shadow-purple-500/25"
+                                : "bg-purple-950/25 border-purple-500/40 hover:border-purple-500/60 hover:bg-purple-950/35"
+                            )
                         )
                       )}
                     >
@@ -863,11 +928,47 @@ export function MasterCalendar({ initialEvents }: MasterCalendarProps) {
                             </Badge>
                           )}
 
+                          {isMilestone && (
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "text-[10px] px-2 py-0.5 rounded-lg font-bold font-mono flex items-center gap-1 shadow-sm",
+                                isKickoff
+                                  ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-300"
+                                  : "border-purple-500/50 bg-purple-500/20 text-purple-300"
+                              )}
+                            >
+                              <Sparkles className="w-2.5 h-2.5" />
+                              {ev.milestoneType === "PHASE_START" && "PHASE KICKOFF"}
+                              {ev.milestoneType === "PHASE_END" && "PHASE TARGET"}
+                              {ev.milestoneType === "PROJECT_START" && "PROJECT KICKOFF"}
+                              {ev.milestoneType === "PROJECT_END" && "PROJECT DEADLINE"}
+                            </Badge>
+                          )}
+
+                          {isMilestone && ev.projectName && (
+                            <Badge
+                              variant="outline"
+                              className="border-white/10 bg-white/5 text-slate-300 text-[10px] px-2 py-0.5 rounded-lg font-medium"
+                            >
+                              {ev.projectName}
+                            </Badge>
+                          )}
+
+                          {isMilestone && ev.phaseStatus && (
+                            <Badge
+                              variant="outline"
+                              className="border-indigo-500/30 bg-indigo-500/10 text-indigo-300 text-[10px] px-2 py-0.5 rounded-lg font-mono font-bold"
+                            >
+                              {formatStatusLabel(ev.phaseStatus)}
+                            </Badge>
+                          )}
+
                           {isKanban && ev.taskStatus && (
                             <Badge
                               variant="outline"
                               className={cn(
-                                "text-[10px] px-2 py-0.5 rounded-lg uppercase font-mono font-bold",
+                                "text-[10px] px-2 py-0.5 rounded-lg font-mono font-bold",
                                 ev.taskStatus === "done"
                                   ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
                                   : ev.taskStatus === "in_progress"
@@ -875,7 +976,7 @@ export function MasterCalendar({ initialEvents }: MasterCalendarProps) {
                                   : "border-indigo-500/30 bg-indigo-500/10 text-indigo-300"
                               )}
                             >
-                              {ev.taskStatus.replace("_", " ")}
+                              {formatStatusLabel(ev.taskStatus)}
                             </Badge>
                           )}
 
@@ -883,7 +984,7 @@ export function MasterCalendar({ initialEvents }: MasterCalendarProps) {
                             <Badge
                               variant="outline"
                               className={cn(
-                                "text-[10px] px-2 py-0.5 rounded-lg uppercase font-mono",
+                                "text-[10px] px-2 py-0.5 rounded-lg capitalize font-mono",
                                 ev.taskPriority === "high"
                                   ? "border-rose-500/30 bg-rose-500/10 text-rose-300 font-bold"
                                   : ev.taskPriority === "low"
@@ -904,7 +1005,7 @@ export function MasterCalendar({ initialEvents }: MasterCalendarProps) {
                             </Badge>
                           )}
 
-                          {isMulti && !isKanban && (
+                          {isMulti && !isKanban && !isMilestone && (
                             <Badge
                               variant="outline"
                               className="border-amber-500/30 bg-amber-500/15 text-amber-300 text-[10px] px-2 py-0.5 rounded-lg font-semibold"
@@ -914,7 +1015,7 @@ export function MasterCalendar({ initialEvents }: MasterCalendarProps) {
                           )}
                         </div>
 
-                        {/* Actions for LOCAL vs GCAL vs KANBAN */}
+                        {/* Actions for LOCAL vs GCAL vs KANBAN vs MILESTONE */}
                         {isLocal && (
                           <div className="flex items-center gap-1 shrink-0">
                             <button
@@ -962,6 +1063,17 @@ export function MasterCalendar({ initialEvents }: MasterCalendarProps) {
                             className="text-[11px] text-amber-400 hover:text-amber-300 hover:underline flex items-center gap-1 font-bold shrink-0"
                           >
                             <span>Open Task</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+
+                        {isMilestone && ev.projectId && (
+                          <a
+                            href={`/projects/${ev.projectId}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-[11px] text-indigo-400 hover:text-indigo-300 hover:underline flex items-center gap-1 font-bold shrink-0"
+                          >
+                            <span>Project Hub</span>
                             <ExternalLink className="w-3 h-3" />
                           </a>
                         )}

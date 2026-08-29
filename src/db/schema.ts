@@ -1,16 +1,37 @@
-import { mysqlTable, int, varchar, text, timestamp, decimal, boolean } from 'drizzle-orm/mysql-core';
+import { mysqlTable, int, varchar, text, timestamp, decimal, boolean, date } from 'drizzle-orm/mysql-core';
 import { relations } from 'drizzle-orm';
 
 export const projects = mysqlTable('projects', {
   id: int('id').autoincrement().primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),
-  status: varchar('status', { length: 50 }).notNull().default('active'),
+  description: text('description'),
+  status: varchar('status', { length: 50 }).notNull().default('PLANNING'), // 'PLANNING' | 'ACTIVE' | 'PAUSED' | 'COMPLETED'
+  startDate: date('start_date', { mode: 'string' }),
+  targetDate: date('target_date', { mode: 'string' }),
+  coverUrl: text('cover_url'),
+  icon: text('icon'),
+  isHub: boolean('is_hub').notNull().default(false),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const projectPhases = mysqlTable('project_phases', {
+  id: int('id').autoincrement().primaryKey(),
+  projectId: int('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  title: varchar('title', { length: 255 }).notNull(),
+  description: text('description'),
+  startDate: date('start_date', { mode: 'string' }).notNull(),
+  endDate: date('end_date', { mode: 'string' }).notNull(),
+  status: varchar('status', { length: 50 }).notNull().default('PLANNED'), // 'PLANNED' | 'IN_PROGRESS' | 'DONE' | 'BLOCKED'
+  orderIndex: int('order_index').notNull().default(0),
+  dependsOnPhaseId: int('depends_on_phase_id'),
+  progress: int('progress').notNull().default(0),
   createdAt: timestamp('created_at').defaultNow(),
 });
 
 export const tasks = mysqlTable('tasks', {
   id: int('id').autoincrement().primaryKey(),
   projectId: int('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  phaseId: int('phase_id').references(() => projectPhases.id, { onDelete: 'set null' }),
   title: varchar('title', { length: 255 }).notNull(),
   description: text('description'),
   status: varchar('status', { length: 50 }).notNull().default('todo'),
@@ -76,6 +97,11 @@ export const assets = mysqlTable('assets', {
   sizeBytes: int('size_bytes'),
   syncStatus: varchar('sync_status', { length: 50 }).notNull().default('LOCAL_UNSYNCED'), // 'LOCAL_UNSYNCED' | 'SYNCED_LOCAL_KEPT' | 'CLOUD_ONLY'
   gdriveId: varchar('gdrive_id', { length: 255 }),
+  // Project Hub document metadata (nullable — only set when asset is a project document)
+  projectId: int('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  phaseId: int('phase_id').references(() => projectPhases.id, { onDelete: 'set null' }),
+  docVersion: varchar('doc_version', { length: 50 }),
+  docStatus: varchar('doc_status', { length: 50 }), // 'DRAFT' | 'FINAL'
   createdAt: timestamp('created_at').defaultNow(),
 });
 
@@ -144,12 +170,27 @@ export const pinnedTickers = mysqlTable('pinned_tickers', {
 
 export const projectsRelations = relations(projects, ({ many }) => ({
   tasks: many(tasks),
+  phases: many(projectPhases),
+  assets: many(assets),
+}));
+
+export const projectPhasesRelations = relations(projectPhases, ({ one, many }) => ({
+  project: one(projects, {
+    fields: [projectPhases.projectId],
+    references: [projects.id],
+  }),
+  tasks: many(tasks),
+  assets: many(assets),
 }));
 
 export const tasksRelations = relations(tasks, ({ one }) => ({
   project: one(projects, {
     fields: [tasks.projectId],
     references: [projects.id],
+  }),
+  phase: one(projectPhases, {
+    fields: [tasks.phaseId],
+    references: [projectPhases.id],
   }),
 }));
 
@@ -195,6 +236,8 @@ export const knowledgeVault = mysqlTable('knowledge_vault', {
 
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
+export type ProjectPhase = typeof projectPhases.$inferSelect;
+export type NewProjectPhase = typeof projectPhases.$inferInsert;
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type Transaction = typeof transactions.$inferSelect;

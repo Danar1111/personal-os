@@ -11,6 +11,7 @@ export default async function TasksPage() {
   const {
     tasks: initialTasks,
     projects: initialProjects,
+    phases: initialPhases,
     assets: initialAssets,
     notes: initialNotes,
   } = await getTasksWithProjects();
@@ -42,6 +43,7 @@ export default async function TasksPage() {
       <KanbanBoard
         initialTasks={initialTasks}
         initialProjects={initialProjects}
+        initialPhases={initialPhases}
         initialAssets={initialAssets}
         initialNotes={initialNotes}
       />

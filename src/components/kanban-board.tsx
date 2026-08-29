@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useTransition, useRef, useEffect } from "react";
+import React, { useState, useTransition, useRef, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { Task, Project, Asset, Note } from "@/db/schema";
+import { Task, Project, Asset, Note, ProjectPhase } from "@/db/schema";
 import {
   createTaskAction,
   updateTaskStatusAction,
@@ -62,6 +62,7 @@ import {
   Check,
   Link2,
   ArrowUp,
+  Lock,
   Calendar as CalendarIcon,
 } from "lucide-react";
 import useSWR from "swr";
@@ -110,8 +111,10 @@ interface ReferenceItem {
 interface KanbanBoardProps {
   initialTasks: Task[];
   initialProjects: Project[];
+  initialPhases?: ProjectPhase[];
   initialAssets?: Asset[];
   initialNotes?: Note[];
+  lockedProjectId?: number;
 }
 
 import { useSearchParams } from "next/navigation";
@@ -119,13 +122,23 @@ import { useSearchParams } from "next/navigation";
 export function KanbanBoard({
   initialTasks,
   initialProjects,
+  initialPhases = [],
   initialAssets = [],
   initialNotes = [],
+  lockedProjectId,
 }: KanbanBoardProps) {
   const [isPending, startTransition] = useTransition();
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedProjectFilter, setSelectedProjectFilter] = useState<string>("all");
+  const [selectedProjectFilter, setSelectedProjectFilter] = useState<string>(
+    lockedProjectId ? lockedProjectId.toString() : "all"
+  );
   const searchParams = useSearchParams();
+
+  useEffect(() => {
+    if (lockedProjectId) {
+      setSelectedProjectFilter(lockedProjectId.toString());
+    }
+  }, [lockedProjectId]);
 
   useEffect(() => {
     const q = searchParams.get("search") || searchParams.get("q");
@@ -236,7 +249,12 @@ export function KanbanBoard({
   const [newDescription, setNewDescription] = useState("");
   const [newStatus, setNewStatus] = useState<"todo" | "in_progress" | "done">("todo");
   const [newPriority, setNewPriority] = useState<"low" | "medium" | "high">("medium");
-  const [newProjectId, setNewProjectId] = useState<string>("none");
+  const [newProjectId, setNewProjectId] = useState<string>(
+    lockedProjectId ? lockedProjectId.toString() : "none"
+  );
+  const [newPhaseId, setNewPhaseId] = useState<string>("none");
+  const [editPhaseId, setEditPhaseId] = useState<string>("none");
+  const phaseMap = useMemo(() => new Map(initialPhases.map((p) => [p.id, p])), [initialPhases]);
   const [newDueDate, setNewDueDate] = useState<string>("");
   const [newDueTime, setNewDueTime] = useState<string>("");
   const [newReferences, setNewReferences] = useState<ReferenceItem[]>([]);
@@ -413,6 +431,7 @@ export function KanbanBoard({
         status: newStatus,
         priority: newPriority,
         projectId: newProjectId !== "none" ? parseInt(newProjectId, 10) : null,
+        phaseId: newPhaseId !== "none" ? parseInt(newPhaseId, 10) : null,
         dueDate: finalDueDate,
       });
       setNewTitle("");
@@ -420,6 +439,8 @@ export function KanbanBoard({
       setNewDueDate("");
       setNewDueTime("");
       setNewReferences([]);
+      setNewProjectId(lockedProjectId ? lockedProjectId.toString() : "none");
+      setNewPhaseId("none");
       setIsTaskDialogOpen(false);
     });
   };
@@ -434,6 +455,7 @@ export function KanbanBoard({
     setEditStatus((task.status as any) || "todo");
     setEditPriority((task.priority as any) || "medium");
     setEditProjectId(task.projectId ? task.projectId.toString() : "none");
+    setEditPhaseId(task.phaseId ? task.phaseId.toString() : "none");
 
     if (task.dueDate) {
       const d = new Date(task.dueDate);
@@ -480,6 +502,7 @@ export function KanbanBoard({
         status: editStatus,
         priority: editPriority,
         projectId: editProjectId !== "none" ? parseInt(editProjectId, 10) : null,
+        phaseId: editPhaseId !== "none" ? parseInt(editPhaseId, 10) : null,
         dueDate: finalDueDate,
       });
       setEditingTask(null);
@@ -552,64 +575,81 @@ export function KanbanBoard({
             )}
           </div>
 
-          {/* Project Filter Select */}
-          <Select
-            value={selectedProjectFilter}
-            onValueChange={(val: any) => setSelectedProjectFilter(val || "all")}
-          >
-            <SelectTrigger className="w-64 bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono">
-              <div className="flex items-center gap-2 truncate">
-                <Filter className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                <span className="truncate">
-                  {selectedProjectFilter === "all"
-                    ? "All Projects"
-                    : selectedProjectFilter === "unassigned"
-                    ? "Unassigned Projects"
-                    : getProjectName(parseInt(selectedProjectFilter, 10)) || "Project"}
-                </span>
-              </div>
-            </SelectTrigger>
-            <SelectContent className="bg-[#14141e] border-white/15 text-slate-100 rounded-2xl p-1.5 shadow-2xl z-[100] min-w-[280px]">
-              <SelectItem value="all" className="px-3.5 py-2.5 text-xs font-mono rounded-xl cursor-pointer">
-                All Projects
-              </SelectItem>
-              <SelectItem value="unassigned" className="px-3.5 py-2.5 text-xs font-mono rounded-xl cursor-pointer">
-                Unassigned
-              </SelectItem>
-              {initialProjects.map((proj) => (
-                <SelectItem key={proj.id} value={proj.id.toString()} className="px-3.5 py-2.5 text-xs font-mono rounded-xl cursor-pointer">
-                  {proj.name}
+          {/* Project Filter Select or Scoped Badge */}
+          {lockedProjectId ? (
+            <div className="flex items-center gap-2 px-4 h-11 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs font-mono">
+              <Layers className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="truncate max-w-[200px]">Scoped: {getProjectName(lockedProjectId)}</span>
+            </div>
+          ) : (
+            <Select
+              value={selectedProjectFilter}
+              onValueChange={(val: any) => setSelectedProjectFilter(val || "all")}
+            >
+              <SelectTrigger className="w-64 bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono">
+                <div className="flex items-center gap-2 truncate">
+                  <Filter className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                  <span className="truncate">
+                    {selectedProjectFilter === "all"
+                      ? "All Projects"
+                      : selectedProjectFilter === "unassigned"
+                      ? "Unassigned Projects"
+                      : getProjectName(parseInt(selectedProjectFilter, 10)) || "Project"}
+                  </span>
+                </div>
+              </SelectTrigger>
+              <SelectContent className="bg-[#14141e] border-white/15 text-slate-100 rounded-2xl p-1.5 shadow-2xl z-[100] min-w-[280px]">
+                <SelectItem value="all" className="px-3.5 py-2.5 text-xs font-mono rounded-xl cursor-pointer">
+                  All Projects
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                <SelectItem value="unassigned" className="px-3.5 py-2.5 text-xs font-mono rounded-xl cursor-pointer">
+                  Unassigned
+                </SelectItem>
+                {initialProjects.map((proj) => (
+                  <SelectItem key={proj.id} value={proj.id.toString()} className="px-3.5 py-2.5 text-xs font-mono rounded-xl cursor-pointer">
+                    {proj.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         {/* Action Buttons */}
         <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-          {/* Manage Projects Button */}
-          <Button
-            onClick={() => setIsManageProjectsOpen(true)}
-            variant="outline"
-            className="border-purple-500/30 text-purple-300 hover:bg-purple-500/10 text-xs font-mono rounded-2xl h-11 px-4 gap-1.5 cursor-pointer"
-          >
-            <Folder className="w-4 h-4 text-purple-400" />
-            Manage Projects ({initialProjects.length})
-          </Button>
+          {!lockedProjectId && (
+            <>
+              {/* Manage Projects Button */}
+              <Button
+                onClick={() => setIsManageProjectsOpen(true)}
+                variant="outline"
+                className="border-purple-500/30 text-purple-300 hover:bg-purple-500/10 text-xs font-mono rounded-2xl h-11 px-4 gap-1.5 cursor-pointer"
+              >
+                <Folder className="w-4 h-4 text-purple-400" />
+                Manage Projects ({initialProjects.length})
+              </Button>
 
-          {/* New Project Button */}
-          <Button
-            onClick={() => setIsProjectDialogOpen(true)}
-            variant="outline"
-            className="border-white/15 text-slate-200 hover:bg-white/10 text-xs font-mono rounded-2xl h-11 px-4 gap-1.5 cursor-pointer"
-          >
-            <FolderPlus className="w-4 h-4 text-indigo-400" />
-            New Project
-          </Button>
+              {/* New Project Button */}
+              <Button
+                onClick={() => setIsProjectDialogOpen(true)}
+                variant="outline"
+                className="border-white/15 text-slate-200 hover:bg-white/10 text-xs font-mono rounded-2xl h-11 px-4 gap-1.5 cursor-pointer"
+              >
+                <FolderPlus className="w-4 h-4 text-indigo-400" />
+                New Project
+              </Button>
+            </>
+          )}
 
           {/* New Task Button */}
           <Button
-            onClick={() => setIsTaskDialogOpen(true)}
+            onClick={() => {
+              if (lockedProjectId) {
+                setNewProjectId(lockedProjectId.toString());
+              }
+              setNewPhaseId("none");
+              setIsTaskDialogOpen(true);
+            }}
             className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 px-5 gap-1.5 shadow-lg shadow-indigo-600/30 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
@@ -857,9 +897,30 @@ export function KanbanBoard({
                 </div>
 
                 <div className="flex-1 min-w-[140px] space-y-1">
-                  <label className="text-[11px] font-mono text-slate-300">Project</label>
-                  <Select value={newProjectId} onValueChange={(val: any) => setNewProjectId(val || "none")}>
-                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-mono text-slate-300">Project</label>
+                    {lockedProjectId && (
+                      <span className="text-[9px] text-indigo-400 font-mono flex items-center gap-1">
+                        <Lock className="w-2.5 h-2.5" /> Locked
+                      </span>
+                    )}
+                  </div>
+                  <Select
+                    disabled={!!lockedProjectId}
+                    value={newProjectId}
+                    onValueChange={(val: any) => {
+                      if (lockedProjectId) return;
+                      setNewProjectId(val || "none");
+                      setNewPhaseId("none");
+                    }}
+                  >
+                    <SelectTrigger
+                      disabled={!!lockedProjectId}
+                      className={cn(
+                        "w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono",
+                        lockedProjectId && "opacity-75 cursor-not-allowed bg-white/[0.02]"
+                      )}
+                    >
                       <span className="truncate">
                         {newProjectId === "none" ? "None" : getProjectName(parseInt(newProjectId, 10)) || "Project"}
                       </span>
@@ -875,6 +936,39 @@ export function KanbanBoard({
                   </Select>
                 </div>
               </div>
+
+              {/* Optional Phase Selector */}
+              {(() => {
+                const currentProjId = lockedProjectId || (newProjectId !== "none" ? parseInt(newProjectId, 10) : null);
+                const availablePhases = currentProjId ? initialPhases.filter((p) => p.projectId === currentProjId) : [];
+                if (availablePhases.length === 0) return null;
+
+                return (
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-mono text-slate-300 flex items-center gap-1">
+                      <Layers className="w-3 h-3 text-purple-400" />
+                      <span>Project Phase</span>
+                    </label>
+                    <Select value={newPhaseId} onValueChange={(val: any) => setNewPhaseId(val || "none")}>
+                      <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                        <span className="truncate">
+                          {newPhaseId === "none" ? "None (General Task)" : phaseMap.get(parseInt(newPhaseId, 10))?.title || "Select Phase"}
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[220px]">
+                        <SelectItem value="none" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">
+                          None (General Task)
+                        </SelectItem>
+                        {availablePhases.map((p) => (
+                          <SelectItem key={p.id} value={p.id.toString()} className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">
+                            {p.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                );
+              })()}
 
               {/* Optional Deadline / Due Date & Due Time Section */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -954,6 +1048,7 @@ export function KanbanBoard({
             limit={columnLimits.todo}
             onLoadMore={() => setColumnLimits((prev) => ({ ...prev, todo: prev.todo + 8 }))}
             projectMap={projectMap}
+            phaseMap={phaseMap}
             getPriorityBadge={getPriorityBadge}
             onStatusChange={handleStatusChange}
             onDeleteTask={(t) => setDeletingTaskConfirm(t)}
@@ -976,6 +1071,7 @@ export function KanbanBoard({
             limit={columnLimits.in_progress}
             onLoadMore={() => setColumnLimits((prev) => ({ ...prev, in_progress: prev.in_progress + 8 }))}
             projectMap={projectMap}
+            phaseMap={phaseMap}
             getPriorityBadge={getPriorityBadge}
             onStatusChange={handleStatusChange}
             onDeleteTask={(t) => setDeletingTaskConfirm(t)}
@@ -999,6 +1095,7 @@ export function KanbanBoard({
             limit={columnLimits.done}
             onLoadMore={() => setColumnLimits((prev) => ({ ...prev, done: prev.done + 8 }))}
             projectMap={projectMap}
+            phaseMap={phaseMap}
             getPriorityBadge={getPriorityBadge}
             onStatusChange={handleStatusChange}
             onDeleteTask={(t) => setDeletingTaskConfirm(t)}
@@ -1059,6 +1156,12 @@ export function KanbanBoard({
                   <>
                     <span>•</span>
                     <span className="text-indigo-300">Project: {getProjectName(viewingTask.projectId)}</span>
+                  </>
+                )}
+                {viewingTask.phaseId && phaseMap.get(viewingTask.phaseId) && (
+                  <>
+                    <span>•</span>
+                    <span className="text-purple-300">Phase: {phaseMap.get(viewingTask.phaseId)?.title}</span>
                   </>
                 )}
                 {viewingTask.dueDate && (
@@ -1231,9 +1334,30 @@ export function KanbanBoard({
                   </div>
 
                   <div className="flex-1 min-w-[140px] space-y-1">
-                    <label className="text-[11px] font-mono text-slate-300">Project</label>
-                    <Select value={editProjectId} onValueChange={(val: any) => setEditProjectId(val || "none")}>
-                      <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-mono text-slate-300">Project</label>
+                      {lockedProjectId && (
+                        <span className="text-[9px] text-indigo-400 font-mono flex items-center gap-1">
+                          <Lock className="w-2.5 h-2.5" /> Locked
+                        </span>
+                      )}
+                    </div>
+                    <Select
+                      disabled={!!lockedProjectId}
+                      value={editProjectId}
+                      onValueChange={(val: any) => {
+                        if (lockedProjectId) return;
+                        setEditProjectId(val || "none");
+                        setEditPhaseId("none");
+                      }}
+                    >
+                      <SelectTrigger
+                        disabled={!!lockedProjectId}
+                        className={cn(
+                          "w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono",
+                          lockedProjectId && "opacity-75 cursor-not-allowed bg-white/[0.02]"
+                        )}
+                      >
                         <span className="truncate">
                           {editProjectId === "none" ? "None" : getProjectName(parseInt(editProjectId, 10)) || "Project"}
                         </span>
@@ -1249,6 +1373,39 @@ export function KanbanBoard({
                     </Select>
                   </div>
                 </div>
+
+                {/* Optional Phase Selector in Edit Modal */}
+                {(() => {
+                  const currentProjId = editProjectId !== "none" ? parseInt(editProjectId, 10) : null;
+                  const availablePhases = currentProjId ? initialPhases.filter((p) => p.projectId === currentProjId) : [];
+                  if (availablePhases.length === 0) return null;
+
+                  return (
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-mono text-slate-300 flex items-center gap-1">
+                        <Layers className="w-3 h-3 text-purple-400" />
+                        <span>Project Phase</span>
+                      </label>
+                      <Select value={editPhaseId} onValueChange={(val: any) => setEditPhaseId(val || "none")}>
+                        <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                          <span className="truncate">
+                            {editPhaseId === "none" ? "None (General Task)" : phaseMap.get(parseInt(editPhaseId, 10))?.title || "Select Phase"}
+                          </span>
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[220px]">
+                          <SelectItem value="none" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">
+                            None (General Task)
+                          </SelectItem>
+                          {availablePhases.map((p) => (
+                            <SelectItem key={p.id} value={p.id.toString()} className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">
+                              {p.title}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  );
+                })()}
 
                 {/* Optional Deadline / Due Date & Due Time Section */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1759,6 +1916,7 @@ function SearchableSelect({
 interface SortableTaskCardProps {
   task: Task;
   projectName?: string | null;
+  phase?: ProjectPhase | null;
   cleanDesc: string;
   references: ReferenceItem[];
   getPriorityBadge: (priority: string) => React.ReactNode;
@@ -1775,6 +1933,7 @@ interface SortableTaskCardProps {
 function SortableTaskCard({
   task,
   projectName,
+  phase,
   cleanDesc,
   references,
   getPriorityBadge,
@@ -1806,7 +1965,7 @@ function SortableTaskCard({
         isDragging && "ring-2 ring-indigo-500/60 bg-indigo-500/10 shadow-2xl z-50 scale-[1.02]"
       )}
     >
-      {/* Header: Drag Grip, Priority, Project, Edit & Delete Buttons */}
+      {/* Header: Drag Grip, Priority, Project, Phase, Edit & Delete Buttons */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <button
@@ -1826,6 +1985,13 @@ function SortableTaskCard({
           {projectName && (
             <span className="text-[10px] font-mono text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20 flex items-center gap-1">
               <Layers className="w-2.5 h-2.5 inline" /> {projectName}
+            </span>
+          )}
+
+          {phase && (
+            <span className="text-[10px] font-mono text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded-full border border-purple-500/20 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+              <span className="truncate max-w-[110px]">{phase.title}</span>
             </span>
           )}
 
@@ -1986,6 +2152,7 @@ interface KanbanColumnProps {
   limit: number;
   onLoadMore: () => void;
   projectMap: Map<number, string>;
+  phaseMap: Map<number, ProjectPhase>;
   getPriorityBadge: (priority: string) => React.ReactNode;
   onStatusChange: (taskId: number, status: "todo" | "in_progress" | "done") => void;
   onDeleteTask: (task: Task) => void;
@@ -2008,6 +2175,7 @@ function KanbanColumn({
   limit,
   onLoadMore,
   projectMap,
+  phaseMap,
   getPriorityBadge,
   onStatusChange,
   onDeleteTask,
@@ -2070,6 +2238,7 @@ function KanbanColumn({
           <SortableContext items={visibleTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
             {visibleTasks.map((task) => {
               const projectName = task.projectId ? projectMap.get(task.projectId) : null;
+              const phase = task.phaseId ? phaseMap.get(task.phaseId) : null;
               const { cleanDesc, references } = parseReferences(task.description);
 
               return (
@@ -2077,6 +2246,7 @@ function KanbanColumn({
                   key={task.id}
                   task={task}
                   projectName={projectName}
+                  phase={phase}
                   cleanDesc={cleanDesc}
                   references={references}
                   getPriorityBadge={getPriorityBadge}

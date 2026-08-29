@@ -1,11 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { calendarEvents, systemSettings, tasks } from "@/db/schema";
+import { calendarEvents, systemSettings, tasks, projects, projectPhases } from "@/db/schema";
 import { getCalendarClient, getGoogleRefreshToken } from "@/lib/google";
 import { UnifiedCalendarEvent } from "@/lib/calendar-utils";
 import { gte, lte, and, or, asc, isNotNull } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
+
+function formatStatus(status?: string | null): string {
+  if (!status) return "Planned";
+  const s = status.toLowerCase().replace(/_/g, " ");
+  return s
+    .split(" ")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -189,7 +198,125 @@ export async function GET(req: NextRequest) {
       console.warn("[CALENDAR_API_TASK_FETCH_WARN]:", taskDbErr);
     }
 
-    // 4. CHRONOLOGICALLY SORT MERGED EVENTS
+    // 4. FETCH PROJECT & PHASE MILESTONES (START & TARGET DATES)
+    try {
+      const [allProjects, allPhases] = await Promise.all([
+        db.select().from(projects),
+        db.select().from(projectPhases),
+      ]);
+
+      const projectMap = new Map(allProjects.map((p) => [p.id, p]));
+
+      // 4a. Phase Milestones (Kickoff & Target)
+      for (const phase of allPhases) {
+        const proj = projectMap.get(phase.projectId);
+        const projName = proj?.name || "Project";
+
+        // Phase Kickoff (startDate)
+        if (phase.startDate) {
+          const sDate = new Date(phase.startDate);
+          if (!isNaN(sDate.getTime()) && sDate >= startDate && sDate <= endDate) {
+            const startDay = new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate(), 0, 0, 0, 0);
+            const endDay = new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate(), 23, 59, 59, 999);
+
+            const formattedStatus = formatStatus(phase.status);
+
+            unifiedEvents.push({
+              id: `phase-start-${phase.id}`,
+              projectId: phase.projectId,
+              phaseId: phase.id,
+              projectName: projName,
+              title: `🚀 Kickoff: ${phase.title}`,
+              description: `Project: ${projName} • Status: ${formattedStatus} • Progress: ${phase.progress || 0}%`,
+              start: startDay.toISOString(),
+              end: endDay.toISOString(),
+              source: "MILESTONE",
+              eventType: "milestone",
+              milestoneType: "PHASE_START",
+              phaseStatus: formattedStatus,
+              isAllDay: true,
+            });
+          }
+        }
+
+        // Phase Target / Deadline (endDate)
+        if (phase.endDate) {
+          const eDate = new Date(phase.endDate);
+          if (!isNaN(eDate.getTime()) && eDate >= startDate && eDate <= endDate) {
+            const startDay = new Date(eDate.getFullYear(), eDate.getMonth(), eDate.getDate(), 0, 0, 0, 0);
+            const endDay = new Date(eDate.getFullYear(), eDate.getMonth(), eDate.getDate(), 23, 59, 59, 999);
+            const formattedStatus = formatStatus(phase.status);
+
+            unifiedEvents.push({
+              id: `phase-end-${phase.id}`,
+              projectId: phase.projectId,
+              phaseId: phase.id,
+              projectName: projName,
+              title: `🏁 Target: ${phase.title}`,
+              description: `Project: ${projName} • Status: ${formattedStatus} • Progress: ${phase.progress || 0}%`,
+              start: startDay.toISOString(),
+              end: endDay.toISOString(),
+              source: "MILESTONE",
+              eventType: "milestone",
+              milestoneType: "PHASE_END",
+              phaseStatus: formattedStatus,
+              isAllDay: true,
+            });
+          }
+        }
+      }
+
+      // 4b. Project-Level Milestones (if start or target date set)
+      for (const p of allProjects) {
+        if (p.startDate) {
+          const sDate = new Date(p.startDate);
+          if (!isNaN(sDate.getTime()) && sDate >= startDate && sDate <= endDate) {
+            const startDay = new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate(), 0, 0, 0, 0);
+            const endDay = new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate(), 23, 59, 59, 999);
+
+            unifiedEvents.push({
+              id: `project-start-${p.id}`,
+              projectId: p.id,
+              projectName: p.name,
+              title: `🎯 Project Start: ${p.name}`,
+              description: p.description || `Strategic Project Start`,
+              start: startDay.toISOString(),
+              end: endDay.toISOString(),
+              source: "MILESTONE",
+              eventType: "milestone",
+              milestoneType: "PROJECT_START",
+              isAllDay: true,
+            });
+          }
+        }
+
+        if (p.targetDate) {
+          const tDate = new Date(p.targetDate);
+          if (!isNaN(tDate.getTime()) && tDate >= startDate && tDate <= endDate) {
+            const startDay = new Date(tDate.getFullYear(), tDate.getMonth(), tDate.getDate(), 0, 0, 0, 0);
+            const endDay = new Date(tDate.getFullYear(), tDate.getMonth(), tDate.getDate(), 23, 59, 59, 999);
+
+            unifiedEvents.push({
+              id: `project-end-${p.id}`,
+              projectId: p.id,
+              projectName: p.name,
+              title: `🏆 Project Deadline: ${p.name}`,
+              description: p.description || `Strategic Project Target Completion Date`,
+              start: startDay.toISOString(),
+              end: endDay.toISOString(),
+              source: "MILESTONE",
+              eventType: "milestone",
+              milestoneType: "PROJECT_END",
+              isAllDay: true,
+            });
+          }
+        }
+      }
+    } catch (milestoneErr) {
+      console.warn("[CALENDAR_API_MILESTONE_FETCH_WARN]:", milestoneErr);
+    }
+
+    // 5. CHRONOLOGICALLY SORT MERGED EVENTS
     unifiedEvents.sort((a, b) => {
       const timeA = new Date(a.start).getTime();
       const timeB = new Date(b.start).getTime();

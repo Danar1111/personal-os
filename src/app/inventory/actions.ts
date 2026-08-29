@@ -86,6 +86,8 @@ export async function createAssetAction(data: {
   urlOrPath: string;
   thumbnailUrl?: string;
   tags?: string;
+  projectId?: number | null;
+  phaseId?: number | null;
 }) {
   if (!data.title || data.title.trim() === "") {
     throw new Error("Asset title is required");
@@ -104,17 +106,23 @@ export async function createAssetAction(data: {
     }
   }
 
-  await db.insert(assets).values({
+  const [result] = await db.insert(assets).values({
     title: data.title.trim(),
     type: "link",
     urlOrPath: cleanUrl,
     thumbnailUrl: finalThumbnail,
     tags: data.tags?.trim() || "",
+    projectId: data.projectId || null,
+    phaseId: data.phaseId || null,
   });
 
   revalidatePath("/inventory");
   revalidatePath("/");
-  return { success: true };
+  if (data.projectId) {
+    revalidatePath(`/projects/${data.projectId}`);
+    revalidatePath("/projects");
+  }
+  return { success: true, id: result.insertId, thumbnailUrl: finalThumbnail };
 }
 
 export async function updateAssetAction(
@@ -125,6 +133,8 @@ export async function updateAssetAction(
     urlOrPath?: string;
     thumbnailUrl?: string;
     tags?: string;
+    projectId?: number | null;
+    phaseId?: number | null;
   }
 ) {
   const updatePayload: any = {};
@@ -141,12 +151,18 @@ export async function updateAssetAction(
   }
   if (data.thumbnailUrl !== undefined) updatePayload.thumbnailUrl = data.thumbnailUrl.trim();
   if (data.tags !== undefined) updatePayload.tags = data.tags.trim();
+  if (data.projectId !== undefined) updatePayload.projectId = data.projectId;
+  if (data.phaseId !== undefined) updatePayload.phaseId = data.phaseId;
 
   await db.update(assets).set(updatePayload).where(eq(assets.id, id));
 
   revalidatePath("/inventory");
   revalidatePath("/");
-  return { success: true };
+  if (data.projectId) {
+    revalidatePath(`/projects/${data.projectId}`);
+    revalidatePath("/projects");
+  }
+  return { success: true, thumbnailUrl: updatePayload.thumbnailUrl };
 }
 
 export async function deleteAssetAction(id: number) {
@@ -154,6 +170,7 @@ export async function deleteAssetAction(id: number) {
 
   revalidatePath("/inventory");
   revalidatePath("/");
+  revalidatePath("/projects");
   return { success: true };
 }
 

@@ -27,6 +27,7 @@ import {
   Wand2,
   BrainCircuit,
   Mail,
+  Target,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getUserNicknameAction } from "@/app/knowledge/actions";
@@ -35,6 +36,7 @@ import { SpotifyFloatingWidget } from "@/components/spotify-floating-widget";
 
 const navItems = [
   { name: "Overview", href: "/", icon: LayoutDashboard },
+  { name: "Project Hub", href: "/projects", icon: Target },
   { name: "Task Omni-Kanban", href: "/tasks", icon: CheckSquare },
   { name: "Skill Matrix", href: "/skills", icon: Brain },
   { name: "Finance Hub", href: "/finance", icon: Wallet },

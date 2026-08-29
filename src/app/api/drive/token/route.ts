@@ -30,9 +30,20 @@ export async function GET(req: NextRequest) {
     });
   } catch (error: any) {
     console.error("[DRIVE_TOKEN_API_ERROR]", error);
+    const isAuthError =
+      error?.response?.data?.error === "invalid_grant" ||
+      error?.message?.includes("invalid_grant") ||
+      error?.message?.includes("No refresh token") ||
+      error?.code === 401 ||
+      error?.status === 401;
+
+    const friendlyMsg = isAuthError
+      ? "Google Drive session expired or disconnected. Please reconnect Google Drive in Settings."
+      : (error.message || "Failed to generate Google Drive access token.");
+
     return NextResponse.json(
-      { error: error.message || "Failed to generate Google Drive access token." },
-      { status: 500 }
+      { error: friendlyMsg },
+      { status: 401 }
     );
   }
 }

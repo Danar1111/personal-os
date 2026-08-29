@@ -270,6 +270,10 @@ export async function createDriveAssetAction(data: {
   sizeBytes?: number;
   syncStatus?: string;
   gdriveId?: string;
+  projectId?: number | null;
+  phaseId?: number | null;
+  docVersion?: string | null;
+  docStatus?: string | null;
 }) {
   if (!data.title || data.title.trim() === "") {
     throw new Error("File title is required");
@@ -287,10 +291,18 @@ export async function createDriveAssetAction(data: {
     sizeBytes: data.sizeBytes || null,
     syncStatus: data.syncStatus || "LOCAL_UNSYNCED",
     gdriveId: data.gdriveId || null,
+    projectId: data.projectId ?? null,
+    phaseId: data.phaseId ?? null,
+    docVersion: data.docVersion ?? "v1.0",
+    docStatus: data.docStatus ?? "DRAFT",
   });
 
   revalidatePath("/drive");
   revalidatePath("/inventory");
+  if (data.projectId) {
+    revalidatePath(`/projects/${data.projectId}`);
+    revalidatePath("/projects");
+  }
   revalidatePath("/");
   return { success: true, id: (inserted as any)?.insertId };
 }
@@ -299,10 +311,14 @@ export async function updateDriveAssetAction(
   id: number,
   data: {
     title?: string;
-    type?: "pdf" | "image" | "video";
+    type?: "pdf" | "image" | "video" | "link";
     urlOrPath?: string;
     thumbnailUrl?: string;
     tags?: string;
+    projectId?: number | null;
+    phaseId?: number | null;
+    docVersion?: string | null;
+    docStatus?: string | null;
   }
 ) {
   const updatePayload: any = {};
@@ -311,11 +327,19 @@ export async function updateDriveAssetAction(
   if (data.urlOrPath !== undefined) updatePayload.urlOrPath = data.urlOrPath.trim();
   if (data.thumbnailUrl !== undefined) updatePayload.thumbnailUrl = data.thumbnailUrl.trim();
   if (data.tags !== undefined) updatePayload.tags = data.tags.trim();
+  if (data.projectId !== undefined) updatePayload.projectId = data.projectId;
+  if (data.phaseId !== undefined) updatePayload.phaseId = data.phaseId;
+  if (data.docVersion !== undefined) updatePayload.docVersion = data.docVersion ? data.docVersion.trim() : null;
+  if (data.docStatus !== undefined) updatePayload.docStatus = data.docStatus ? data.docStatus.trim() : null;
 
   await db.update(assets).set(updatePayload).where(eq(assets.id, id));
 
   revalidatePath("/drive");
   revalidatePath("/inventory");
+  if (data.projectId) {
+    revalidatePath(`/projects/${data.projectId}`);
+    revalidatePath("/projects");
+  }
   revalidatePath("/");
   return { success: true };
 }

@@ -1,7 +1,7 @@
 import React, { Suspense } from "react";
 import Link from "next/link";
 import { db } from "@/db";
-import { tasks, projects, calendarEvents, Task, Project } from "@/db/schema";
+import { tasks, projects, projectPhases, calendarEvents, Task, Project } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import {
   Sparkles,
@@ -32,6 +32,7 @@ import { TaskKanbanWidget } from "@/components/dashboard/TaskKanbanWidget";
 import { MovieRecommendationWidget } from "@/components/dashboard/MovieRecommendationWidget";
 import { AppLauncherWidget } from "@/components/dashboard/AppLauncherWidget";
 import { getTrendingMovies } from "@/app/watchlist/actions";
+import { computeProjectAutoStatus } from "@/lib/project-status-engine";
 
 export const revalidate = 0; // Live DB data fetching
 
@@ -199,6 +200,55 @@ export default async function DashboardPage() {
     return t.title;
   });
 
+  // Fetch Active Projects & Their Key Phase for Briefing
+  let activeProjectsSummary: {
+    id: number;
+    name: string;
+    status: string;
+    currentPhaseTitle?: string | null;
+    progress?: number | null;
+  }[] = [];
+
+  try {
+    const [allProjects, allPhases, allProjectTasks] = await Promise.all([
+      db.select().from(projects).where(eq(projects.isHub, true)),
+      db.select().from(projectPhases),
+      db.select().from(tasks),
+    ]);
+
+    const enriched = allProjects.map((p) => {
+      const projPhases = allPhases.filter((ph) => ph.projectId === p.id);
+      const projTasks = allProjectTasks.filter((t) => t.projectId === p.id);
+      const activePhase =
+        projPhases.find((ph) => (ph.status || "").toLowerCase() === "in_progress") ||
+        projPhases.find((ph) => (ph.status || "").toLowerCase() === "planned") ||
+        projPhases[0];
+
+      let avgProgress = 0;
+      if (projTasks.length > 0) {
+        const doneCount = projTasks.filter((t) => t.status === "done").length;
+        avgProgress = Math.round((doneCount / projTasks.length) * 100);
+      } else if (projPhases.length > 0) {
+        const sum = projPhases.reduce((acc, ph) => acc + (ph.progress || 0), 0);
+        avgProgress = Math.round(sum / projPhases.length);
+      }
+
+      const autoStatus = computeProjectAutoStatus(p, projPhases, projTasks);
+
+      return {
+        id: p.id,
+        name: p.name,
+        status: autoStatus.status,
+        currentPhaseTitle: activePhase?.title || null,
+        progress: avgProgress,
+      };
+    });
+
+    activeProjectsSummary = enriched.filter((p) => p.status !== "COMPLETED");
+  } catch (projErr) {
+    console.error("[Dashboard Projects Fetch Error]:", projErr);
+  }
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-16">
       {/* Page Header */}
@@ -237,6 +287,7 @@ export default async function DashboardPage() {
             topTaskTitles={activeTaskTitles}
             nextEvent={nextEvent}
             aiSkillsCount={OMNI_AI_SKILLS_REGISTRY.length}
+            activeProjects={activeProjectsSummary}
           />
         </div>
 

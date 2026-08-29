@@ -2,13 +2,13 @@
 
 import React, { useState, useEffect, useTransition } from "react";
 import Link from "next/link";
-import { Sparkles, Calendar, Clock, CheckSquare, TrendingUp, Cpu, RefreshCw, PartyPopper } from "lucide-react";
+import { Sparkles, Calendar, Clock, CheckSquare, TrendingUp, Cpu, RefreshCw, PartyPopper, Target } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { OMNI_AI_SKILLS_REGISTRY } from "@/lib/ai-skills-registry";
-import { getSmartDailySummaryAction } from "@/app/actions/daily-summary";
+import { getSmartDailySummaryAction, ActiveProjectBrief } from "@/app/actions/daily-summary";
 import { cn } from "@/lib/utils";
 
-const CACHE_KEY = "personal_os_daily_ai_briefing_cache_v3";
+const CACHE_KEY = "personal_os_daily_ai_briefing_cache_v4";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 Jam (1 hour)
 
 interface DailyBriefingWidgetProps {
@@ -19,6 +19,7 @@ interface DailyBriefingWidgetProps {
   topTaskTitles?: string[];
   nextEvent?: { title: string; startTime: Date; source?: string } | null;
   aiSkillsCount?: number;
+  activeProjects?: ActiveProjectBrief[];
 }
 
 function getTimeOfDayEmoji() {
@@ -42,6 +43,7 @@ export function DailyBriefingWidget({
   topTaskTitles = [],
   nextEvent,
   aiSkillsCount = OMNI_AI_SKILLS_REGISTRY.length,
+  activeProjects = [],
 }: DailyBriefingWidgetProps) {
   const greetingName = userNickname || "Danar";
   const timeEmoji = getTimeOfDayEmoji();
@@ -61,9 +63,15 @@ export function DailyBriefingWidget({
     : "";
 
   const taskSnippet = topTaskTitles.length > 0 ? ` seputar "${topTaskTitles[0]}"` : "";
+  const projSnippet =
+    activeProjects.length > 0
+      ? `, serta progres project "${activeProjects[0].name}"${
+          activeProjects[0].currentPhaseTitle ? ` (${activeProjects[0].currentPhaseTitle})` : ""
+        }`
+      : "";
 
   // Initial immediate fallback text
-  const initialFallback = `Halo ${greetingName}, selamat beraktivitas! Personal OS berjalan lancar dengan ${pendingTasksCount} tugas aktif di kanban (${completionRate}% progres)${taskSnippet}${
+  const initialFallback = `Halo ${greetingName}, selamat beraktivitas! Personal OS berjalan lancar dengan ${pendingTasksCount} tugas aktif di kanban (${completionRate}% progres)${taskSnippet}${projSnippet}${
     nextEvent ? `, plus agenda "${nextEvent.title}" jam ${nextEventTimeStr}` : ""
   }. Tetap fokus, santai, dan nikmati hari kamu!`;
 
@@ -74,7 +82,8 @@ export function DailyBriefingWidget({
 
   // Compute cache key based on dynamic state
   const todayDateKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
-  const currentKey = `${greetingName}_${pendingTasksCount}_${completionRate}_${nextEvent?.title || "none"}_${topTaskTitles.slice(0, 2).join(",")}_${todayDateKey}`;
+  const projectsKey = activeProjects.map((p) => `${p.id}:${p.progress}:${p.currentPhaseTitle || ""}`).join(",");
+  const currentKey = `${greetingName}_${pendingTasksCount}_${completionRate}_${nextEvent?.title || "none"}_${topTaskTitles.slice(0, 2).join(",")}_${projectsKey}_${todayDateKey}`;
 
   const fetchSummary = (force: boolean = false) => {
     startTransition(async () => {
@@ -108,6 +117,7 @@ export function DailyBriefingWidget({
                 source: nextEvent.source,
               }
             : null,
+          activeProjects,
         });
 
         if (res.success && res.summary) {
@@ -208,18 +218,47 @@ export function DailyBriefingWidget({
 
       {/* Pinned Bottom Section: Context Pills & Footer */}
       <div className="mt-auto space-y-3.5 pt-2">
-        {/* Live Context Pills Row */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 font-mono text-[11px]">
-          <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-center gap-2">
+        {/* Live Context Pills Row (4-Grid) */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 font-mono text-[11px]">
+          <Link
+            href="/tasks"
+            className="p-2.5 rounded-xl bg-white/[0.02] hover:bg-white/[0.06] border border-white/5 hover:border-purple-500/30 transition-all flex items-center gap-2"
+          >
             <CheckSquare className="w-3.5 h-3.5 text-purple-400 shrink-0" />
             <div className="min-w-0 flex-1">
               <span className="text-slate-400 text-[9px] block uppercase">Pending Tasks</span>
               <span className="text-white font-bold">{pendingTasksCount} Active</span>
             </div>
-          </div>
+          </Link>
 
-          <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-center gap-2">
-            <Clock className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+          <Link
+            href="/projects"
+            className="p-2.5 rounded-xl bg-white/[0.02] hover:bg-white/[0.06] border border-white/5 hover:border-indigo-500/30 transition-all flex items-center gap-2"
+            title={
+              activeProjects.length > 0
+                ? activeProjects
+                    .map(
+                      (p) =>
+                        `${p.name} (${p.currentPhaseTitle ? p.currentPhaseTitle + " • " : ""}${p.progress || 0}%)`
+                    )
+                    .join("\n")
+                : "No active projects"
+            }
+          >
+            <Target className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <span className="text-slate-400 text-[9px] block uppercase">Projects</span>
+              <span className="text-indigo-300 font-bold truncate block">
+                {activeProjects.length > 0 ? `${activeProjects.length} Active` : "None"}
+              </span>
+            </div>
+          </Link>
+
+          <Link
+            href="/calendar"
+            className="p-2.5 rounded-xl bg-white/[0.02] hover:bg-white/[0.06] border border-white/5 hover:border-blue-500/30 transition-all flex items-center gap-2"
+          >
+            <Clock className="w-3.5 h-3.5 text-blue-400 shrink-0" />
             <div className="min-w-0 flex-1">
               <span className="text-slate-400 text-[9px] block uppercase">Next Event</span>
               <span
@@ -229,13 +268,13 @@ export function DailyBriefingWidget({
                 {nextEvent ? nextEvent.title : "None"}
               </span>
             </div>
-          </div>
+          </Link>
 
-          <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-center gap-2 col-span-2 sm:col-span-1">
+          <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-center gap-2">
             <Cpu className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             <div className="min-w-0 flex-1">
-              <span className="text-slate-400 text-[9px] block uppercase">AI Engine Skills</span>
-              <span className="text-emerald-400 font-bold">
+              <span className="text-slate-400 text-[9px] block uppercase">AI Core Engine</span>
+              <span className="text-emerald-400 font-bold truncate block">
                 {aiSkillsCount} Skills Active
               </span>
             </div>
@@ -246,11 +285,17 @@ export function DailyBriefingWidget({
         <div className="pt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-3 text-xs font-mono text-slate-400">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse glow-emerald" />
-            <span>All {aiSkillsCount} AI Core Engine Skills Operational</span>
+            <span>Executive Neural Agent Ready</span>
           </div>
-          <Link href="/tasks" className="text-purple-400 hover:text-purple-300 underline">
-            View Task Omni-Kanban →
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link href="/projects" className="text-indigo-400 hover:text-indigo-300 hover:underline">
+              Project Hub →
+            </Link>
+            <span>•</span>
+            <Link href="/tasks" className="text-purple-400 hover:text-purple-300 hover:underline">
+              Omni-Kanban →
+            </Link>
+          </div>
         </div>
       </div>
     </div>

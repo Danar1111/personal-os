@@ -548,7 +548,13 @@ export function UniversalDriveClient({
     }
   }, [queue, refreshGoogleDrive]);
 
-  const isGoogleUnauthorized = googleError?.status === 401;
+  const isGoogleUnauthorized =
+    googleError?.status === 401 ||
+    googleError?.message?.includes("401") ||
+    googleError?.message?.includes("invalid_grant") ||
+    googleError?.message?.includes("not connected") ||
+    googleError?.message?.includes("expired") ||
+    googleError?.message?.includes("disconnected");
 
   // Selection handlers
   const isAllSelected =

@@ -42,12 +42,19 @@ export async function GET(req: NextRequest) {
   } catch (error: any) {
     console.error("[DRIVE_LIST_API_ERROR]", error);
 
-    const status = error.code === 401 || error.status === 401 ? 401 : 500;
+    const isAuthError =
+      error?.response?.data?.error === "invalid_grant" ||
+      error?.message?.includes("invalid_grant") ||
+      error?.code === 401 ||
+      error?.status === 401;
+
+    const friendlyMsg = isAuthError
+      ? "Google Drive session expired or disconnected. Please reconnect Google Drive in Settings."
+      : (error.message || "Failed to fetch files from Google Drive");
+
     return NextResponse.json(
-      {
-        error: error.message || "Failed to fetch files from Google Drive",
-      },
-      { status }
+      { error: friendlyMsg },
+      { status: isAuthError ? 401 : 500 }
     );
   }
 }

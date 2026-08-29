@@ -18,6 +18,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { GoogleIcon } from "@/components/ui/google-icon";
+import { cn } from "@/lib/utils";
 import {
   UnifiedCalendarEvent,
   isSameDay,
@@ -182,6 +183,12 @@ export function MiniCalendarWidget({ events: initialLocalEvents }: { events: Cal
             const redInfo = isRedDate(thisDate);
             const hasKanbanTask = dayEvents.some((e) => e.source === "KANBAN");
             const hasGcalEvent = dayEvents.some((e) => e.source === "GCAL");
+            const hasKickoffMilestone = dayEvents.some(
+              (e) => e.source === "MILESTONE" && (e.milestoneType === "PHASE_START" || e.milestoneType === "PROJECT_START")
+            );
+            const hasTargetMilestone = dayEvents.some(
+              (e) => e.source === "MILESTONE" && (e.milestoneType === "PHASE_END" || e.milestoneType === "PROJECT_END")
+            );
 
             return (
               <button
@@ -204,11 +211,15 @@ export function MiniCalendarWidget({ events: initialLocalEvents }: { events: Cal
                     className={`w-1.5 h-1.5 rounded-full absolute bottom-1 ${
                       isSelected
                         ? "bg-white"
+                        : hasKickoffMilestone
+                        ? "bg-emerald-400"
+                        : hasTargetMilestone
+                        ? "bg-purple-400"
                         : hasKanbanTask
                         ? "bg-amber-400"
                         : hasGcalEvent
-                        ? "bg-emerald-400"
-                        : "bg-purple-400"
+                        ? "bg-teal-400"
+                        : "bg-indigo-400"
                     }`}
                   />
                 )}
@@ -264,8 +275,17 @@ export function MiniCalendarWidget({ events: initialLocalEvents }: { events: Cal
                   <GoogleIcon className="w-3.5 h-3.5 shrink-0" />
                 ) : selectedDayEvents[0].source === "KANBAN" ? (
                   <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                ) : selectedDayEvents[0].source === "MILESTONE" ? (
+                  <span
+                    className={cn(
+                      "w-2 h-2 rounded-full animate-pulse shrink-0",
+                      selectedDayEvents[0].milestoneType === "PHASE_START" || selectedDayEvents[0].milestoneType === "PROJECT_START"
+                        ? "bg-emerald-400"
+                        : "bg-purple-400"
+                    )}
+                  />
                 ) : (
-                  <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse shrink-0" />
+                  <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse shrink-0" />
                 )}
                 <div className="min-w-0">
                   <div className="text-xs font-bold text-white truncate">
@@ -294,8 +314,17 @@ export function MiniCalendarWidget({ events: initialLocalEvents }: { events: Cal
                 <GoogleIcon className="w-3.5 h-3.5 shrink-0" />
               ) : selectedDayEvents[0].source === "KANBAN" ? (
                 <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+              ) : selectedDayEvents[0].source === "MILESTONE" ? (
+                <span
+                  className={cn(
+                    "w-2 h-2 rounded-full shrink-0",
+                    selectedDayEvents[0].milestoneType === "PHASE_START" || selectedDayEvents[0].milestoneType === "PROJECT_START"
+                      ? "bg-emerald-400"
+                      : "bg-purple-400"
+                  )}
+                />
               ) : (
-                <span className="w-2 h-2 rounded-full bg-purple-400 shrink-0" />
+                <span className="w-2 h-2 rounded-full bg-indigo-400 shrink-0" />
               )}
               <span className="text-white truncate font-bold group-hover:text-purple-300">
                 {selectedDayEvents[0].title}
@@ -347,6 +376,8 @@ export function MiniCalendarWidget({ events: initialLocalEvents }: { events: Cal
             {selectedDayEvents.map((ev) => {
               const isGcal = ev.source === "GCAL";
               const isKanban = ev.source === "KANBAN";
+              const isMilestone = ev.source === "MILESTONE";
+              const isKickoff = ev.milestoneType === "PHASE_START" || ev.milestoneType === "PROJECT_START";
 
               return (
                 <div
@@ -364,6 +395,18 @@ export function MiniCalendarWidget({ events: initialLocalEvents }: { events: Cal
                     ) : isKanban ? (
                       <Badge variant="outline" className="border-amber-500/30 text-amber-300 bg-amber-500/10 text-[9px] uppercase shrink-0 flex items-center gap-1">
                         <CheckSquare className="w-2.5 h-2.5" /> Kanban Task
+                      </Badge>
+                    ) : isMilestone ? (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[9px] uppercase shrink-0 flex items-center gap-1 font-bold",
+                          isKickoff
+                            ? "border-emerald-500/40 text-emerald-300 bg-emerald-500/10"
+                            : "border-purple-500/40 text-purple-300 bg-purple-500/10"
+                        )}
+                      >
+                        {isKickoff ? "🚀 Kickoff" : "🏁 Target"}
                       </Badge>
                     ) : (
                       <Badge variant="outline" className="border-purple-500/30 text-purple-300 bg-purple-500/10 text-[9px] uppercase shrink-0">
@@ -396,6 +439,16 @@ export function MiniCalendarWidget({ events: initialLocalEvents }: { events: Cal
                         className="text-[10px] text-amber-400 hover:underline flex items-center gap-1 font-bold"
                       >
                         <span>Open Task</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </Link>
+                    )}
+
+                    {isMilestone && ev.projectId && (
+                      <Link
+                        href={`/projects/${ev.projectId}`}
+                        className="text-[10px] text-indigo-400 hover:underline flex items-center gap-1 font-bold"
+                      >
+                        <span>Open Project</span>
                         <ExternalLink className="w-3 h-3" />
                       </Link>
                     )}

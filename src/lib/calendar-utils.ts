@@ -1,13 +1,18 @@
 export interface UnifiedCalendarEvent {
-  id: string; // e.g. 'local-1' | 'gcal-xxxx' | 'task-xxxx'
+  id: string; // e.g. 'local-1' | 'gcal-xxxx' | 'task-xxxx' | 'milestone-xxxx'
   localId?: number;
   taskId?: number;
+  projectId?: number;
+  phaseId?: number;
+  projectName?: string;
   title: string;
   description?: string | null;
   start: string; // ISO string
   end: string; // ISO string
-  source: "LOCAL" | "GCAL" | "KANBAN";
-  eventType?: "task" | "learning" | "general";
+  source: "LOCAL" | "GCAL" | "KANBAN" | "MILESTONE";
+  eventType?: "task" | "learning" | "general" | "milestone";
+  milestoneType?: "PHASE_START" | "PHASE_END" | "PROJECT_START" | "PROJECT_END";
+  phaseStatus?: string;
   taskStatus?: string; // 'todo' | 'in_progress' | 'done'
   taskPriority?: string; // 'low' | 'medium' | 'high'
   isAllDay: boolean;

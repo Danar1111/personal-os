@@ -135,7 +135,11 @@ export const useUploadStore = create<UploadStore>((set, get) => ({
       const tokenRes = await fetch("/api/drive/token");
       if (!tokenRes.ok) {
         const errorData = await tokenRes.json().catch(() => ({}));
-        throw new Error(errorData.error || "Google Drive is not connected. Connect in Settings.");
+        let rawError = errorData.error || "Google Drive is not connected. Please connect in Settings.";
+        if (rawError.includes("invalid_grant")) {
+          rawError = "Google Drive connection expired or disconnected. Please reconnect Google Drive in Settings.";
+        }
+        throw new Error(rawError);
       }
       const { accessToken } = await tokenRes.json();
 
@@ -206,15 +210,33 @@ export const useUploadStore = create<UploadStore>((set, get) => ({
           }));
         } catch (err: any) {
           console.error(`[Upload Error for ${item.name}]:`, err);
+          const itemErrorMsg =
+            err?.message?.includes("invalid_grant")
+              ? "Google Drive session expired. Please reconnect in Settings."
+              : (err.message || "Upload failed");
+
           set((state) => ({
             queue: state.queue.map((q) =>
-              q.id === item.id ? { ...q, status: "error", error: err.message || "Upload failed" } : q
+              q.id === item.id ? { ...q, status: "error", error: itemErrorMsg } : q
             ),
           }));
         }
       }
     } catch (err: any) {
       console.error("[Upload Queue Error]:", err);
+      const friendlyMsg =
+        err?.message?.includes("invalid_grant")
+          ? "Google Drive session expired or disconnected. Please reconnect in Settings."
+          : (err.message || "Failed to connect to Google Drive");
+
+      // Mark all queued or uploading items as error so user sees the clear warning
+      set((state) => ({
+        queue: state.queue.map((q) =>
+          q.status === "queued" || q.status === "uploading"
+            ? { ...q, status: "error", error: friendlyMsg }
+            : q
+        ),
+      }));
     } finally {
       set({ isUploading: false });
     }
