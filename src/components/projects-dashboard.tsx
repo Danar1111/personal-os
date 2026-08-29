@@ -54,6 +54,51 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+export function extractYouTubeThumbnail(urlStr: string): string | null {
+  try {
+    const url = new URL(urlStr);
+    let videoId: string | null = null;
+    if (url.hostname.includes("youtu.be")) {
+      videoId = url.pathname.slice(1);
+    } else if (url.hostname.includes("youtube.com")) {
+      videoId = url.searchParams.get("v");
+    }
+    if (videoId) {
+      videoId = videoId.split("?")[0].split("&")[0];
+      return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+    }
+  } catch {}
+  return null;
+}
+
+export function resolveAssetMediaUrl(asset: any): string {
+  if (!asset) return "";
+  if (asset.thumbnailUrl && typeof asset.thumbnailUrl === "string" && asset.thumbnailUrl.trim().length > 0) {
+    return asset.thumbnailUrl.trim();
+  }
+  const yt = extractYouTubeThumbnail(asset.urlOrPath || "");
+  if (yt) return yt;
+  if (asset.gdriveId && (asset.type === "image" || /\.(png|jpg|jpeg|webp|gif|svg|ico|bmp|avif)$/i.test(asset.title || asset.urlOrPath || ""))) {
+    return `/api/drive/preview/${asset.gdriveId}`;
+  }
+  return asset.urlOrPath || "";
+}
+
+export function isAssetImage(asset: any): boolean {
+  if (!asset) return false;
+  // 1. Explicit image asset type
+  if (asset.type === "image") return true;
+  // 2. Asset with web OpenGraph / custom thumbnail (e.g. bookmarks in Asset Vault)
+  if (asset.thumbnailUrl && typeof asset.thumbnailUrl === "string" && asset.thumbnailUrl.trim().length > 0) return true;
+  // 3. YouTube link asset with auto thumbnail
+  if (asset.urlOrPath && extractYouTubeThumbnail(asset.urlOrPath)) return true;
+  // 4. Matches image file extensions
+  const imageExtRegex = /\.(png|jpg|jpeg|webp|gif|svg|ico|bmp|avif)$/i;
+  if (asset.title && imageExtRegex.test(asset.title)) return true;
+  if (asset.urlOrPath && imageExtRegex.test(asset.urlOrPath)) return true;
+  return false;
+}
+
 export function isImageIcon(val: string | null | undefined): boolean {
   if (!val) return false;
   const str = val.trim().toLowerCase();
@@ -61,6 +106,7 @@ export function isImageIcon(val: string | null | undefined): boolean {
     str.startsWith("http://") ||
     str.startsWith("https://") ||
     str.startsWith("/uploads/") ||
+    str.startsWith("/api/drive/") ||
     str.startsWith("data:image/") ||
     /\.(png|jpg|jpeg|webp|gif|svg|ico|bmp|avif)$/i.test(str)
   );
@@ -135,6 +181,8 @@ export function ProjectsDashboard({ initialProjects, initialImageAssets = [] }: 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [isPending, startTransition] = useTransition();
+
+  const imageAssetsList = useMemo(() => initialImageAssets.filter(isAssetImage), [initialImageAssets]);
 
   // Keep state updated when server re-renders or props change
   useEffect(() => {
@@ -785,12 +833,12 @@ export function ProjectsDashboard({ initialProjects, initialImageAssets = [] }: 
 
                     {iconMode === "drive" && (
                       <div className="space-y-1.5 max-h-24 overflow-y-auto">
-                        {initialImageAssets.length === 0 ? (
+                        {imageAssetsList.length === 0 ? (
                           <span className="text-[10px] font-mono text-slate-500">No image assets found.</span>
                         ) : (
                           <div className="flex items-center gap-2 flex-wrap">
-                            {initialImageAssets.map((asset: any) => {
-                              const assetUrl = asset.thumbnailUrl || asset.urlOrPath;
+                            {imageAssetsList.map((asset: any) => {
+                              const assetUrl = resolveAssetMediaUrl(asset);
                               return (
                                 <button
                                   key={asset.id}
@@ -845,7 +893,7 @@ export function ProjectsDashboard({ initialProjects, initialImageAssets = [] }: 
                         : "text-slate-400 hover:text-white"
                     }`}
                   >
-                    From Drive / Assets ({initialImageAssets.length})
+                    From Drive / Assets ({imageAssetsList.length})
                   </button>
                   <button
                     type="button"
@@ -900,14 +948,14 @@ export function ProjectsDashboard({ initialProjects, initialImageAssets = [] }: 
 
                 {coverSourceTab === "drive" && (
                   <div className="space-y-2">
-                    {initialImageAssets.length === 0 ? (
+                    {imageAssetsList.length === 0 ? (
                       <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 text-center text-xs text-slate-500 font-mono">
                         No image assets found in Drive / Asset Vault. You can upload a local image or paste a URL.
                       </div>
                     ) : (
                       <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 max-h-36 overflow-y-auto p-1">
-                        {initialImageAssets.map((asset: any) => {
-                          const assetUrl = asset.thumbnailUrl || asset.urlOrPath;
+                        {imageAssetsList.map((asset: any) => {
+                          const assetUrl = resolveAssetMediaUrl(asset);
                           const isSelected = coverUrl === assetUrl;
                           return (
                             <button

@@ -12,7 +12,7 @@ import {
   deleteProjectHubAction,
   uploadProjectMediaAction,
 } from "@/app/projects/actions";
-import { isImageIcon, ProjectIconDisplay } from "@/components/projects-dashboard";
+import { isAssetImage, isImageIcon, ProjectIconDisplay, resolveAssetMediaUrl } from "@/components/projects-dashboard";
 import {
   createDriveAssetAction,
   updateDriveAssetAction,
@@ -2740,14 +2740,14 @@ export function ProjectHub({
 
                   {editIconMode === "drive" && (
                     <div className="space-y-1.5 max-h-24 overflow-y-auto">
-                      {allAssets.filter((a) => a.type === "image" || Boolean(a.thumbnailUrl)).length === 0 ? (
+                      {allAssets.filter(isAssetImage).length === 0 ? (
                         <span className="text-[10px] font-mono text-slate-500">No image assets found.</span>
                       ) : (
                         <div className="flex items-center gap-2 flex-wrap">
                           {allAssets
-                            .filter((a) => a.type === "image" || Boolean(a.thumbnailUrl))
+                            .filter(isAssetImage)
                             .map((asset: any) => {
-                              const assetUrl = asset.thumbnailUrl || asset.urlOrPath;
+                              const assetUrl = resolveAssetMediaUrl(asset);
                               return (
                                 <button
                                   key={asset.id}
@@ -2796,20 +2796,20 @@ export function ProjectHub({
                 <button
                   type="button"
                   onClick={() => setEditCoverSourceTab("drive")}
-                  className={`px-3 py-1 text-xs font-mono rounded-lg transition-colors cursor-pointer ${
+                  className={`py-1.5 rounded-xl transition-all font-bold cursor-pointer ${
                     editCoverSourceTab === "drive"
-                      ? "bg-indigo-600 text-white font-bold shadow-sm"
+                      ? "bg-indigo-600 text-white shadow-lg"
                       : "text-slate-400 hover:text-white"
                   }`}
                 >
-                  From Drive / Assets ({allAssets.filter((a) => a.type === "image" || Boolean(a.thumbnailUrl)).length})
+                  From Drive / Assets ({allAssets.filter(isAssetImage).length})
                 </button>
                 <button
                   type="button"
                   onClick={() => setEditCoverSourceTab("url")}
-                  className={`px-3 py-1 text-xs font-mono rounded-lg transition-colors cursor-pointer ${
+                  className={`py-1.5 rounded-xl transition-all font-bold cursor-pointer ${
                     editCoverSourceTab === "url"
-                      ? "bg-indigo-600 text-white font-bold shadow-sm"
+                      ? "bg-indigo-600 text-white shadow-lg"
                       : "text-slate-400 hover:text-white"
                   }`}
                 >
@@ -2817,35 +2817,32 @@ export function ProjectHub({
                 </button>
               </div>
 
-              {/* Hidden File Input for Local Upload */}
-              <input
-                type="file"
-                ref={coverInputRef}
-                onChange={handleEditCoverUpload}
-                accept="image/*"
-                className="hidden"
-              />
-
+              {/* Upload Local Dropzone */}
               {editCoverSourceTab === "upload" && (
-                <div className="space-y-2">
+                <div>
+                  <input
+                    type="file"
+                    ref={coverInputRef}
+                    onChange={handleEditCoverUpload}
+                    accept="image/*"
+                    className="hidden"
+                  />
                   <button
                     type="button"
-                    onClick={() => coverInputRef.current?.click()}
                     disabled={isUploadingEditCover}
-                    className="w-full py-4 px-4 border-2 border-dashed border-white/15 hover:border-indigo-500/50 bg-white/[0.02] hover:bg-indigo-500/5 rounded-2xl flex flex-col items-center justify-center gap-2 transition-all cursor-pointer group"
+                    onClick={() => coverInputRef.current?.click()}
+                    className="w-full py-5 px-4 rounded-2xl border border-dashed border-white/20 hover:border-indigo-500/50 bg-white/[0.02] hover:bg-white/[0.04] transition-all flex flex-col items-center justify-center gap-2 group cursor-pointer"
                   >
-                    <div className="p-2.5 rounded-xl bg-indigo-500/10 group-hover:bg-indigo-500/20 text-indigo-400 transition-colors">
+                    <div className="w-10 h-10 rounded-2xl bg-white/[0.04] group-hover:bg-indigo-500/20 border border-white/10 group-hover:border-indigo-500/30 flex items-center justify-center transition-colors">
                       {isUploadingEditCover ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <RefreshCw className="w-5 h-5 text-indigo-400 animate-spin" />
                       ) : (
-                        <ImageIcon className="w-5 h-5" />
+                        <ImageIcon className="w-5 h-5 text-slate-400 group-hover:text-indigo-400 transition-colors" />
                       )}
                     </div>
                     <div className="text-center">
-                      <span className="text-xs font-mono text-slate-200 block font-medium">
-                        {isUploadingEditCover
-                          ? "Saving media & auto-uploading to Google Drive..."
-                          : "Click to browse and upload image from your computer"}
+                      <span className="text-xs font-bold text-slate-300 group-hover:text-white block">
+                        {isUploadingEditCover ? "Uploading & Saving..." : "Click to browse and upload image from your computer"}
                       </span>
                       <span className="text-[10px] font-mono text-slate-500">
                         File will be saved to local media storage and indexed in Drive Vault
@@ -2857,16 +2854,16 @@ export function ProjectHub({
 
               {editCoverSourceTab === "drive" && (
                 <div className="space-y-2">
-                  {allAssets.filter((a) => a.type === "image" || Boolean(a.thumbnailUrl)).length === 0 ? (
+                  {allAssets.filter(isAssetImage).length === 0 ? (
                     <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 text-center text-xs text-slate-500 font-mono">
                       No image assets found in Drive / Asset Vault. You can upload a local image or paste a URL.
                     </div>
                   ) : (
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 max-h-36 overflow-y-auto p-1">
                       {allAssets
-                        .filter((a) => a.type === "image" || Boolean(a.thumbnailUrl))
+                        .filter(isAssetImage)
                         .map((asset: any) => {
-                          const assetUrl = asset.thumbnailUrl || asset.urlOrPath;
+                          const assetUrl = resolveAssetMediaUrl(asset);
                           const isSelected = projectForm.coverUrl === assetUrl;
                           return (
                             <button

@@ -120,8 +120,27 @@ export async function getAllProjectsAction() {
         );
       }
 
+      // Resolve cloud / Google Drive cover & icon URLs if physical file is cloud-only
+      let resolvedCover = p.coverUrl;
+      if (p.coverUrl && !p.coverUrl.startsWith("http") && !p.coverUrl.startsWith("/api/drive/preview")) {
+        const matchedAsset = allAssets.find((a) => a.urlOrPath === p.coverUrl);
+        if (matchedAsset?.gdriveId) {
+          resolvedCover = `/api/drive/preview/${matchedAsset.gdriveId}`;
+        }
+      }
+
+      let resolvedIcon = p.icon;
+      if (p.icon && !p.icon.startsWith("http") && !p.icon.startsWith("/api/drive/preview") && p.icon.startsWith("/uploads/")) {
+        const matchedAsset = allAssets.find((a) => a.urlOrPath === p.icon);
+        if (matchedAsset?.gdriveId) {
+          resolvedIcon = `/api/drive/preview/${matchedAsset.gdriveId}`;
+        }
+      }
+
       return {
         ...p,
+        coverUrl: resolvedCover,
+        icon: resolvedIcon,
         status: autoStatusInfo.status,
         statusLabel: autoStatusInfo.label,
         statusReason: autoStatusInfo.reason,
@@ -138,8 +157,10 @@ export async function getAllProjectsAction() {
     const imageAssets = allAssets.filter(
       (a) =>
         a.type === "image" ||
-        Boolean(a.thumbnailUrl) ||
-        (a.urlOrPath && /\.(png|jpg|jpeg|webp|gif|svg)$/i.test(a.urlOrPath))
+        (a.thumbnailUrl && typeof a.thumbnailUrl === "string" && a.thumbnailUrl.trim().length > 0) ||
+        (a.urlOrPath && (a.urlOrPath.includes("youtube.com") || a.urlOrPath.includes("youtu.be"))) ||
+        (a.title && /\.(png|jpg|jpeg|webp|gif|svg|ico|bmp|avif)$/i.test(a.title)) ||
+        (a.urlOrPath && /\.(png|jpg|jpeg|webp|gif|svg|ico|bmp|avif)$/i.test(a.urlOrPath))
     );
 
     return { success: true, projects: enrichedProjects, imageAssets };
@@ -192,8 +213,27 @@ export async function getProjectDetailAction(id: number) {
         .where(eq(projects.id, id));
     }
 
+    // Resolve cloud / Google Drive cover & icon URLs if physical file is cloud-only
+    let resolvedCover = project.coverUrl;
+    if (project.coverUrl && !project.coverUrl.startsWith("http") && !project.coverUrl.startsWith("/api/drive/preview")) {
+      const matchedAsset = allAssets.find((a) => a.urlOrPath === project.coverUrl);
+      if (matchedAsset?.gdriveId) {
+        resolvedCover = `/api/drive/preview/${matchedAsset.gdriveId}`;
+      }
+    }
+
+    let resolvedIcon = project.icon;
+    if (project.icon && !project.icon.startsWith("http") && !project.icon.startsWith("/api/drive/preview") && project.icon.startsWith("/uploads/")) {
+      const matchedAsset = allAssets.find((a) => a.urlOrPath === project.icon);
+      if (matchedAsset?.gdriveId) {
+        resolvedIcon = `/api/drive/preview/${matchedAsset.gdriveId}`;
+      }
+    }
+
     const enrichedProject = {
       ...project,
+      coverUrl: resolvedCover,
+      icon: resolvedIcon,
       status: autoStatusInfo.status,
       statusLabel: autoStatusInfo.label,
       statusReason: autoStatusInfo.reason,
