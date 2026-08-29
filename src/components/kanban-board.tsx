@@ -63,6 +63,7 @@ import {
   Link2,
   ArrowUp,
   Lock,
+  Sparkles,
   Calendar as CalendarIcon,
 } from "lucide-react";
 import useSWR from "swr";
@@ -102,10 +103,36 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
-interface ReferenceItem {
+export interface ReferenceItem {
   id: string;
   type: "asset" | "drive" | "gdrive" | "note" | "link";
   value: string;
+}
+
+export function parseReferences(descText?: string | null): { cleanDesc: string; references: ReferenceItem[] } {
+  if (!descText) return { cleanDesc: "", references: [] };
+
+  const normalizedText = descText.replace(/\[REF:FILE:/gi, "[REF:LINK:");
+  const matches = Array.from(normalizedText.matchAll(/\[REF:(ASSET|DRIVE|GDRIVE|NOTE|LINK):(.*?)\]/gi));
+  const cleanDesc = normalizedText.replace(/\[REF:(ASSET|DRIVE|GDRIVE|NOTE|LINK):.*?\]/gi, "").trim();
+
+  const references: ReferenceItem[] = matches.map((m, index) => ({
+    id: `ref-${index}-${Date.now()}`,
+    type: m[1].toLowerCase() as "asset" | "drive" | "gdrive" | "note" | "link",
+    value: m[2].trim(),
+  }));
+
+  return { cleanDesc, references };
+}
+
+export function formatDescriptionWithRefs(cleanDesc: string, refs: ReferenceItem[]): string {
+  let full = cleanDesc.trim();
+  refs.forEach((ref) => {
+    if (ref.value.trim()) {
+      full += `\n[REF:${ref.type.toUpperCase()}:${ref.value.trim()}]`;
+    }
+  });
+  return full;
 }
 
 interface KanbanBoardProps {
@@ -312,34 +339,6 @@ export function KanbanBoard({
     return projectMap.get(id) || `Project #${id}`;
   };
 
-  // Helper to parse multiple reference items from description
-  const parseReferences = (descText?: string | null) => {
-    if (!descText) return { cleanDesc: "", references: [] };
-
-    const normalizedText = descText.replace(/\[REF:FILE:/gi, "[REF:LINK:");
-    const matches = Array.from(normalizedText.matchAll(/\[REF:(ASSET|DRIVE|GDRIVE|NOTE|LINK):(.*?)\]/gi));
-    const cleanDesc = normalizedText.replace(/\[REF:(ASSET|DRIVE|GDRIVE|NOTE|LINK):.*?\]/gi, "").trim();
-
-    const references: ReferenceItem[] = matches.map((m, index) => ({
-      id: `ref-${index}-${Date.now()}`,
-      type: m[1].toLowerCase() as "asset" | "drive" | "gdrive" | "note" | "link",
-      value: m[2].trim(),
-    }));
-
-    return { cleanDesc, references };
-  };
-
-  // Format description text with embedded reference markers
-  const formatDescriptionWithRefs = (cleanDesc: string, refs: ReferenceItem[]) => {
-    let full = cleanDesc.trim();
-    refs.forEach((ref) => {
-      if (ref.value.trim()) {
-        full += `\n[REF:${ref.type.toUpperCase()}:${ref.value.trim()}]`;
-      }
-    });
-    return full;
-  };
-
   // Helper to resolve reference status & title
   const checkReferenceStatus = (ref: ReferenceItem) => {
     if (ref.type === "gdrive") {
@@ -521,6 +520,12 @@ export function KanbanBoard({
   };
 
   const handleStatusChange = (taskId: number, newStatus: "todo" | "in_progress" | "done") => {
+    setTasksState((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t))
+    );
+    if (viewingTask && viewingTask.id === taskId) {
+      setViewingTask((prev) => (prev ? { ...prev, status: newStatus } : null));
+    }
     startTransition(async () => {
       await updateTaskStatusAction(taskId, newStatus);
     });
@@ -1175,6 +1180,59 @@ export function KanbanBoard({
                 )}
               </div>
 
+              {/* Quick Status Switcher (Mark As...) */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-2xl bg-white/[0.03] border border-white/10">
+                <span className="text-xs font-mono text-slate-300 font-semibold flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" /> Mark Status:
+                </span>
+                <div className="flex items-center gap-1.5 p-1 rounded-xl bg-white/[0.04] border border-white/10">
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => handleStatusChange(viewingTask.id, "todo")}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                      viewingTask.status === "todo"
+                        ? "bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-sm shadow-blue-500/20"
+                        : "text-slate-400 hover:text-white hover:bg-white/5"
+                    )}
+                  >
+                    <span className={cn("w-1.5 h-1.5 rounded-full", viewingTask.status === "todo" ? "bg-blue-400" : "bg-slate-500")} />
+                    Todo
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => handleStatusChange(viewingTask.id, "in_progress")}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                      viewingTask.status === "in_progress"
+                        ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm shadow-amber-500/20"
+                        : "text-slate-400 hover:text-white hover:bg-white/5"
+                    )}
+                  >
+                    <span className={cn("w-1.5 h-1.5 rounded-full", viewingTask.status === "in_progress" ? "bg-amber-400 animate-pulse" : "bg-slate-500")} />
+                    In Progress
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => handleStatusChange(viewingTask.id, "done")}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                      viewingTask.status === "done"
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm shadow-emerald-500/20"
+                        : "text-slate-400 hover:text-white hover:bg-white/5"
+                    )}
+                  >
+                    <CheckCircle2 className={cn("w-3.5 h-3.5", viewingTask.status === "done" ? "text-emerald-400" : "text-slate-500")} />
+                    Done
+                  </button>
+                </div>
+              </div>
+
               {/* Clean Description */}
               {(() => {
                 const { cleanDesc, references } = parseReferences(viewingTask.description);
@@ -1563,8 +1621,7 @@ export function KanbanBoard({
   );
 }
 
-// Sub-component for managing multiple dynamic reference rows with search popups
-interface ReferenceManagerProps {
+export interface ReferenceManagerProps {
   references: ReferenceItem[];
   onChange: (refs: ReferenceItem[]) => void;
   vaultAssets: Asset[];
@@ -1574,7 +1631,7 @@ interface ReferenceManagerProps {
   noteMap: Map<number, Note>;
 }
 
-function ReferenceManager({
+export function ReferenceManager({
   references,
   onChange,
   vaultAssets,

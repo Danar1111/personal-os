@@ -49,9 +49,22 @@ import {
   updateAssetAction,
   deleteAssetAction,
 } from "@/app/inventory/actions";
+import {
+  createTaskAction,
+  updateTaskFullAction,
+  deleteTaskAction,
+  updateTaskStatusAction,
+} from "@/app/tasks/actions";
+import {
+  ReferenceItem,
+  ReferenceManager,
+  parseReferences,
+  formatDescriptionWithRefs,
+} from "@/components/kanban-board";
 import { KanbanBoard } from "@/components/kanban-board";
 import { ProjectGantt, getPaletteForTitle } from "@/components/project-gantt";
 import { GlassDatePicker } from "@/components/ui/glass-date-picker";
+import { GlassTimePicker } from "@/components/ui/glass-time-picker";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,6 +82,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import {
   DropdownMenu,
@@ -83,6 +97,9 @@ import {
   CheckSquare,
   FileText,
   Calendar,
+  Calendar as CalendarIcon,
+  Brain,
+  AlertCircle,
   Loader2,
   Download,
   Eye,
@@ -553,6 +570,8 @@ interface SortablePhaseCardProps {
   setIsAttachLinkModalOpen: (o: boolean) => void;
   setLinkPhaseFilter: (f: string) => void;
   openAssetPreview: (asset: Asset) => void;
+  openCreateTaskModal: (phaseId: number) => void;
+  openViewTaskModal: (task: Task) => void;
 }
 
 function SortablePhaseCard({
@@ -585,6 +604,8 @@ function SortablePhaseCard({
   setIsAttachLinkModalOpen,
   setLinkPhaseFilter,
   openAssetPreview,
+  openCreateTaskModal,
+  openViewTaskModal,
 }: SortablePhaseCardProps) {
   const {
     attributes,
@@ -603,6 +624,21 @@ function SortablePhaseCard({
   };
 
   const isReallyExpanded = isExpanded && !isDragging;
+
+  // Sort tasks in phase: in_progress first, then todo, then done last
+  const sortedPhaseTasks = useMemo(() => {
+    const order: Record<string, number> = {
+      in_progress: 1,
+      todo: 2,
+      done: 3,
+    };
+    return [...phaseTasks].sort((a, b) => {
+      const ordA = order[a.status] || 99;
+      const ordB = order[b.status] || 99;
+      if (ordA !== ordB) return ordA - ordB;
+      return b.id - a.id;
+    });
+  }, [phaseTasks]);
 
   return (
     <div
@@ -660,14 +696,23 @@ function SortablePhaseCard({
                   <span>{phase.doneTaskCount}/{phase.taskCount} tasks done</span>
                 </Badge>
               )}
-              {dependsOnPhase && (
-                <Badge variant="outline" className="border-indigo-500/40 text-indigo-300 bg-indigo-500/10 text-[9px] font-mono flex items-center gap-1">
-                  <Link2 className="w-2.5 h-2.5" />
-                  <span>Depends on: {dependsOnPhase.title}</span>
-                </Badge>
-              )}
             </div>
-            <div className="flex items-center gap-4 text-xs text-slate-400 font-mono mt-1">
+
+            {/* Dedicated Depends On Row Under Title */}
+            {dependsOnPhase && (
+              <div className="flex items-center gap-1.5 mt-1">
+                <span
+                  className="inline-flex items-center gap-1 text-[10px] font-mono text-purple-300 bg-purple-500/10 px-2.5 py-0.5 rounded-full border border-purple-500/25 max-w-[420px] min-w-0"
+                  title={`Depends on: ${dependsOnPhase.title}`}
+                >
+                  <Link2 className="w-2.5 h-2.5 text-purple-400 shrink-0" />
+                  <span className="text-slate-400 shrink-0">Depends on:</span>
+                  <span className="font-semibold text-purple-200 truncate">{dependsOnPhase.title}</span>
+                </span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-4 text-xs text-slate-400 font-mono mt-1 flex-wrap">
               <span>{formatDate(phase.startDate)} &rarr; {formatDate(phase.endDate)}</span>
               <span>•</span>
               <span className="text-slate-300 font-semibold">{progress}% progress</span>
@@ -756,9 +801,7 @@ function SortablePhaseCard({
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => {
-                        setActiveTab("kanban");
-                      }}
+                      onClick={() => openCreateTaskModal(phase.id)}
                       className="text-[10px] text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
                     >
                       <Plus className="w-2.5 h-2.5" />
@@ -776,33 +819,45 @@ function SortablePhaseCard({
                   </div>
                 </div>
 
-                {phaseTasks.length === 0 ? (
+                {sortedPhaseTasks.length === 0 ? (
                   <div className="text-center py-4 text-slate-500 text-[11px]">
                     No tasks assigned to this phase.
                   </div>
                 ) : (
                   <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                    {phaseTasks.map((t) => (
+                    {sortedPhaseTasks.map((t) => (
                       <div
                         key={t.id}
-                        onClick={() => setActiveTab("kanban")}
-                        className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 cursor-pointer transition-colors"
+                        onClick={() => openViewTaskModal(t)}
+                        className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 cursor-pointer transition-colors group/taskitem"
                       >
                         <div className="flex items-center gap-2 min-w-0 flex-1">
                           <span
                             className={cn(
                               "w-2 h-2 rounded-full shrink-0",
                               t.status === "done"
-                                ? "bg-emerald-400"
+                                ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]"
                                 : t.status === "in_progress"
-                                ? "bg-amber-400"
-                                : "bg-blue-400"
+                                ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]"
+                                : "bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.5)]"
                             )}
                           />
-                          <span className="truncate text-white text-[11px] font-medium">{t.title}</span>
+                          <span className="truncate text-white text-[11px] font-medium group-hover/taskitem:text-indigo-300 transition-colors">
+                            {t.title}
+                          </span>
                         </div>
-                        <Badge variant="outline" className="text-[9px] uppercase border-white/10 text-slate-400 shrink-0">
-                          {t.status}
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-[9px] uppercase font-mono font-bold shrink-0 ml-2",
+                            t.status === "done"
+                              ? "border-emerald-500/30 text-emerald-300 bg-emerald-500/10"
+                              : t.status === "in_progress"
+                              ? "border-amber-500/30 text-amber-300 bg-amber-500/10"
+                              : "border-blue-500/30 text-blue-300 bg-blue-500/10"
+                          )}
+                        >
+                          {t.status.replace("_", " ")}
                         </Badge>
                       </div>
                     ))}
@@ -1072,6 +1127,335 @@ export function ProjectHub({
     setAssetList(initialAssets);
   }, [initialAssets]);
 
+  // ── Task Management State (Roadmap Tab + Scoped Kanban) ──
+  const [taskList, setTaskList] = useState<Task[]>(initialTasks);
+  useEffect(() => {
+    setTaskList(initialTasks);
+  }, [initialTasks]);
+
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [taskForm, setTaskForm] = useState({
+    title: "",
+    description: "",
+    status: "todo" as "todo" | "in_progress" | "done",
+    priority: "medium" as "low" | "medium" | "high",
+    projectId: project.id.toString(),
+    phaseId: "none",
+    dueDate: "",
+    dueTime: "",
+    references: [] as ReferenceItem[],
+  });
+
+  const [viewingTask, setViewingTask] = useState<Task | null>(null);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editTaskForm, setEditTaskForm] = useState({
+    title: "",
+    description: "",
+    status: "todo" as "todo" | "in_progress" | "done",
+    priority: "medium" as "low" | "medium" | "high",
+    projectId: project.id.toString(),
+    phaseId: "none",
+    dueDate: "",
+    dueTime: "",
+    references: [] as ReferenceItem[],
+  });
+  const [deletingTaskConfirm, setDeletingTaskConfirm] = useState<Task | null>(null);
+
+  // Reference Maps & Assets for Task ReferenceManager
+  const noteMap = useMemo(() => {
+    const map = new Map<number, Note>();
+    allNotes.forEach((n) => map.set(n.id, n));
+    return map;
+  }, [allNotes]);
+
+  const assetMap = useMemo(() => {
+    const map = new Map<number, Asset>();
+    allAssets.forEach((a) => map.set(a.id, a));
+    assetList.forEach((a) => map.set(a.id, a));
+    return map;
+  }, [allAssets, assetList]);
+
+  const displayVaultAssets = useMemo(() => {
+    const set = new Map<number, Asset>();
+    allAssets.filter((a) => !a.gdriveId).forEach((a) => set.set(a.id, a));
+    assetList.filter((a) => !a.gdriveId).forEach((a) => set.set(a.id, a));
+    return Array.from(set.values());
+  }, [allAssets, assetList]);
+
+  const displayDriveAssets = useMemo(() => {
+    const set = new Map<number, Asset>();
+    allAssets.filter((a) => !!a.gdriveId).forEach((a) => set.set(a.id, a));
+    assetList.filter((a) => !!a.gdriveId).forEach((a) => set.set(a.id, a));
+    return Array.from(set.values());
+  }, [allAssets, assetList]);
+
+  const getPriorityBadge = (priority: string) => {
+    switch (priority) {
+      case "high":
+        return (
+          <Badge variant="outline" className="border-rose-500/40 text-rose-300 bg-rose-500/10 text-[9px] font-mono font-bold tracking-wider">
+            HIGH
+          </Badge>
+        );
+      case "medium":
+        return (
+          <Badge variant="outline" className="border-indigo-500/40 text-indigo-300 bg-indigo-500/10 text-[9px] font-mono font-bold tracking-wider">
+            MEDIUM
+          </Badge>
+        );
+      case "low":
+        return (
+          <Badge variant="outline" className="border-emerald-500/40 text-emerald-300 bg-emerald-500/10 text-[9px] font-mono font-bold tracking-wider">
+            LOW
+          </Badge>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const checkReferenceStatus = (ref: ReferenceItem) => {
+    if (ref.type === "gdrive") {
+      if (ref.value.includes("|")) {
+        const [title, link] = ref.value.split("|");
+        return { isMissing: false, label: title || "Google Drive File", link: link || "#" };
+      }
+      return { isMissing: false, label: ref.value.replace(/^https?:\/\//, ""), link: ref.value };
+    }
+
+    if (ref.type === "asset" || ref.type === "drive") {
+      const numId = parseInt(ref.value, 10);
+      let asset = !isNaN(numId) ? assetMap.get(numId) : undefined;
+      if (!asset) {
+        const valLower = ref.value.toLowerCase().trim();
+        asset =
+          allAssets.find(
+            (a) =>
+              a.title.toLowerCase().trim() === valLower ||
+              a.title.toLowerCase().includes(valLower) ||
+              a.urlOrPath.toLowerCase().includes(valLower)
+          ) ||
+          assetList.find(
+            (a) =>
+              a.title.toLowerCase().trim() === valLower ||
+              a.title.toLowerCase().includes(valLower) ||
+              a.urlOrPath.toLowerCase().includes(valLower)
+          );
+      }
+      if (!asset) {
+        return { isMissing: true, label: `${ref.type === "asset" ? "Asset Vault Item" : "Drive File"} "${ref.value}" Deleted`, link: null };
+      }
+      return { isMissing: false, label: asset.title, link: asset.urlOrPath };
+    }
+
+    if (ref.type === "note") {
+      const numId = parseInt(ref.value, 10);
+      let note = !isNaN(numId) ? noteMap.get(numId) : undefined;
+      if (!note) {
+        const valLower = ref.value.toLowerCase().trim();
+        note = allNotes.find(
+          (n) => n.title.toLowerCase().trim() === valLower || n.title.toLowerCase().includes(valLower)
+        );
+      }
+      if (!note) {
+        return { isMissing: true, label: `Brain Note "${ref.value}" Deleted`, link: null };
+      }
+      return { isMissing: false, label: note.title, link: `/vault?note=${note.id}` };
+    }
+
+    if (ref.type === "link") {
+      return { isMissing: false, label: ref.value, link: ref.value };
+    }
+
+    return { isMissing: false, label: ref.value, link: null };
+  };
+
+  const openCreateTaskModal = (phaseId?: number) => {
+    setTaskForm({
+      title: "",
+      description: "",
+      status: "todo",
+      priority: "medium",
+      projectId: project.id.toString(),
+      phaseId: phaseId ? phaseId.toString() : "none",
+      dueDate: "",
+      dueTime: "",
+      references: [],
+    });
+    setIsTaskModalOpen(true);
+  };
+
+  const handleSaveNewTask = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!taskForm.title.trim()) return;
+
+    const fullDesc = formatDescriptionWithRefs(taskForm.description, taskForm.references);
+
+    let finalDueDate: Date | null = null;
+    if (taskForm.dueDate) {
+      const dateOnly = taskForm.dueDate.split("T")[0];
+      if (taskForm.dueTime) {
+        finalDueDate = new Date(`${dateOnly}T${taskForm.dueTime}:00`);
+      } else {
+        finalDueDate = new Date(`${dateOnly}T00:00:00`);
+      }
+    }
+
+    const pId = taskForm.projectId !== "none" ? parseInt(taskForm.projectId, 10) : project.id;
+    const phId = taskForm.phaseId !== "none" ? parseInt(taskForm.phaseId, 10) : null;
+
+    startTransition(async () => {
+      try {
+        await createTaskAction({
+          title: taskForm.title,
+          description: fullDesc,
+          status: taskForm.status,
+          priority: taskForm.priority,
+          projectId: pId,
+          phaseId: phId,
+          dueDate: finalDueDate,
+        });
+
+        const newTaskObj: Task = {
+          id: Date.now(),
+          title: taskForm.title,
+          description: fullDesc,
+          status: taskForm.status,
+          priority: taskForm.priority,
+          projectId: pId,
+          phaseId: phId,
+          position: 0,
+          dueDate: finalDueDate,
+          createdAt: new Date(),
+        };
+        setTaskList((prev) => [newTaskObj, ...prev]);
+        setIsTaskModalOpen(false);
+      } catch (err) {
+        console.error("Failed to create task:", err);
+      }
+    });
+  };
+
+  const openViewTaskModal = (task: Task) => {
+    setViewingTask(task);
+  };
+
+  const handleQuickStatusChange = (newStatus: "todo" | "in_progress" | "done") => {
+    if (!viewingTask || viewingTask.status === newStatus) return;
+
+    setTaskList((prev) =>
+      prev.map((t) => (t.id === viewingTask.id ? { ...t, status: newStatus } : t))
+    );
+    setViewingTask((prev) => (prev ? { ...prev, status: newStatus } : null));
+
+    startTransition(async () => {
+      try {
+        await updateTaskStatusAction(viewingTask.id, newStatus);
+      } catch (err) {
+        console.error("Failed to update status:", err);
+      }
+    });
+  };
+
+  const openEditTaskModal = (task: Task) => {
+    setViewingTask(null);
+    setEditingTask(task);
+
+    const { cleanDesc, references } = parseReferences(task.description);
+    let dateStr = "";
+    let timeStr = "";
+    if (task.dueDate) {
+      const d = new Date(task.dueDate);
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      dateStr = `${d.getFullYear()}-${mm}-${dd}`;
+      const h = d.getHours();
+      const m = d.getMinutes();
+      if (h !== 0 || m !== 0) {
+        timeStr = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      }
+    }
+
+    setEditTaskForm({
+      title: task.title,
+      description: cleanDesc,
+      status: (task.status as any) || "todo",
+      priority: (task.priority as any) || "medium",
+      projectId: task.projectId ? task.projectId.toString() : project.id.toString(),
+      phaseId: task.phaseId ? task.phaseId.toString() : "none",
+      dueDate: dateStr,
+      dueTime: timeStr,
+      references,
+    });
+  };
+
+  const handleSaveEditTask = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTask || !editTaskForm.title.trim()) return;
+
+    const fullDesc = formatDescriptionWithRefs(editTaskForm.description, editTaskForm.references);
+
+    let finalDueDate: Date | null = null;
+    if (editTaskForm.dueDate) {
+      const dateOnly = editTaskForm.dueDate.split("T")[0];
+      if (editTaskForm.dueTime) {
+        finalDueDate = new Date(`${dateOnly}T${editTaskForm.dueTime}:00`);
+      } else {
+        finalDueDate = new Date(`${dateOnly}T00:00:00`);
+      }
+    }
+
+    const pId = editTaskForm.projectId !== "none" ? parseInt(editTaskForm.projectId, 10) : project.id;
+    const phId = editTaskForm.phaseId !== "none" ? parseInt(editTaskForm.phaseId, 10) : null;
+
+    startTransition(async () => {
+      try {
+        await updateTaskFullAction(editingTask.id, {
+          title: editTaskForm.title,
+          description: fullDesc,
+          status: editTaskForm.status,
+          priority: editTaskForm.priority,
+          projectId: pId,
+          phaseId: phId,
+          dueDate: finalDueDate,
+        });
+
+        setTaskList((prev) =>
+          prev.map((t) =>
+            t.id === editingTask.id
+              ? {
+                  ...t,
+                  title: editTaskForm.title,
+                  description: fullDesc,
+                  status: editTaskForm.status,
+                  priority: editTaskForm.priority,
+                  projectId: pId,
+                  phaseId: phId,
+                  dueDate: finalDueDate,
+                }
+              : t
+          )
+        );
+        setEditingTask(null);
+      } catch (err) {
+        console.error("Failed to edit task:", err);
+      }
+    });
+  };
+
+  const handleDeleteTask = (task: Task) => {
+    startTransition(async () => {
+      try {
+        await deleteTaskAction(task.id);
+        setTaskList((prev) => prev.filter((t) => t.id !== task.id));
+        setViewingTask(null);
+        setDeletingTaskConfirm(null);
+      } catch (err) {
+        console.error("Failed to delete task:", err);
+      }
+    });
+  };
+
   // Active Tab state for programmatic switching
   const [activeTab, setActiveTab] = useState<string>("roadmap");
 
@@ -1143,7 +1527,7 @@ export function ProjectHub({
   // ── Auto-Calculate Phase Progress & Status from Scoped Kanban Tasks ──
   const phasesWithTaskProgress = useMemo(() => {
     return phases.map((p) => {
-      const phaseTasks = initialTasks.filter((t) => t.phaseId === p.id);
+      const phaseTasks = taskList.filter((t) => t.phaseId === p.id);
       const hasTasks = phaseTasks.length > 0;
       if (!hasTasks) {
         return {
@@ -1172,7 +1556,7 @@ export function ProjectHub({
         isAutoCalculated: true,
       };
     });
-  }, [phases, initialTasks]);
+  }, [phases, taskList]);
 
   // ── Confirmation Modal States ─────────────────────────────────────────────
   const [deletingPhaseConfirm, setDeletingPhaseConfirm] = useState<ProjectPhase | null>(null);
@@ -2156,8 +2540,8 @@ export function ProjectHub({
   }, [linkList, searchLinkQuery, linkPhaseFilter]);
 
   const autoStatusInfo = useMemo(() => {
-    return computeProjectAutoStatus(project, phasesWithTaskProgress, initialTasks);
-  }, [project, phasesWithTaskProgress, initialTasks]);
+    return computeProjectAutoStatus(project, phasesWithTaskProgress, taskList);
+  }, [project, phasesWithTaskProgress, taskList]);
 
   const cfg = STATUS_CFG[autoStatusInfo.status] ?? STATUS_CFG.PLANNING;
 
@@ -2323,7 +2707,7 @@ export function ProjectHub({
                     pal={getPaletteForTitle(phase.title, idx)}
                     progress={phase.progress ?? 0}
                     dependsOnPhase={(phase as any).dependsOnPhaseId ? phases.find((p) => p.id === (phase as any).dependsOnPhaseId) : null}
-                    phaseTasks={initialTasks.filter((t) => t.phaseId === phase.id)}
+                    phaseTasks={taskList.filter((t) => t.phaseId === phase.id)}
                     phaseDocs={documentList.filter((d) => (d as any).phaseIds?.includes(phase.id) || d.phaseId === phase.id)}
                     phaseLinks={linkList.filter((l) => (l as any).phaseIds?.includes(phase.id) || l.phaseId === phase.id)}
                     toggleExpandPhase={toggleExpandPhase}
@@ -2344,6 +2728,8 @@ export function ProjectHub({
                     setIsAttachLinkModalOpen={setIsAttachLinkModalOpen}
                     setLinkPhaseFilter={setLinkPhaseFilter}
                     openAssetPreview={openAssetPreview}
+                    openCreateTaskModal={openCreateTaskModal}
+                    openViewTaskModal={openViewTaskModal}
                   />
                 ))}
               </div>
@@ -4969,6 +5355,599 @@ export function ProjectHub({
                 className="flex-1 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl h-11 text-xs font-mono font-bold shadow-lg shadow-rose-600/40 cursor-pointer"
               >
                 {isPending ? "Deleting..." : "Delete Project"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* ── NEW TASK DIALOG (IDENTICAL TO KANBAN) ── */}
+      <Dialog open={isTaskModalOpen} onOpenChange={setIsTaskModalOpen}>
+        <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-xl max-h-[88vh] p-6 shadow-2xl backdrop-blur-2xl flex flex-col font-mono">
+          <DialogHeader className="shrink-0 pb-3 border-b border-white/10 flex flex-row items-center justify-between">
+            <DialogTitle className="text-base font-bold text-white font-mono flex items-center gap-2">
+              <Plus className="w-5 h-5 text-indigo-400" /> NEW OMNI-KANBAN TASK
+            </DialogTitle>
+            <button
+              onClick={() => setIsTaskModalOpen(false)}
+              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-colors border border-white/10"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </DialogHeader>
+
+          <form onSubmit={handleSaveNewTask} className="flex flex-col flex-1 min-h-0 overflow-hidden pt-3">
+            <div className="overflow-y-auto flex-1 pr-1.5 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-300">Task Title *</label>
+                <Input
+                  required
+                  placeholder="e.g., Build Server Actions for CRUD"
+                  value={taskForm.title}
+                  onChange={(e) => setTaskForm((prev) => ({ ...prev, title: e.target.value }))}
+                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-300">Description</label>
+                <Textarea
+                  placeholder="Provide additional details or sub-tasks..."
+                  value={taskForm.description}
+                  onChange={(e) => setTaskForm((prev) => ({ ...prev, description: e.target.value }))}
+                  className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl min-h-[90px] p-3.5 font-sans"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="flex-1 min-w-[120px] space-y-1">
+                  <label className="text-[11px] font-mono text-slate-300">Status</label>
+                  <Select
+                    value={taskForm.status}
+                    onValueChange={(val: any) => setTaskForm((prev) => ({ ...prev, status: val || "todo" }))}
+                  >
+                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[160px]">
+                      <SelectItem value="todo" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Todo</SelectItem>
+                      <SelectItem value="in_progress" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">In Progress</SelectItem>
+                      <SelectItem value="done" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Completed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex-1 min-w-[120px] space-y-1">
+                  <label className="text-[11px] font-mono text-slate-300">Priority</label>
+                  <Select
+                    value={taskForm.priority}
+                    onValueChange={(val: any) => setTaskForm((prev) => ({ ...prev, priority: val || "medium" }))}
+                  >
+                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[160px]">
+                      <SelectItem value="low" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Low</SelectItem>
+                      <SelectItem value="medium" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Medium</SelectItem>
+                      <SelectItem value="high" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">High</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex-1 min-w-[140px] space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-mono text-slate-300">Project</label>
+                    <span className="text-[9px] text-indigo-400 font-mono flex items-center gap-1">
+                      <Lock className="w-2.5 h-2.5" /> Locked
+                    </span>
+                  </div>
+                  <Select disabled value={taskForm.projectId}>
+                    <SelectTrigger className="w-full bg-white/[0.02] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono opacity-75 cursor-not-allowed">
+                      <span className="truncate">{project.name}</span>
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[200px]">
+                      <SelectItem value={project.id.toString()}>{project.name}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Phase Selector */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-mono text-slate-300 flex items-center gap-1">
+                  <Layers className="w-3 h-3 text-purple-400" />
+                  <span>Project Phase</span>
+                </label>
+                <Select
+                  value={taskForm.phaseId}
+                  onValueChange={(val: any) => setTaskForm((prev) => ({ ...prev, phaseId: val || "none" }))}
+                >
+                  <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                    <span className="truncate">
+                      {taskForm.phaseId === "none"
+                        ? "None (General Task)"
+                        : phases.find((p) => p.id.toString() === taskForm.phaseId)?.title || "Select Phase"}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[220px]">
+                    <SelectItem value="none" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">
+                      None (General Task)
+                    </SelectItem>
+                    {phases.map((p) => (
+                      <SelectItem key={p.id} value={p.id.toString()} className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">
+                        {p.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Deadline Date & Time */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-slate-300 font-mono flex items-center gap-1.5">
+                      <CalendarIcon className="w-3.5 h-3.5 text-amber-400" />
+                      <span>DEADLINE DATE</span>
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-mono">(Optional)</span>
+                  </div>
+                  <GlassDatePicker
+                    value={taskForm.dueDate}
+                    onChange={(val) => setTaskForm((prev) => ({ ...prev, dueDate: val }))}
+                    placeholder="Select date..."
+                    accentColor="amber"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-slate-300 font-mono flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-amber-400" />
+                      <span>DUE TIME</span>
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-mono">(Optional)</span>
+                  </div>
+                  <GlassTimePicker
+                    value={taskForm.dueTime}
+                    onChange={(val) => setTaskForm((prev) => ({ ...prev, dueTime: val }))}
+                    placeholder="Select time..."
+                    accentColor="amber"
+                  />
+                </div>
+              </div>
+
+              {/* Reference Manager */}
+              <ReferenceManager
+                references={taskForm.references}
+                onChange={(refs) => setTaskForm((prev) => ({ ...prev, references: refs }))}
+                vaultAssets={displayVaultAssets}
+                driveAssets={displayDriveAssets}
+                notes={allNotes}
+                assetMap={assetMap}
+                noteMap={noteMap}
+              />
+            </div>
+
+            <DialogFooter className="shrink-0 pt-3 border-t border-white/10 mt-3">
+              <Button
+                type="submit"
+                disabled={isPending}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 w-full shadow-lg shadow-indigo-600/30 cursor-pointer"
+              >
+                {isPending ? "Creating..." : "Save Task"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── VIEW TASK DETAIL MODAL ── */}
+      {viewingTask && (
+        <Dialog open={!!viewingTask} onOpenChange={() => setViewingTask(null)}>
+          <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-xl max-h-[88vh] p-6 shadow-2xl backdrop-blur-2xl flex flex-col font-mono">
+            <DialogHeader className="shrink-0 pb-3 border-b border-white/10 flex flex-row items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-purple-500/20 text-purple-300">
+                  <Eye className="w-4 h-4" />
+                </div>
+                <DialogTitle className="text-sm font-bold font-mono text-white tracking-wide uppercase">
+                  TASK DETAIL VIEW
+                </DialogTitle>
+              </div>
+
+              <button
+                onClick={() => setViewingTask(null)}
+                className="p-1.5 rounded-xl bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-colors border border-white/10"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </DialogHeader>
+
+            {/* Task Info Body */}
+            <div className="overflow-y-auto flex-1 pr-1.5 space-y-4 pt-3">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-base font-bold text-white font-sans">{viewingTask.title}</h3>
+                {getPriorityBadge(viewingTask.priority)}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-slate-400">
+                <span>Status: <strong className="text-white uppercase">{viewingTask.status.replace("_", " ")}</strong></span>
+                {viewingTask.projectId && (
+                  <>
+                    <span>•</span>
+                    <span className="text-indigo-300">Project: {project.name}</span>
+                  </>
+                )}
+                {viewingTask.phaseId && phases.find((p) => p.id === viewingTask.phaseId) && (
+                  <>
+                    <span>•</span>
+                    <span className="text-purple-300">Phase: {phases.find((p) => p.id === viewingTask.phaseId)?.title}</span>
+                  </>
+                )}
+                {viewingTask.dueDate && (
+                  <>
+                    <span>•</span>
+                    <span className="text-amber-300 flex items-center gap-1 font-bold">
+                      <CalendarIcon className="w-3.5 h-3.5 text-amber-400" />
+                      Due: {new Date(viewingTask.dueDate).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
+                    </span>
+                  </>
+                )}
+              </div>
+
+              {/* Quick Status Switcher (Mark As...) */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-2xl bg-white/[0.03] border border-white/10">
+                <span className="text-xs font-mono text-slate-300 font-semibold flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" /> Mark Status:
+                </span>
+                <div className="flex items-center gap-1.5 p-1 rounded-xl bg-white/[0.04] border border-white/10">
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => handleQuickStatusChange("todo")}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                      viewingTask.status === "todo"
+                        ? "bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-sm shadow-blue-500/20"
+                        : "text-slate-400 hover:text-white hover:bg-white/5"
+                    )}
+                  >
+                    <span className={cn("w-1.5 h-1.5 rounded-full", viewingTask.status === "todo" ? "bg-blue-400" : "bg-slate-500")} />
+                    Todo
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => handleQuickStatusChange("in_progress")}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                      viewingTask.status === "in_progress"
+                        ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm shadow-amber-500/20"
+                        : "text-slate-400 hover:text-white hover:bg-white/5"
+                    )}
+                  >
+                    <span className={cn("w-1.5 h-1.5 rounded-full", viewingTask.status === "in_progress" ? "bg-amber-400 animate-pulse" : "bg-slate-500")} />
+                    In Progress
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => handleQuickStatusChange("done")}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                      viewingTask.status === "done"
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm shadow-emerald-500/20"
+                        : "text-slate-400 hover:text-white hover:bg-white/5"
+                    )}
+                  >
+                    <CheckCircle2 className={cn("w-3.5 h-3.5", viewingTask.status === "done" ? "text-emerald-400" : "text-slate-500")} />
+                    Done
+                  </button>
+                </div>
+              </div>
+
+              {/* Clean Description */}
+              {(() => {
+                const { cleanDesc, references } = parseReferences(viewingTask.description);
+                return (
+                  <div className="space-y-4">
+                    {cleanDesc ? (
+                      <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/10 text-xs font-sans text-slate-300 whitespace-pre-wrap leading-relaxed">
+                        {cleanDesc}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-500 italic">No description provided.</p>
+                    )}
+
+                    {/* Linked References List */}
+                    {references.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="text-xs font-bold text-purple-300 flex items-center gap-1.5">
+                          <Link2 className="w-3.5 h-3.5" /> Attached References ({references.length})
+                        </h4>
+                        <div className="space-y-1.5">
+                          {references.map((ref) => {
+                            const status = checkReferenceStatus(ref);
+                            return (
+                              <div
+                                key={ref.id}
+                                className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.03] border border-white/10 text-xs"
+                              >
+                                <div className="flex items-center gap-2 truncate">
+                                  {ref.type === "gdrive" && <Cloud className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                                  {ref.type === "asset" && <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
+                                  {ref.type === "drive" && <HardDrive className="w-3.5 h-3.5 text-indigo-400 shrink-0" />}
+                                  {ref.type === "note" && <Brain className="w-3.5 h-3.5 text-purple-400 shrink-0" />}
+                                  {ref.type === "link" && <ExternalLink className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                                  <span className="text-slate-200 truncate">{status.label}</span>
+                                </div>
+                                {status.link && (
+                                  <a
+                                    href={status.link}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-[10px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-mono shrink-0 ml-2"
+                                  >
+                                    <span>Open</span>
+                                    <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            <DialogFooter className="shrink-0 pt-3 border-t border-white/10 mt-3 flex items-center justify-between gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDeletingTaskConfirm(viewingTask)}
+                className="border-rose-500/30 text-rose-400 hover:bg-rose-500/10 rounded-2xl h-10 px-4 text-xs font-mono cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
+              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => openEditTaskModal(viewingTask)}
+                  className="border-white/15 text-slate-300 hover:bg-white/10 rounded-2xl h-10 px-4 text-xs font-mono cursor-pointer"
+                >
+                  <Edit3 className="w-3.5 h-3.5 mr-1" /> Edit Task
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => setViewingTask(null)}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl h-10 px-5 text-xs font-mono cursor-pointer"
+                >
+                  Close
+                </Button>
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* ── EDIT TASK DIALOG ── */}
+      {editingTask && (
+        <Dialog open={!!editingTask} onOpenChange={() => setEditingTask(null)}>
+          <DialogContent showCloseButton={false} className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-xl max-h-[88vh] p-6 shadow-2xl backdrop-blur-2xl flex flex-col font-mono">
+            <DialogHeader className="shrink-0 pb-3 border-b border-white/10 flex flex-row items-center justify-between">
+              <DialogTitle className="text-base font-bold text-white font-mono flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-indigo-400" /> EDIT TASK
+              </DialogTitle>
+              <button
+                onClick={() => setEditingTask(null)}
+                className="p-1.5 rounded-xl bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-colors border border-white/10"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </DialogHeader>
+
+            <form onSubmit={handleSaveEditTask} className="flex flex-col flex-1 min-h-0 overflow-hidden pt-3">
+              <div className="overflow-y-auto flex-1 pr-1.5 space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Task Title *</label>
+                  <Input
+                    required
+                    value={editTaskForm.title}
+                    onChange={(e) => setEditTaskForm((prev) => ({ ...prev, title: e.target.value }))}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Description</label>
+                  <Textarea
+                    value={editTaskForm.description}
+                    onChange={(e) => setEditTaskForm((prev) => ({ ...prev, description: e.target.value }))}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl min-h-[90px] p-3.5 font-sans"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <div className="flex-1 min-w-[120px] space-y-1">
+                    <label className="text-[11px] font-mono text-slate-300">Status</label>
+                    <Select
+                      value={editTaskForm.status}
+                      onValueChange={(val: any) => setEditTaskForm((prev) => ({ ...prev, status: val || "todo" }))}
+                    >
+                      <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[160px]">
+                        <SelectItem value="todo" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Todo</SelectItem>
+                        <SelectItem value="in_progress" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">In Progress</SelectItem>
+                        <SelectItem value="done" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Completed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex-1 min-w-[120px] space-y-1">
+                    <label className="text-[11px] font-mono text-slate-300">Priority</label>
+                    <Select
+                      value={editTaskForm.priority}
+                      onValueChange={(val: any) => setEditTaskForm((prev) => ({ ...prev, priority: val || "medium" }))}
+                    >
+                      <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[160px]">
+                        <SelectItem value="low" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Low</SelectItem>
+                        <SelectItem value="medium" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">Medium</SelectItem>
+                        <SelectItem value="high" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">High</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex-1 min-w-[140px] space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-mono text-slate-300">Project</label>
+                      <span className="text-[9px] text-indigo-400 font-mono flex items-center gap-1">
+                        <Lock className="w-2.5 h-2.5" /> Locked
+                      </span>
+                    </div>
+                    <Select disabled value={editTaskForm.projectId}>
+                      <SelectTrigger className="w-full bg-white/[0.02] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono opacity-75 cursor-not-allowed">
+                        <span className="truncate">{project.name}</span>
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[200px]">
+                        <SelectItem value={project.id.toString()}>{project.name}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Phase Selector */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-mono text-slate-300 flex items-center gap-1">
+                    <Layers className="w-3 h-3 text-purple-400" />
+                    <span>Project Phase</span>
+                  </label>
+                  <Select
+                    value={editTaskForm.phaseId}
+                    onValueChange={(val: any) => setEditTaskForm((prev) => ({ ...prev, phaseId: val || "none" }))}
+                  >
+                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-xl h-10 px-3 font-mono">
+                      <span className="truncate">
+                        {editTaskForm.phaseId === "none"
+                          ? "None (General Task)"
+                          : phases.find((p) => p.id.toString() === editTaskForm.phaseId)?.title || "Select Phase"}
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-200 rounded-2xl p-1.5 min-w-[220px]">
+                      <SelectItem value="none" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">
+                        None (General Task)
+                      </SelectItem>
+                      {phases.map((p) => (
+                        <SelectItem key={p.id} value={p.id.toString()} className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer">
+                          {p.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Deadline Date & Time */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold text-slate-300 font-mono flex items-center gap-1.5">
+                        <CalendarIcon className="w-3.5 h-3.5 text-amber-400" />
+                        <span>DEADLINE DATE</span>
+                      </label>
+                      <span className="text-[10px] text-slate-400 font-mono">(Optional)</span>
+                    </div>
+                    <GlassDatePicker
+                      value={editTaskForm.dueDate}
+                      onChange={(val) => setEditTaskForm((prev) => ({ ...prev, dueDate: val }))}
+                      placeholder="Select date..."
+                      accentColor="amber"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold text-slate-300 font-mono flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-amber-400" />
+                        <span>DUE TIME</span>
+                      </label>
+                      <span className="text-[10px] text-slate-400 font-mono">(Optional)</span>
+                    </div>
+                    <GlassTimePicker
+                      value={editTaskForm.dueTime}
+                      onChange={(val) => setEditTaskForm((prev) => ({ ...prev, dueTime: val }))}
+                      placeholder="Select time..."
+                      accentColor="amber"
+                    />
+                  </div>
+                </div>
+
+                {/* Reference Manager */}
+                <ReferenceManager
+                  references={editTaskForm.references}
+                  onChange={(refs) => setEditTaskForm((prev) => ({ ...prev, references: refs }))}
+                  vaultAssets={displayVaultAssets}
+                  driveAssets={displayDriveAssets}
+                  notes={allNotes}
+                  assetMap={assetMap}
+                  noteMap={noteMap}
+                />
+              </div>
+
+              <DialogFooter className="shrink-0 pt-3 border-t border-white/10 mt-3">
+                <Button
+                  type="submit"
+                  disabled={isPending}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs rounded-2xl h-11 w-full shadow-lg shadow-indigo-600/30 cursor-pointer"
+                >
+                  {isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* ── DELETE TASK CONFIRM MODAL ── */}
+      {deletingTaskConfirm && (
+        <Dialog open={!!deletingTaskConfirm} onOpenChange={() => setDeletingTaskConfirm(null)}>
+          <DialogContent showCloseButton={false} className="bg-[#16131c] border-rose-500/30 text-slate-100 rounded-3xl max-w-md p-6 shadow-2xl backdrop-blur-2xl font-mono text-center space-y-4">
+            <div className="mx-auto w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400">
+              <AlertTriangle className="w-7 h-7 animate-pulse" />
+            </div>
+
+            <div>
+              <h3 className="text-base font-bold text-white tracking-wide uppercase">DELETE TASK</h3>
+              <p className="text-xs text-slate-300 mt-2 leading-relaxed font-sans">
+                Are you sure you want to delete <span className="text-rose-300 font-bold">&quot;{deletingTaskConfirm.title}&quot;</span>?
+              </p>
+              <p className="text-[10px] text-slate-500 mt-1">This task will be permanently removed. This action cannot be undone.</p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setDeletingTaskConfirm(null)}
+                className="flex-1 border-white/15 text-slate-300 hover:bg-white/10 rounded-2xl h-11 text-xs font-mono cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={isPending}
+                onClick={() => handleDeleteTask(deletingTaskConfirm)}
+                className="flex-1 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl h-11 text-xs font-mono font-bold shadow-lg shadow-rose-600/40 cursor-pointer"
+              >
+                {isPending ? "Deleting..." : "Delete Task"}
               </Button>
             </div>
           </DialogContent>
