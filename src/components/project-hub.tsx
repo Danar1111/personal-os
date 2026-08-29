@@ -1334,8 +1334,8 @@ export function ProjectHub({
     setPhaseForm({
       title: "",
       description: "",
-      startDate: project.startDate ? String(project.startDate).split("T")[0] : "",
-      endDate: project.targetDate ? String(project.targetDate).split("T")[0] : "",
+      startDate: "",
+      endDate: "",
       status: "PLANNED",
       progress: 0,
       dependsOnPhaseId: null,
