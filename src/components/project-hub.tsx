@@ -1941,9 +1941,32 @@ export function ProjectHub({
                           </td>
                           <td className="p-3 font-semibold text-white">
                             <div className="flex items-center gap-2.5">
-                              {getRichFileIcon(ext)}
+                              {(() => {
+                                const isImg = ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "ico", "avif"].includes(ext) || asset.type === "image";
+                                const mediaUrl = asset.syncStatus === "CLOUD_ONLY" && asset.gdriveId
+                                  ? `/api/drive/preview/${asset.gdriveId}`
+                                  : (asset.thumbnailUrl || asset.urlOrPath);
+                                return isImg ? (
+                                  <div
+                                    className="w-8 h-8 rounded-lg overflow-hidden border border-white/10 bg-black shrink-0 cursor-pointer shadow-sm"
+                                    onClick={() => openAssetPreview(asset)}
+                                  >
+                                    <img
+                                      src={mediaUrl}
+                                      alt={asset.title}
+                                      className="w-full h-full object-cover"
+                                      loading="lazy"
+                                      onError={(e) => {
+                                        (e.target as HTMLElement).style.display = "none";
+                                      }}
+                                    />
+                                  </div>
+                                ) : (
+                                  getRichFileIcon(ext)
+                                );
+                              })()}
                               <span
-                                className="truncate max-w-xs sm:max-w-md cursor-pointer hover:text-indigo-300 transition-colors"
+                                className="truncate max-w-xs sm:max-w-md cursor-pointer hover:text-indigo-300 transition-colors font-mono"
                                 onClick={() => openAssetPreview(asset)}
                                 title="Click to Preview"
                               >

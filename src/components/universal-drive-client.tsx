@@ -19,6 +19,7 @@ import {
   Film,
   Music,
   Presentation,
+  Play,
   Grid,
   List as ListIcon,
   Sparkles,
@@ -162,14 +163,20 @@ function CustomCheckbox({
  * Returns customized, distinct, color-coded file icons matching the file type
  * Supports Google Drive official iconLink image icons
  */
-function getRichFileIcon(ext: string, mimeType?: string, iconLink?: string) {
+function getRichFileIcon(
+  ext: string,
+  mimeType?: string,
+  iconLink?: string,
+  containerClassName = "w-8 h-8 rounded-xl",
+  iconClassName = "w-4 h-4"
+) {
   if (iconLink) {
     return (
-      <div className="w-8 h-8 rounded-xl bg-white/[0.04] border border-white/15 flex items-center justify-center p-1.5 shadow-sm shrink-0">
+      <div className={cn("bg-white/[0.04] border border-white/15 flex items-center justify-center p-1.5 shadow-sm shrink-0", containerClassName)}>
         <img
           src={iconLink}
           alt=""
-          className="w-5 h-5 object-contain"
+          className="w-full h-full object-contain"
           onError={(e) => {
             (e.target as HTMLElement).style.display = "none";
           }}
@@ -184,8 +191,8 @@ function getRichFileIcon(ext: string, mimeType?: string, iconLink?: string) {
   // 1. PDF
   if (lowerExt === "pdf" || lowerMime.includes("pdf")) {
     return (
-      <div className="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 shadow-sm shrink-0">
-        <FileText className="w-4 h-4" />
+      <div className={cn("bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 shadow-sm shrink-0", containerClassName)}>
+        <FileText className={iconClassName} />
       </div>
     );
   }
@@ -197,8 +204,8 @@ function getRichFileIcon(ext: string, mimeType?: string, iconLink?: string) {
     lowerMime.includes("sheet")
   ) {
     return (
-      <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-sm shrink-0">
-        <FileSpreadsheet className="w-4 h-4" />
+      <div className={cn("bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-sm shrink-0", containerClassName)}>
+        <FileSpreadsheet className={iconClassName} />
       </div>
     );
   }
@@ -206,8 +213,8 @@ function getRichFileIcon(ext: string, mimeType?: string, iconLink?: string) {
   // 3. Presentations (PowerPoint, Slides)
   if (["pptx", "ppt", "key"].includes(lowerExt) || lowerMime.includes("presentation")) {
     return (
-      <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-sm shrink-0">
-        <Presentation className="w-4 h-4" />
+      <div className={cn("bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-sm shrink-0", containerClassName)}>
+        <Presentation className={iconClassName} />
       </div>
     );
   }
@@ -219,8 +226,8 @@ function getRichFileIcon(ext: string, mimeType?: string, iconLink?: string) {
     lowerMime.includes("word")
   ) {
     return (
-      <div className="w-8 h-8 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400 shadow-sm shrink-0">
-        <FileText className="w-4 h-4" />
+      <div className={cn("bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400 shadow-sm shrink-0", containerClassName)}>
+        <FileText className={iconClassName} />
       </div>
     );
   }
@@ -228,8 +235,8 @@ function getRichFileIcon(ext: string, mimeType?: string, iconLink?: string) {
   // 5. Code & Jupyter Notebooks
   if (["ipynb", "colab"].includes(lowerExt) || lowerMime.includes("colaboratory")) {
     return (
-      <div className="w-8 h-8 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400 shadow-sm shrink-0">
-        <FileCode className="w-4 h-4" />
+      <div className={cn("bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400 shadow-sm shrink-0", containerClassName)}>
+        <FileCode className={iconClassName} />
       </div>
     );
   }
@@ -241,20 +248,20 @@ function getRichFileIcon(ext: string, mimeType?: string, iconLink?: string) {
     lowerMime.includes("code")
   ) {
     return (
-      <div className="w-8 h-8 rounded-xl bg-violet-500/15 border border-violet-500/30 flex items-center justify-center text-violet-400 shadow-sm shrink-0">
-        <FileCode className="w-4 h-4" />
+      <div className={cn("bg-violet-500/15 border border-violet-500/30 flex items-center justify-center text-violet-400 shadow-sm shrink-0", containerClassName)}>
+        <FileCode className={iconClassName} />
       </div>
     );
   }
 
   // 6. Images
   if (
-    ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "ico"].includes(lowerExt) ||
+    ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "ico", "avif"].includes(lowerExt) ||
     lowerMime.startsWith("image/")
   ) {
     return (
-      <div className="w-8 h-8 rounded-xl bg-pink-500/15 border border-pink-500/30 flex items-center justify-center text-pink-400 shadow-sm shrink-0">
-        <ImageIcon className="w-4 h-4" />
+      <div className={cn("bg-pink-500/15 border border-pink-500/30 flex items-center justify-center text-pink-400 shadow-sm shrink-0", containerClassName)}>
+        <ImageIcon className={iconClassName} />
       </div>
     );
   }
@@ -265,8 +272,8 @@ function getRichFileIcon(ext: string, mimeType?: string, iconLink?: string) {
     lowerMime.startsWith("audio/")
   ) {
     return (
-      <div className="w-8 h-8 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shadow-sm shrink-0">
-        <Music className="w-4 h-4" />
+      <div className={cn("bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shadow-sm shrink-0", containerClassName)}>
+        <Music className={iconClassName} />
       </div>
     );
   }
@@ -277,8 +284,8 @@ function getRichFileIcon(ext: string, mimeType?: string, iconLink?: string) {
     lowerMime.startsWith("video/")
   ) {
     return (
-      <div className="w-8 h-8 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 shadow-sm shrink-0">
-        <Film className="w-4 h-4" />
+      <div className={cn("bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 shadow-sm shrink-0", containerClassName)}>
+        <Film className={iconClassName} />
       </div>
     );
   }
@@ -286,16 +293,16 @@ function getRichFileIcon(ext: string, mimeType?: string, iconLink?: string) {
   // 9. Archives
   if (["zip", "rar", "tar", "gz", "7z"].includes(lowerExt) || lowerMime.includes("zip")) {
     return (
-      <div className="w-8 h-8 rounded-xl bg-yellow-500/15 border border-yellow-500/30 flex items-center justify-center text-yellow-400 shadow-sm shrink-0">
-        <FileArchive className="w-4 h-4" />
+      <div className={cn("bg-yellow-500/15 border border-yellow-500/30 flex items-center justify-center text-yellow-400 shadow-sm shrink-0", containerClassName)}>
+        <FileArchive className={iconClassName} />
       </div>
     );
   }
 
   // Default File
   return (
-    <div className="w-8 h-8 rounded-xl bg-slate-500/15 border border-slate-500/30 flex items-center justify-center text-slate-400 shadow-sm shrink-0">
-      <File className="w-4 h-4" />
+    <div className={cn("bg-slate-500/15 border border-slate-500/30 flex items-center justify-center text-slate-400 shadow-sm shrink-0", containerClassName)}>
+      <File className={iconClassName} />
     </div>
   );
 }
@@ -304,6 +311,19 @@ function getFileExtension(title: string, urlOrPath: string): string {
   const name = title || urlOrPath || "";
   const match = name.match(/\.([0-9a-z]+)(?:[\?#]|$)/i);
   return match ? match[1].toLowerCase() : "file";
+}
+
+function getAssetThumbnail(asset: Asset, ext: string) {
+  const isImage =
+    ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "ico", "avif"].includes(ext) ||
+    asset.type === "image";
+  const isVideo =
+    ["mp4", "webm", "mkv", "mov", "avi"].includes(ext) || asset.type === "video";
+  let mediaUrl = asset.thumbnailUrl || asset.urlOrPath;
+  if (asset.syncStatus === "CLOUD_ONLY" && asset.gdriveId) {
+    mediaUrl = `/api/drive/preview/${asset.gdriveId}`;
+  }
+  return { isImage, isVideo, mediaUrl };
 }
 
 export function UniversalDriveClient({
@@ -1345,57 +1365,124 @@ export function UniversalDriveClient({
                 const isSelected = selectedAssetIds.includes(asset.id);
                 const isSynced = asset.syncStatus === "SYNCED_LOCAL_KEPT";
                 const isGhost = asset.syncStatus === "CLOUD_ONLY";
+                const { isImage, isVideo, mediaUrl } = getAssetThumbnail(asset, ext);
 
                 return (
                   <div
                     key={asset.id}
                     className={cn(
-                      "p-4 rounded-2xl bg-white/[0.03] border transition-all group flex flex-col justify-between space-y-3 shadow-lg relative",
+                      "p-3 rounded-2xl bg-white/[0.03] border transition-all group flex flex-col justify-between space-y-3 shadow-lg relative overflow-hidden",
                       isSelected
-                        ? "border-indigo-500 bg-indigo-950/20 shadow-indigo-500/20"
+                        ? "border-indigo-500 bg-indigo-950/20 shadow-indigo-500/20 ring-1 ring-indigo-500/50"
                         : "border-white/10 hover:border-indigo-500/40 hover:shadow-indigo-500/10"
                     )}
                   >
-                    {/* Top Row: Custom Checkbox, Rich Icon, Sync Status Badge */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2.5">
+                    {/* Top Media / Thumbnail Preview Banner */}
+                    <div
+                      className="relative w-full h-36 bg-[#0c0c14] rounded-xl overflow-hidden border border-white/5 group-hover:border-indigo-500/30 transition-all cursor-pointer flex items-center justify-center select-none"
+                      onClick={() => openAssetPreview(asset)}
+                    >
+                      {isImage ? (
+                        <>
+                          <img
+                            src={mediaUrl}
+                            alt={asset.title}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                            loading="lazy"
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = "none";
+                            }}
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-[#12111e]/90 via-transparent to-transparent pointer-events-none" />
+                        </>
+                      ) : isVideo ? (
+                        <div className="w-full h-full relative flex items-center justify-center bg-gradient-to-br from-purple-950/40 via-black to-slate-950">
+                          {!isGhost ? (
+                            <video
+                              src={mediaUrl}
+                              preload="metadata"
+                              className="w-full h-full object-cover opacity-70 group-hover:opacity-90 group-hover:scale-105 transition-all duration-500"
+                              muted
+                            />
+                          ) : (
+                            <div className="absolute inset-0 bg-gradient-to-br from-indigo-950/40 via-purple-950/20 to-black" />
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-[#12111e]/90 via-transparent to-transparent pointer-events-none" />
+                          <div className="absolute p-2.5 rounded-full bg-black/60 border border-white/20 backdrop-blur-md text-white shadow-xl group-hover:scale-110 group-hover:bg-indigo-600 transition-all">
+                            <Play className="w-4 h-4 fill-white translate-x-0.5" />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="w-full h-full relative flex flex-col items-center justify-center p-3 text-center bg-gradient-to-br from-white/[0.04] via-black/40 to-white/[0.02]">
+                          <div
+                            className="absolute inset-0 opacity-[0.06] group-hover:opacity-[0.12] transition-opacity pointer-events-none"
+                            style={{
+                              backgroundImage: `radial-gradient(circle at 1px 1px, #a5b4fc 1px, transparent 0)`,
+                              backgroundSize: "12px 12px",
+                            }}
+                          />
+                          <div className="transform group-hover:scale-110 transition-transform duration-300 relative z-10">
+                            {getRichFileIcon(ext, undefined, undefined, "w-11 h-11 rounded-2xl shadow-lg", "w-5 h-5")}
+                          </div>
+                          <span className="mt-2 text-[10px] uppercase font-mono font-bold tracking-wider px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-slate-300 relative z-10">
+                            .{ext}
+                          </span>
+                          <div className="absolute inset-0 bg-gradient-to-t from-[#12111e]/80 via-transparent to-transparent pointer-events-none" />
+                        </div>
+                      )}
+
+                      {/* Floating Top Left Checkbox */}
+                      <div
+                        className="absolute top-2.5 left-2.5 z-20"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <CustomCheckbox
                           checked={isSelected}
                           onChange={() => toggleSelectAsset(asset.id)}
+                          className="bg-black/60 backdrop-blur-md"
                         />
-                        {getRichFileIcon(ext)}
                       </div>
 
-                      {/* Visual Sync Status Indicator */}
-                      {isSynced ? (
-                        <Badge
-                          variant="outline"
-                          className="text-[9px] font-mono border-emerald-500/40 text-emerald-400 bg-emerald-500/10 gap-1"
-                        >
-                          <CheckCircle2 className="w-2.5 h-2.5" />
-                          <span>Synced</span>
-                        </Badge>
-                      ) : isGhost ? (
-                        <Badge
-                          variant="outline"
-                          className="text-[9px] font-mono border-cyan-500/40 text-cyan-400 bg-cyan-500/10 gap-1"
-                        >
-                          <Cloud className="w-2.5 h-2.5" />
-                          <span>Cloud Only</span>
-                        </Badge>
-                      ) : (
-                        <Badge
-                          variant="outline"
-                          className="text-[9px] font-mono border-amber-500/40 text-amber-400 bg-amber-500/10 gap-1"
-                        >
-                          <HardDrive className="w-2.5 h-2.5" />
-                          <span>Local Only</span>
-                        </Badge>
-                      )}
+                      {/* Floating Top Right Sync Status Badge */}
+                      <div className="absolute top-2.5 right-2.5 z-20">
+                        {isSynced ? (
+                          <Badge
+                            variant="outline"
+                            className="text-[9px] font-mono border-emerald-500/40 text-emerald-300 bg-black/70 backdrop-blur-md gap-1 py-0.5 px-2 font-semibold shadow-md"
+                          >
+                            <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" />
+                            <span>Synced</span>
+                          </Badge>
+                        ) : isGhost ? (
+                          <Badge
+                            variant="outline"
+                            className="text-[9px] font-mono border-cyan-500/40 text-cyan-300 bg-black/70 backdrop-blur-md gap-1 py-0.5 px-2 font-semibold shadow-md"
+                          >
+                            <Cloud className="w-2.5 h-2.5 text-cyan-400" />
+                            <span>Cloud Only</span>
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className="text-[9px] font-mono border-amber-500/40 text-amber-300 bg-black/70 backdrop-blur-md gap-1 py-0.5 px-2 font-semibold shadow-md"
+                          >
+                            <HardDrive className="w-2.5 h-2.5 text-amber-400" />
+                            <span>Local Only</span>
+                          </Badge>
+                        )}
+                      </div>
+
+                      {/* Hover Eye Overlay Indicator */}
+                      <div className="absolute inset-0 bg-indigo-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                        <div className="px-2.5 py-1 rounded-xl bg-black/80 backdrop-blur-md border border-white/20 text-white text-[10px] font-mono flex items-center gap-1.5 shadow-2xl">
+                          <Eye className="w-3 h-3 text-indigo-400" />
+                          <span>Click to Preview</span>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Middle: Title & Metadata */}
-                    <div className="space-y-1 min-w-0">
+                    <div className="space-y-1 min-w-0 px-0.5">
                       <h4
                         className="text-xs font-semibold text-white truncate font-mono cursor-pointer hover:text-indigo-300 transition-colors"
                         title={asset.title}
@@ -1518,6 +1605,7 @@ export function UniversalDriveClient({
                       const isSelected = selectedAssetIds.includes(asset.id);
                       const isSynced = asset.syncStatus === "SYNCED_LOCAL_KEPT";
                       const isGhost = asset.syncStatus === "CLOUD_ONLY";
+                      const { isImage, mediaUrl } = getAssetThumbnail(asset, ext);
 
                       return (
                         <tr
@@ -1535,9 +1623,26 @@ export function UniversalDriveClient({
                           </td>
                           <td className="p-3 font-semibold text-white">
                             <div className="flex items-center gap-2.5">
-                              {getRichFileIcon(ext)}
+                              {isImage ? (
+                                <div
+                                  className="w-8 h-8 rounded-lg overflow-hidden border border-white/10 bg-black shrink-0 cursor-pointer shadow-sm"
+                                  onClick={() => openAssetPreview(asset)}
+                                >
+                                  <img
+                                    src={mediaUrl}
+                                    alt={asset.title}
+                                    className="w-full h-full object-cover"
+                                    loading="lazy"
+                                    onError={(e) => {
+                                      (e.target as HTMLElement).style.display = "none";
+                                    }}
+                                  />
+                                </div>
+                              ) : (
+                                getRichFileIcon(ext)
+                              )}
                               <span
-                                className="truncate max-w-xs sm:max-w-md cursor-pointer hover:text-indigo-300"
+                                className="truncate max-w-xs sm:max-w-md cursor-pointer hover:text-indigo-300 transition-colors font-mono"
                                 onClick={() => openAssetPreview(asset)}
                               >
                                 {asset.title}
@@ -1732,26 +1837,85 @@ export function UniversalDriveClient({
                 const ext = file.name.includes(".")
                   ? file.name.split(".").pop() || "cloud"
                   : "cloud";
+                const isImage =
+                  ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "ico", "avif"].includes(ext.toLowerCase()) ||
+                  file.mimeType.startsWith("image/");
+                const isVideo =
+                  ["mp4", "webm", "mkv", "mov", "avi"].includes(ext.toLowerCase()) ||
+                  file.mimeType.startsWith("video/");
+                const thumbnailSrc = isImage ? `/api/drive/preview/${file.id}` : null;
 
                 return (
                   <div
                     key={file.id}
-                    className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-blue-500/40 transition-all group flex flex-col justify-between space-y-3 shadow-lg hover:shadow-blue-500/10"
+                    className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-blue-500/40 transition-all group flex flex-col justify-between space-y-3 shadow-lg hover:shadow-blue-500/10 overflow-hidden relative"
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="shrink-0">
-                        {getRichFileIcon(ext, file.mimeType, file.iconLink)}
+                    {/* Top Media / Thumbnail Preview Banner */}
+                    <div
+                      className="relative w-full h-36 bg-[#0c0c14] rounded-xl overflow-hidden border border-white/5 group-hover:border-blue-500/30 transition-all cursor-pointer flex items-center justify-center select-none"
+                      onClick={() => openGoogleDrivePreview(file)}
+                    >
+                      {thumbnailSrc ? (
+                        <>
+                          <img
+                            src={thumbnailSrc}
+                            alt={file.name}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                            loading="lazy"
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = "none";
+                            }}
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-[#12111e]/90 via-transparent to-transparent pointer-events-none" />
+                        </>
+                      ) : isVideo ? (
+                        <div className="w-full h-full relative flex items-center justify-center bg-gradient-to-br from-blue-950/40 via-black to-purple-950/30">
+                          <div className="absolute inset-0 bg-gradient-to-t from-[#12111e]/90 via-transparent to-transparent pointer-events-none" />
+                          <div className="absolute p-2.5 rounded-full bg-black/60 border border-white/20 backdrop-blur-md text-white shadow-xl group-hover:scale-110 group-hover:bg-blue-600 transition-all">
+                            <Play className="w-4 h-4 fill-white translate-x-0.5" />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="w-full h-full relative flex flex-col items-center justify-center p-3 text-center bg-gradient-to-br from-white/[0.04] via-black/40 to-white/[0.02]">
+                          <div
+                            className="absolute inset-0 opacity-[0.06] group-hover:opacity-[0.12] transition-opacity pointer-events-none"
+                            style={{
+                              backgroundImage: `radial-gradient(circle at 1px 1px, #60a5fa 1px, transparent 0)`,
+                              backgroundSize: "12px 12px",
+                            }}
+                          />
+                          <div className="transform group-hover:scale-110 transition-transform duration-300 relative z-10">
+                            {getRichFileIcon(ext, file.mimeType, file.iconLink, "w-11 h-11 rounded-2xl shadow-lg", "w-5 h-5")}
+                          </div>
+                          <span className="mt-2 text-[10px] uppercase font-mono font-bold tracking-wider px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-slate-300 relative z-10">
+                            .{ext}
+                          </span>
+                          <div className="absolute inset-0 bg-gradient-to-t from-[#12111e]/80 via-transparent to-transparent pointer-events-none" />
+                        </div>
+                      )}
+
+                      {/* Floating Top Right Cloud Badge */}
+                      <div className="absolute top-2.5 right-2.5 z-20">
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] uppercase font-mono border-blue-500/40 text-blue-300 bg-black/70 backdrop-blur-md flex items-center gap-1 py-0.5 px-2 font-semibold shadow-md"
+                        >
+                          <Cloud className="w-2.5 h-2.5 text-blue-400" />
+                          <span>Cloud</span>
+                        </Badge>
                       </div>
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] uppercase font-mono border-blue-500/30 text-blue-400 bg-blue-500/10 flex items-center gap-1"
-                      >
-                        <Cloud className="w-2.5 h-2.5" />
-                        <span>Cloud</span>
-                      </Badge>
+
+                      {/* Hover Eye Overlay Indicator */}
+                      <div className="absolute inset-0 bg-blue-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                        <div className="px-2.5 py-1 rounded-xl bg-black/80 backdrop-blur-md border border-white/20 text-white text-[10px] font-mono flex items-center gap-1.5 shadow-2xl">
+                          <Eye className="w-3 h-3 text-blue-400" />
+                          <span>Click to Preview</span>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="space-y-1 min-w-0">
+                    {/* Middle: Title & Metadata */}
+                    <div className="space-y-1 min-w-0 px-0.5">
                       <h4
                         className="text-xs font-semibold text-white truncate font-mono cursor-pointer hover:text-blue-300 transition-colors"
                         title={file.name}
@@ -1766,6 +1930,7 @@ export function UniversalDriveClient({
                       </div>
                     </div>
 
+                    {/* Bottom Actions */}
                     <div className="flex items-center justify-between gap-1.5 pt-2 border-t border-white/10 text-xs font-mono">
                       <button
                         type="button"
@@ -1813,17 +1978,40 @@ export function UniversalDriveClient({
                       const ext = file.name.includes(".")
                         ? file.name.split(".").pop() || "cloud"
                         : "cloud";
+                      const isImage =
+                        ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "ico", "avif"].includes(ext.toLowerCase()) ||
+                        file.mimeType.startsWith("image/");
+                      const thumbnailSrc = isImage ? `/api/drive/preview/${file.id}` : null;
 
                       return (
                         <tr key={file.id} className="hover:bg-white/[0.02] transition-colors">
-                          <td className="p-3 pl-4 font-semibold text-white flex items-center gap-2.5">
-                            {getRichFileIcon(ext, file.mimeType, file.iconLink)}
-                            <span
-                              className="truncate max-w-xs sm:max-w-md cursor-pointer hover:text-blue-300"
-                              onClick={() => openGoogleDrivePreview(file)}
-                            >
-                              {file.name}
-                            </span>
+                          <td className="p-3 pl-4 font-semibold text-white">
+                            <div className="flex items-center gap-2.5">
+                              {thumbnailSrc ? (
+                                <div
+                                  className="w-8 h-8 rounded-lg overflow-hidden border border-white/10 bg-black shrink-0 cursor-pointer shadow-sm"
+                                  onClick={() => openGoogleDrivePreview(file)}
+                                >
+                                  <img
+                                    src={thumbnailSrc}
+                                    alt={file.name}
+                                    className="w-full h-full object-cover"
+                                    loading="lazy"
+                                    onError={(e) => {
+                                      (e.target as HTMLElement).style.display = "none";
+                                    }}
+                                  />
+                                </div>
+                              ) : (
+                                getRichFileIcon(ext, file.mimeType, file.iconLink)
+                              )}
+                              <span
+                                className="truncate max-w-xs sm:max-w-md cursor-pointer hover:text-blue-300 transition-colors font-mono"
+                                onClick={() => openGoogleDrivePreview(file)}
+                              >
+                                {file.name}
+                              </span>
+                            </div>
                           </td>
                           <td className="p-3 text-slate-400 max-w-[140px] truncate">
                             {file.mimeType.split(".").pop() || file.mimeType}
