@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useTransition, useRef, useMemo, useEffect } from "react";
+import React, { useState, useTransition, useRef, useMemo, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Project, ProjectPhase, Task, Asset, Note } from "@/db/schema";
@@ -8,6 +8,7 @@ import {
   createPhaseAction,
   updatePhaseAction,
   deletePhaseAction,
+  reorderProjectPhasesAction,
   updateProjectAction,
   deleteProjectHubAction,
   uploadProjectMediaAction,
@@ -16,6 +17,26 @@ import {
   updateProjectAssetLinkAction,
   deleteProjectAssetAction,
 } from "@/app/projects/actions";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragStartEvent,
+  DragOverlay,
+  defaultDropAnimationSideEffects,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { isAssetImage, isImageIcon, ProjectIconDisplay, resolveAssetMediaUrl } from "@/components/projects-dashboard";
 import {
   createDriveAssetAction,
@@ -101,6 +122,7 @@ import {
   FolderOpen,
   Filter,
   Link2Off,
+  GripVertical,
 } from "lucide-react";
 import { useUploadStore } from "@/lib/store/useUploadStore";
 import { useLocalUploadStore } from "@/lib/store/useLocalUploadStore";
@@ -500,6 +522,472 @@ function detectFileType(file: File): "pdf" | "image" | "video" {
   return "pdf";
 }
 
+// ── Sortable Phase Card Component ───────────────────────────────────────────
+interface SortablePhaseCardProps {
+  phase: ProjectPhase & { taskCount?: number; doneTaskCount?: number; isAutoCalculated?: boolean };
+  idx: number;
+  phases: ProjectPhase[];
+  isExpanded: boolean;
+  isHighlighted: boolean;
+  pal: any;
+  progress: number;
+  dependsOnPhase: ProjectPhase | null | undefined;
+  phaseTasks: Task[];
+  phaseDocs: ProjectHubAsset[];
+  phaseLinks: ProjectHubAsset[];
+  toggleExpandPhase: (id: number) => void;
+  setPhaseForm: (f: any) => void;
+  setPhaseDialog: (d: any) => void;
+  setDeletingPhaseConfirm: (p: ProjectPhase) => void;
+  isPending: boolean;
+  setActiveTab: (t: string) => void;
+  setSelectedAttachAssetIds: (ids: number[]) => void;
+  setAttachTargetPhaseIds: (ids: number[]) => void;
+  setSearchAttachDocQuery: (q: string) => void;
+  setIsAttachDocModalOpen: (o: boolean) => void;
+  handleOpenUploadModal: (phId: number) => void;
+  setDocPhaseFilter: (f: string) => void;
+  handleUnlinkSpecificPhase: (asset: ProjectHubAsset, phId: number) => void;
+  openAddLinkModal: (phId: number) => void;
+  setSearchAttachLinkQuery: (q: string) => void;
+  setIsAttachLinkModalOpen: (o: boolean) => void;
+  setLinkPhaseFilter: (f: string) => void;
+  openAssetPreview: (asset: Asset) => void;
+}
+
+function SortablePhaseCard({
+  phase,
+  idx,
+  phases,
+  isExpanded,
+  isHighlighted,
+  pal,
+  progress,
+  dependsOnPhase,
+  phaseTasks,
+  phaseDocs,
+  phaseLinks,
+  toggleExpandPhase,
+  setPhaseForm,
+  setPhaseDialog,
+  setDeletingPhaseConfirm,
+  isPending,
+  setActiveTab,
+  setSelectedAttachAssetIds,
+  setAttachTargetPhaseIds,
+  setSearchAttachDocQuery,
+  setIsAttachDocModalOpen,
+  handleOpenUploadModal,
+  setDocPhaseFilter,
+  handleUnlinkSpecificPhase,
+  openAddLinkModal,
+  setSearchAttachLinkQuery,
+  setIsAttachLinkModalOpen,
+  setLinkPhaseFilter,
+  openAssetPreview,
+}: SortablePhaseCardProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: phase.id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition: isDragging ? undefined : transition,
+    zIndex: isDragging ? 50 : undefined,
+    position: "relative",
+  };
+
+  const isReallyExpanded = isExpanded && !isDragging;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      id={`phase-card-${phase.id}`}
+      className={cn(
+        `rounded-2xl border ${pal.border} ${pal.bg} transition-all duration-300 overflow-hidden shadow-md`,
+        isHighlighted && "ring-2 ring-indigo-400 shadow-2xl shadow-indigo-500/30 scale-[1.008]",
+        isDragging && "opacity-25 border-dashed border-indigo-400/80 bg-indigo-950/20 scale-[0.99] shadow-inner pointer-events-none"
+      )}
+    >
+      {/* Clickable Header Row */}
+      <div
+        onClick={() => toggleExpandPhase(phase.id)}
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 cursor-pointer hover:bg-white/[0.04] transition-colors"
+      >
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          {/* Dedicated Drag Handle */}
+          <div
+            {...attributes}
+            {...listeners}
+            onClick={(e) => e.stopPropagation()}
+            className="p-1.5 rounded-lg hover:bg-white/10 text-slate-500 hover:text-slate-200 cursor-grab active:cursor-grabbing transition-colors shrink-0 touch-none"
+            title="Drag to reorder phase"
+          >
+            <GripVertical className="w-4 h-4" />
+          </div>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleExpandPhase(phase.id);
+            }}
+            className="p-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-colors shrink-0"
+          >
+            <ChevronDown className={cn("w-4 h-4 transition-transform duration-300 ease-in-out", isReallyExpanded && "rotate-180")} />
+          </button>
+
+          <div
+            className="w-3 h-3 rounded-full shrink-0 shadow-sm"
+            style={{ backgroundColor: pal.hex }}
+          />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-mono font-bold text-slate-400">#{idx + 1}</span>
+              <p className="text-sm text-white font-mono font-bold truncate">{phase.title}</p>
+              <Badge className={`border text-[9px] font-mono font-medium ${pal.bg} ${pal.border} ${pal.text}`}>
+                {formatStatusLabel(phase.status)}
+              </Badge>
+              {phase.isAutoCalculated && (
+                <Badge variant="outline" className="border-indigo-500/40 text-indigo-300 bg-indigo-500/10 text-[9px] font-mono flex items-center gap-1">
+                  <Sparkles className="w-2.5 h-2.5 text-indigo-400" />
+                  <span>{phase.doneTaskCount}/{phase.taskCount} tasks done</span>
+                </Badge>
+              )}
+              {dependsOnPhase && (
+                <Badge variant="outline" className="border-indigo-500/40 text-indigo-300 bg-indigo-500/10 text-[9px] font-mono flex items-center gap-1">
+                  <Link2 className="w-2.5 h-2.5" />
+                  <span>Depends on: {dependsOnPhase.title}</span>
+                </Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-4 text-xs text-slate-400 font-mono mt-1">
+              <span>{formatDate(phase.startDate)} &rarr; {formatDate(phase.endDate)}</span>
+              <span>•</span>
+              <span className="text-slate-300 font-semibold">{progress}% progress</span>
+              <span>•</span>
+              <span className="text-indigo-300 text-[11px]">
+                {phaseTasks.length} tasks • {phaseDocs.length} docs • {phaseLinks.length} links
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Progress bar and action buttons */}
+        <div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
+          <div className="w-28 hidden md:block">
+            <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-300"
+                style={{ width: `${progress}%`, backgroundColor: pal.hex }}
+              />
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setPhaseForm({
+                title: phase.title,
+                description: (phase as any).description || "",
+                startDate: String(phase.startDate).split("T")[0],
+                endDate: String(phase.endDate).split("T")[0],
+                status: phase.status,
+                progress: phase.progress ?? 0,
+                dependsOnPhaseId: (phase as any).dependsOnPhaseId ?? null,
+              });
+              setPhaseDialog({ open: true, editing: phase });
+            }}
+            className="text-slate-400 hover:text-white transition-colors p-1.5 rounded-xl hover:bg-white/10 cursor-pointer"
+            title="Edit Phase"
+          >
+            <Edit3 className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setDeletingPhaseConfirm(phase)}
+            className="text-slate-400 hover:text-red-400 transition-colors p-1.5 rounded-xl hover:bg-red-500/10 cursor-pointer"
+            disabled={isPending}
+            title="Delete Phase"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Expandable Content Panel with Smooth CSS Grid Height Transition */}
+      <div
+        className={cn(
+          "grid transition-all duration-300 ease-in-out",
+          isReallyExpanded
+            ? "grid-rows-[1fr] opacity-100 border-t border-white/10"
+            : "grid-rows-[0fr] opacity-0 border-t-0"
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="p-4 pt-3 bg-[#0d0d15]/80 space-y-3.5 font-mono text-xs">
+            {/* Phase Description (If available) */}
+            {phase.description && (
+              <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/10 flex items-start gap-2.5">
+                <div className="w-6 h-6 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0 mt-0.5">
+                  <FileText className="w-3.5 h-3.5" />
+                </div>
+                <div className="space-y-0.5 min-w-0 flex-1">
+                  <span className="text-[10px] uppercase font-bold text-indigo-400 tracking-wider block">
+                    Phase Objective &amp; Scope
+                  </span>
+                  <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-wrap font-sans">
+                    {phase.description}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* 1. Tasks in Phase */}
+              <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-2.5">
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <div className="flex items-center gap-1.5 font-bold text-white">
+                    <CheckSquare className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Tasks ({phaseTasks.length})</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setActiveTab("kanban");
+                      }}
+                      className="text-[10px] text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-2.5 h-2.5" />
+                      <span>Task</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setActiveTab("kanban");
+                      }}
+                      className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Kanban</span>
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {phaseTasks.length === 0 ? (
+                  <div className="text-center py-4 text-slate-500 text-[11px]">
+                    No tasks assigned to this phase.
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {phaseTasks.map((t) => (
+                      <div
+                        key={t.id}
+                        onClick={() => setActiveTab("kanban")}
+                        className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 cursor-pointer transition-colors"
+                      >
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <span
+                            className={cn(
+                              "w-2 h-2 rounded-full shrink-0",
+                              t.status === "done"
+                                ? "bg-emerald-400"
+                                : t.status === "in_progress"
+                                ? "bg-amber-400"
+                                : "bg-blue-400"
+                            )}
+                          />
+                          <span className="truncate text-white text-[11px] font-medium">{t.title}</span>
+                        </div>
+                        <Badge variant="outline" className="text-[9px] uppercase border-white/10 text-slate-400 shrink-0">
+                          {t.status}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 2. Documents in Phase */}
+              <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-2.5">
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <div className="flex items-center gap-1.5 font-bold text-white">
+                    <FileText className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Documents ({phaseDocs.length})</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setSelectedAttachAssetIds([]);
+                        setAttachTargetPhaseIds([phase.id]);
+                        setSearchAttachDocQuery("");
+                        setIsAttachDocModalOpen(true);
+                      }}
+                      className="text-[10px] text-purple-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Bookmark className="w-2.5 h-2.5" />
+                      <span>Attach</span>
+                    </button>
+                    <button
+                      onClick={() => handleOpenUploadModal(phase.id)}
+                      className="text-[10px] text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-2.5 h-2.5" />
+                      <span>Upload</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setDocPhaseFilter(phase.id.toString());
+                        setActiveTab("docs");
+                      }}
+                      className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Filter</span>
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {phaseDocs.length === 0 ? (
+                  <div className="text-center py-4 text-slate-500 text-[11px]">
+                    No documents assigned to this phase.
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {phaseDocs.map((doc) => {
+                      const isPreviewable = doc.type === "pdf" || doc.type === "image" || doc.type === "video";
+                      return (
+                        <div
+                          key={doc.id}
+                          className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 transition-colors group/pdoc"
+                        >
+                          <div
+                            onClick={() => openAssetPreview(doc)}
+                            className={cn("flex items-center gap-2 min-w-0 flex-1", isPreviewable && "cursor-pointer hover:text-indigo-300")}
+                          >
+                            <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                            <span className="truncate text-white text-[11px] font-medium">{doc.title}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-[10px] text-slate-500">{formatBytes(doc.sizeBytes)}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUnlinkSpecificPhase(doc, phase.id);
+                              }}
+                              className="p-1 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors opacity-0 group-hover/pdoc:opacity-100 cursor-pointer"
+                              title={`Unlink from ${phase.title}`}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* 3. Links in Phase */}
+              <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-2.5">
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <div className="flex items-center gap-1.5 font-bold text-white">
+                    <Link2 className="w-3.5 h-3.5 text-pink-400" />
+                    <span>Links ({phaseLinks.length})</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setSelectedAttachAssetIds([]);
+                        setAttachTargetPhaseIds([phase.id]);
+                        setSearchAttachLinkQuery("");
+                        setIsAttachLinkModalOpen(true);
+                      }}
+                      className="text-[10px] text-purple-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Bookmark className="w-2.5 h-2.5" />
+                      <span>Attach</span>
+                    </button>
+                    <button
+                      onClick={() => openAddLinkModal(phase.id)}
+                      className="text-[10px] text-pink-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-2.5 h-2.5" />
+                      <span>Register</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setLinkPhaseFilter(phase.id.toString());
+                        setActiveTab("links");
+                      }}
+                      className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Filter</span>
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {phaseLinks.length === 0 ? (
+                  <div className="text-center py-4 text-slate-500 text-[11px]">
+                    No links assigned to this phase.
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {phaseLinks.map((link) => {
+                      return (
+                        <div
+                          key={link.id}
+                          className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 transition-colors group/plink"
+                        >
+                          <a
+                            href={link.urlOrPath}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 min-w-0 flex-1 hover:text-indigo-300 transition-colors"
+                          >
+                            <Globe className="w-3.5 h-3.5 text-pink-400 shrink-0" />
+                            <span className="truncate text-white text-[11px] font-medium">{link.title}</span>
+                          </a>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleUnlinkSpecificPhase(link, phase.id);
+                              }}
+                              className="p-1 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors opacity-0 group-hover/plink:opacity-100 cursor-pointer"
+                              title={`Unlink from ${phase.title}`}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                            <a
+                              href={link.urlOrPath}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-1 text-slate-500 hover:text-white transition-colors"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main ProjectHub Component ────────────────────────────────────────────────
 export function ProjectHub({
   project: initialProject,
@@ -515,6 +1003,70 @@ export function ProjectHub({
   const [phases, setPhases] = useState<ProjectPhase[]>(initialPhases);
   const [assetList, setAssetList] = useState<ProjectHubAsset[]>(initialAssets);
   const [isPending, startTransition] = useTransition();
+
+  const [activePhaseId, setActivePhaseId] = useState<number | null>(null);
+
+  // @dnd-kit sensors for Phase Drag-and-Drop Reordering
+  const phaseSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handlePhaseDragStart = useCallback((event: DragStartEvent) => {
+    const id = Number(event.active.id);
+    setActivePhaseId(id);
+    // Auto-collapse the dragged phase so it drags cleanly without being tall or distorted
+    setExpandedPhaseIds((prev) => prev.filter((pId) => pId !== id));
+  }, []);
+
+  const handlePhaseDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      setActivePhaseId(null);
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+
+      const oldIndex = phases.findIndex((p) => p.id === active.id);
+      const newIndex = phases.findIndex((p) => p.id === over.id);
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const newPhases = arrayMove(phases, oldIndex, newIndex);
+        setPhases(newPhases);
+
+        startTransition(async () => {
+          try {
+            await reorderProjectPhasesAction(
+              project.id,
+              newPhases.map((p) => p.id)
+            );
+          } catch (err) {
+            console.error("Failed to reorder phases:", err);
+          }
+        });
+      }
+    },
+    [phases, project.id]
+  );
+
+  const activePhase = useMemo(
+    () => (activePhaseId ? phases.find((p) => p.id === activePhaseId) || null : null),
+    [activePhaseId, phases]
+  );
+
+  const activeIdx = useMemo(
+    () => (activePhase ? phases.findIndex((p) => p.id === activePhase.id) : 0),
+    [activePhase, phases]
+  );
+
+  const activePal = useMemo(
+    () => (activePhase ? getPaletteForTitle(activePhase.title, activeIdx) : null),
+    [activePhase, activeIdx]
+  );
 
   useEffect(() => {
     setAssetList(initialAssets);
@@ -1738,394 +2290,114 @@ export function ProjectHub({
             onPhaseSelect={handlePhaseSelect}
           />
 
-          {/* Phase Cards Breakdown with Interactive Accordion for Linked Tasks, Docs, Links */}
-          <div className="space-y-3 pt-2">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-mono text-slate-400 uppercase tracking-wider">Phases Breakdown &amp; Linked Assets</h4>
-              <span className="text-[11px] font-mono text-slate-500">Click card or Gantt bar to expand tasks, docs, and links</span>
-            </div>
+          {/* Phase Cards Breakdown with Interactive Accordion & Drag-and-Drop Reordering */}
+          <DndContext
+            sensors={phaseSensors}
+            collisionDetection={closestCenter}
+            onDragStart={handlePhaseDragStart}
+            onDragEnd={handlePhaseDragEnd}
+          >
+            <SortableContext
+              items={phases.map((p) => p.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-mono text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                    <span>Phases Breakdown &amp; Linked Assets</span>
+                    <span className="text-[10px] text-indigo-400 font-normal lowercase">(drag handle to reorder)</span>
+                  </h4>
+                  <span className="text-[11px] font-mono text-slate-500">
+                    Click card or Gantt bar to expand tasks, docs, and links
+                  </span>
+                </div>
 
-            {phasesWithTaskProgress.map((phase, idx) => {
-              const pal = getPaletteForTitle(phase.title, idx);
-              const progress = phase.progress ?? 0;
-              const dependsOnPhase = (phase as any).dependsOnPhaseId
-                ? phases.find((p) => p.id === (phase as any).dependsOnPhaseId)
-                : null;
+                {phasesWithTaskProgress.map((phase, idx) => (
+                  <SortablePhaseCard
+                    key={phase.id}
+                    phase={phase}
+                    idx={idx}
+                    phases={phases}
+                    isExpanded={expandedPhaseIds.includes(phase.id)}
+                    isHighlighted={highlightedPhaseId === phase.id}
+                    pal={getPaletteForTitle(phase.title, idx)}
+                    progress={phase.progress ?? 0}
+                    dependsOnPhase={(phase as any).dependsOnPhaseId ? phases.find((p) => p.id === (phase as any).dependsOnPhaseId) : null}
+                    phaseTasks={initialTasks.filter((t) => t.phaseId === phase.id)}
+                    phaseDocs={documentList.filter((d) => (d as any).phaseIds?.includes(phase.id) || d.phaseId === phase.id)}
+                    phaseLinks={linkList.filter((l) => (l as any).phaseIds?.includes(phase.id) || l.phaseId === phase.id)}
+                    toggleExpandPhase={toggleExpandPhase}
+                    setPhaseForm={setPhaseForm}
+                    setPhaseDialog={setPhaseDialog}
+                    setDeletingPhaseConfirm={setDeletingPhaseConfirm}
+                    isPending={isPending}
+                    setActiveTab={setActiveTab}
+                    setSelectedAttachAssetIds={setSelectedAttachAssetIds}
+                    setAttachTargetPhaseIds={setAttachTargetPhaseIds}
+                    setSearchAttachDocQuery={setSearchAttachDocQuery}
+                    setIsAttachDocModalOpen={setIsAttachDocModalOpen}
+                    handleOpenUploadModal={handleOpenUploadModal}
+                    setDocPhaseFilter={setDocPhaseFilter}
+                    handleUnlinkSpecificPhase={handleUnlinkSpecificPhase}
+                    openAddLinkModal={openAddLinkModal}
+                    setSearchAttachLinkQuery={setSearchAttachLinkQuery}
+                    setIsAttachLinkModalOpen={setIsAttachLinkModalOpen}
+                    setLinkPhaseFilter={setLinkPhaseFilter}
+                    openAssetPreview={openAssetPreview}
+                  />
+                ))}
+              </div>
+            </SortableContext>
 
-              const isExpanded = expandedPhaseIds.includes(phase.id);
-              const isHighlighted = highlightedPhaseId === phase.id;
-              const phaseTasks = initialTasks.filter((t) => t.phaseId === phase.id);
-              const phaseDocs = documentList.filter((d) => (d as any).phaseIds?.includes(phase.id) || d.phaseId === phase.id);
-              const phaseLinks = linkList.filter((l) => (l as any).phaseIds?.includes(phase.id) || l.phaseId === phase.id);
-
-              return (
+            {/* Smooth 60fps Floating Drag Overlay */}
+            <DragOverlay
+              dropAnimation={{
+                sideEffects: defaultDropAnimationSideEffects({
+                  styles: {
+                    active: {
+                      opacity: "0.4",
+                    },
+                  },
+                }),
+              }}
+            >
+              {activePhase && activePal ? (
                 <div
-                  key={phase.id}
-                  id={`phase-card-${phase.id}`}
                   className={cn(
-                    `rounded-2xl border ${pal.border} ${pal.bg} transition-all duration-300 overflow-hidden shadow-md`,
-                    isHighlighted && "ring-2 ring-indigo-400 shadow-2xl shadow-indigo-500/30 scale-[1.008]"
+                    "rounded-2xl border p-4 flex items-center justify-between gap-3 font-mono cursor-grabbing scale-[1.02] shadow-2xl ring-2 ring-indigo-500 backdrop-blur-2xl opacity-95",
+                    activePal.border,
+                    activePal.bg
                   )}
                 >
-                  {/* Clickable Header Row */}
-                  <div
-                    onClick={() => toggleExpandPhase(phase.id)}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 cursor-pointer hover:bg-white/[0.04] transition-colors"
-                  >
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleExpandPhase(phase.id);
-                        }}
-                        className="p-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-colors"
-                      >
-                        <ChevronDown className={cn("w-4 h-4 transition-transform duration-300 ease-in-out", isExpanded && "rotate-180")} />
-                      </button>
-
-                      <div
-                        className="w-3 h-3 rounded-full shrink-0 shadow-sm"
-                        style={{ backgroundColor: pal.hex }}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm text-white font-mono font-bold truncate">{phase.title}</p>
-                          <Badge className={`border text-[9px] font-mono font-medium ${pal.bg} ${pal.border} ${pal.text}`}>
-                            {formatStatusLabel(phase.status)}
-                          </Badge>
-                          {phase.isAutoCalculated && (
-                            <Badge variant="outline" className="border-indigo-500/40 text-indigo-300 bg-indigo-500/10 text-[9px] font-mono flex items-center gap-1">
-                              <Sparkles className="w-2.5 h-2.5 text-indigo-400" />
-                              <span>{phase.doneTaskCount}/{phase.taskCount} tasks done</span>
-                            </Badge>
-                          )}
-                          {dependsOnPhase && (
-                            <Badge variant="outline" className="border-indigo-500/40 text-indigo-300 bg-indigo-500/10 text-[9px] font-mono flex items-center gap-1">
-                              <Link2 className="w-2.5 h-2.5" />
-                              <span>Depends on: {dependsOnPhase.title}</span>
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-4 text-xs text-slate-400 font-mono mt-1">
-                          <span>{formatDate(phase.startDate)} &rarr; {formatDate(phase.endDate)}</span>
-                          <span>•</span>
-                          <span className="text-slate-300 font-semibold">{progress}% progress</span>
-                          <span>•</span>
-                          <span className="text-indigo-300 text-[11px]">
-                            {phaseTasks.length} tasks • {phaseDocs.length} docs • {phaseLinks.length} links
-                          </span>
-                        </div>
-                      </div>
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <div className="p-1.5 rounded-lg bg-white/10 text-white cursor-grabbing shrink-0">
+                      <GripVertical className="w-4 h-4 text-indigo-400" />
                     </div>
-
-                    {/* Progress bar and action buttons */}
-                    <div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
-                      <div className="w-28 hidden md:block">
-                        <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all duration-300"
-                            style={{ width: `${progress}%`, backgroundColor: pal.hex }}
-                          />
-                        </div>
+                    <div
+                      className="w-3 h-3 rounded-full shrink-0 shadow-sm"
+                      style={{ backgroundColor: activePal.hex }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[11px] font-mono font-bold text-slate-400">
+                          #{activeIdx + 1}
+                        </span>
+                        <p className="text-sm text-white font-mono font-bold truncate">{activePhase.title}</p>
+                        <Badge className={`border text-[9px] font-mono font-medium ${activePal.bg} ${activePal.border} ${activePal.text}`}>
+                          {formatStatusLabel(activePhase.status)}
+                        </Badge>
                       </div>
-                      <button
-                        onClick={() => {
-                          setPhaseForm({
-                            title: phase.title,
-                            description: (phase as any).description || "",
-                            startDate: String(phase.startDate).split("T")[0],
-                            endDate: String(phase.endDate).split("T")[0],
-                            status: phase.status,
-                            progress: phase.progress ?? 0,
-                            dependsOnPhaseId: (phase as any).dependsOnPhaseId ?? null,
-                          });
-                          setPhaseDialog({ open: true, editing: phase });
-                        }}
-                        className="text-slate-400 hover:text-white transition-colors p-1.5 rounded-xl hover:bg-white/10 cursor-pointer"
-                        title="Edit Phase"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setDeletingPhaseConfirm(phase)}
-                        className="text-slate-400 hover:text-red-400 transition-colors p-1.5 rounded-xl hover:bg-red-500/10 cursor-pointer"
-                        disabled={isPending}
-                        title="Delete Phase"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Expandable Content Panel with Smooth CSS Grid Height Transition */}
-                  <div
-                    className={cn(
-                      "grid transition-all duration-300 ease-in-out",
-                      isExpanded
-                        ? "grid-rows-[1fr] opacity-100 border-t border-white/10"
-                        : "grid-rows-[0fr] opacity-0 border-t-0"
-                    )}
-                  >
-                    <div className="overflow-hidden">
-                      <div className="p-4 pt-3 bg-[#0d0d15]/80 space-y-3.5 font-mono text-xs">
-                        {/* Phase Description (If available) */}
-                        {phase.description && (
-                          <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/10 flex items-start gap-2.5">
-                            <div className="w-6 h-6 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0 mt-0.5">
-                              <FileText className="w-3.5 h-3.5" />
-                            </div>
-                            <div className="space-y-0.5 min-w-0 flex-1">
-                              <span className="text-[10px] uppercase font-bold text-indigo-400 tracking-wider block">
-                                Phase Objective &amp; Scope
-                              </span>
-                              <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-wrap font-sans">
-                                {phase.description}
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                          {/* 1. Tasks in Phase */}
-                          <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-2.5">
-                            <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                              <div className="flex items-center gap-1.5 font-bold text-white">
-                                <CheckSquare className="w-3.5 h-3.5 text-indigo-400" />
-                                <span>Tasks ({phaseTasks.length})</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => {
-                                    setActiveTab("kanban");
-                                  }}
-                                  className="text-[10px] text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Plus className="w-2.5 h-2.5" />
-                                  <span>Task</span>
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setActiveTab("kanban");
-                                  }}
-                                  className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                                >
-                                  <span>Kanban</span>
-                                  <ExternalLink className="w-2.5 h-2.5" />
-                                </button>
-                              </div>
-                            </div>
-
-                            {phaseTasks.length === 0 ? (
-                              <div className="text-center py-4 text-slate-500 text-[11px]">
-                                No tasks assigned to this phase.
-                              </div>
-                            ) : (
-                              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                                {phaseTasks.map((t) => (
-                                  <div
-                                    key={t.id}
-                                    onClick={() => setActiveTab("kanban")}
-                                    className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 cursor-pointer transition-colors"
-                                  >
-                                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                                      <span
-                                        className={cn(
-                                          "w-2 h-2 rounded-full shrink-0",
-                                          t.status === "done"
-                                            ? "bg-emerald-400"
-                                            : t.status === "in_progress"
-                                            ? "bg-amber-400"
-                                            : "bg-blue-400"
-                                        )}
-                                      />
-                                      <span className="truncate text-white text-[11px] font-medium">{t.title}</span>
-                                    </div>
-                                    <Badge variant="outline" className="text-[9px] uppercase border-white/10 text-slate-400 shrink-0">
-                                      {t.status}
-                                    </Badge>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* 2. Documents in Phase */}
-                          <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-2.5">
-                            <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                              <div className="flex items-center gap-1.5 font-bold text-white">
-                                <FileText className="w-3.5 h-3.5 text-blue-400" />
-                                <span>Documents ({phaseDocs.length})</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => {
-                                    setSelectedAttachAssetIds([]);
-                                    setAttachTargetPhaseIds([phase.id]);
-                                    setSearchAttachDocQuery("");
-                                    setIsAttachDocModalOpen(true);
-                                  }}
-                                  className="text-[10px] text-purple-400 hover:underline flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Bookmark className="w-2.5 h-2.5" />
-                                  <span>Attach</span>
-                                </button>
-                                <button
-                                  onClick={() => handleOpenUploadModal(phase.id)}
-                                  className="text-[10px] text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Plus className="w-2.5 h-2.5" />
-                                  <span>Upload</span>
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setDocPhaseFilter(phase.id.toString());
-                                    setActiveTab("documents");
-                                  }}
-                                  className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                                >
-                                  <span>Filter</span>
-                                  <ExternalLink className="w-2.5 h-2.5" />
-                                </button>
-                              </div>
-                            </div>
-
-                            {phaseDocs.length === 0 ? (
-                              <div className="text-center py-4 text-slate-500 text-[11px]">
-                                No documents assigned to this phase.
-                              </div>
-                            ) : (
-                              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                                {phaseDocs.map((doc) => {
-                                  const ext = getFileExtension(doc.title, doc.urlOrPath);
-                                  return (
-                                    <div
-                                      key={doc.id}
-                                      onClick={() => openAssetPreview(doc)}
-                                      className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 cursor-pointer transition-colors group/pdoc"
-                                    >
-                                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                                        <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                                        <span className="truncate text-white text-[11px]">{doc.title}</span>
-                                      </div>
-                                      <div className="flex items-center gap-1.5 shrink-0">
-                                        <span className="text-[10px] text-slate-500">{formatBytes(doc.sizeBytes)}</span>
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleUnlinkSpecificPhase(doc, phase.id);
-                                          }}
-                                          className="p-1 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors opacity-0 group-hover/pdoc:opacity-100 cursor-pointer"
-                                          title={`Unlink from ${phase.title}`}
-                                        >
-                                          <X className="w-3 h-3" />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* 3. Links in Phase */}
-                          <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-2.5">
-                            <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                              <div className="flex items-center gap-1.5 font-bold text-white">
-                                <Link2 className="w-3.5 h-3.5 text-pink-400" />
-                                <span>Links ({phaseLinks.length})</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => {
-                                    setSelectedAttachAssetIds([]);
-                                    setAttachTargetPhaseIds([phase.id]);
-                                    setSearchAttachLinkQuery("");
-                                    setIsAttachLinkModalOpen(true);
-                                  }}
-                                  className="text-[10px] text-purple-400 hover:underline flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Bookmark className="w-2.5 h-2.5" />
-                                  <span>Attach</span>
-                                </button>
-                                <button
-                                  onClick={() => openAddLinkModal(phase.id)}
-                                  className="text-[10px] text-pink-400 hover:underline flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Plus className="w-2.5 h-2.5" />
-                                  <span>Register</span>
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setLinkPhaseFilter(phase.id.toString());
-                                    setActiveTab("links");
-                                  }}
-                                  className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                                >
-                                  <span>Filter</span>
-                                  <ExternalLink className="w-2.5 h-2.5" />
-                                </button>
-                              </div>
-                            </div>
-
-                            {phaseLinks.length === 0 ? (
-                              <div className="text-center py-4 text-slate-500 text-[11px]">
-                                No links assigned to this phase.
-                              </div>
-                            ) : (
-                              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                                {phaseLinks.map((link) => {
-                                  return (
-                                    <div
-                                      key={link.id}
-                                      className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 transition-colors group/plink"
-                                    >
-                                      <a
-                                        href={link.urlOrPath}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="flex items-center gap-2 min-w-0 flex-1 hover:text-indigo-300 transition-colors"
-                                      >
-                                        <Globe className="w-3.5 h-3.5 text-pink-400 shrink-0" />
-                                        <span className="truncate text-white text-[11px] font-medium">{link.title}</span>
-                                      </a>
-                                      <div className="flex items-center gap-1 shrink-0">
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            handleUnlinkSpecificPhase(link, phase.id);
-                                          }}
-                                          className="p-1 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors opacity-0 group-hover/plink:opacity-100 cursor-pointer"
-                                          title={`Unlink from ${phase.title}`}
-                                        >
-                                          <X className="w-3 h-3" />
-                                        </button>
-                                        <a
-                                          href={link.urlOrPath}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="p-1 text-slate-500 hover:text-white transition-colors"
-                                        >
-                                          <ExternalLink className="w-3 h-3" />
-                                        </a>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        </div>
+                      <div className="flex items-center gap-3 text-xs text-slate-400 font-mono mt-0.5">
+                        <span>{formatDate(activePhase.startDate)} &rarr; {formatDate(activePhase.endDate)}</span>
+                        <span>•</span>
+                        <span className="text-slate-300 font-semibold">{activePhase.progress ?? 0}% progress</span>
                       </div>
                     </div>
                   </div>
                 </div>
-              );
-            })}
-          </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         </TabsContent>
 
         {/* ── TAB 2: SCOPED KANBAN ────────────────────────────────────── */}

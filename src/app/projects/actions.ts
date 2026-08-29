@@ -546,6 +546,35 @@ export async function deletePhaseAction(id: number) {
   return { success: true };
 }
 
+export async function reorderProjectPhasesAction(projectId: number, orderedPhaseIds: number[]) {
+  try {
+    if (!Array.isArray(orderedPhaseIds) || orderedPhaseIds.length === 0) {
+      return { success: false, error: "Invalid phase IDs" };
+    }
+
+    // Update orderIndex for each phase in order
+    await Promise.all(
+      orderedPhaseIds.map((phaseId, index) =>
+        db
+          .update(projectPhases)
+          .set({ orderIndex: index })
+          .where(and(eq(projectPhases.id, phaseId), eq(projectPhases.projectId, projectId)))
+      )
+    );
+
+    await syncProjectAutoStatusInDb(projectId);
+    revalidatePath(`/projects/${projectId}`);
+    revalidatePath("/projects");
+    revalidatePath("/tasks");
+    revalidatePath("/");
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("[reorderProjectPhasesAction]", error);
+    return { success: false, error: error.message || "Failed to reorder phases" };
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SCOPED TASKS (reuse existing task actions but with projectId locked in)
 // ─────────────────────────────────────────────────────────────────────────────
