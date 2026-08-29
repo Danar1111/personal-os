@@ -11,6 +11,7 @@ import {
   skills,
   skillMilestones,
   projects,
+  projectPhases,
   applications,
   watchlist,
   systemSettings,
@@ -29,6 +30,7 @@ import { updateAssetAction } from "@/app/inventory/actions";
 import { deleteFolderAction, renameFolderAction, updateNoteAction } from "@/app/vault/actions";
 import { renameProjectAction, deleteProjectAction, updateTaskFullAction } from "@/app/tasks/actions";
 import { updateSkillAction, createMilestoneAction, updateMilestoneAction, deleteMilestoneAction } from "@/app/skills/actions";
+import { syncProjectAutoStatusInDb } from "@/app/projects/actions";
 import { google } from "googleapis";
 
 export const maxDuration = 30;
@@ -40,6 +42,13 @@ const DEFAULT_MASTER_SYSTEM_PROMPT = `
 You are Personal OS AI Core — a friendly, warm, intelligent executive AI assistant embedded in the user's personal operating system.
 
 EXACT SYSTEM MODULE DOMAINS & TOOLS MAPPING:
+
+• Project Hub & Roadmap Intelligence (/projects)
+  → Tools: get_project_details, list_all_projects_hub, create_phase_tasks, add_project_link, update_phase_schedule
+  → Roadmap & Gantt Inspection: Use get_project_details to query a project's roadmap phases, progress %, tasks per phase, and linked documents/links. Use list_all_projects_hub to get a high-level briefing of all active projects in the hub.
+  → Task Breakdown by Phase: Use create_phase_tasks to create technical Kanban tasks assigned directly to a specific phase of a project.
+  → Reference & Link Collector: Use add_project_link to attach links (Figma, PRD, GitHub, docs) to a project or phase.
+  → Schedule Updates: Use update_phase_schedule to adjust dates, status, or progress of roadmap phases.
 
 • Second Brain Vault & Folders (/vault)
   → Tools: search_vault, create_note, update_note, move_note_to_folder, delete_note, list_folders, create_folder, rename_folder, move_folder, delete_folder
@@ -129,31 +138,37 @@ RULES:
    - ONLY IF the user's latest message is an affirmative confirmation (e.g. "ya", "ya hapus", "lanjutkan", "yes", "ok", "hapus aja", "konfirmasi"), THEN execute the delete tool (or generate the deletion plan).
 5. LINKED REFERENCES FORMAT:
    - References in Tasks and Skills use standard markers in the description: [REF:asset:Title], [REF:drive:Title], [REF:note:Title], [REF:link:https://...]. Use add_task_reference or add_skill_reference to attach these easily.
-6. MANDATORY CONVERSATIONAL RESPONSE (+1) RULE (TTS FRIENDLY):
-   - MANDATORY: AFTER executing ANY tool (such as \`create_calendar_event\`, \`create_task\`, \`send_email\`, \`web_search\`, \`delete_calendar_event\`), YOU MUST ALWAYS GENERATE A FINAL CONVERSATIONAL TEXT RESPONSE in 1-2 fluid, short, warm sentences speaking directly to the user!
-   - STRICT TTS CONSTRAINTS:
-     - Keep the final response SHORT (strictly 1-2 sentences directly answering the question).
-     - NEVER output long essays, bullet point lists, or long raw URLs (e.g. NEVER list "https://djpb.kemenkeu.go.id/...") in the final text response!
-     - The tool output bubble already displays the search sources/links above. Your final text is meant for TTS voice reading, so make it concise, natural, and direct to the point!
-137: 7. MANDATORY PLAN-AND-EXECUTE ARCHITECTURE FOR ALL TOOL REQUESTS:
-138:    - MANDATORY EXECUTION PLAN RULE: Whenever the initial user prompt requires calling ANY tool (even just 1 tool like \`create_calendar_event\`, \`create_task\`, \`web_search\`, \`send_email\`, \`add_to_watchlist\`, \`list_tasks\`, \`list_applications\`, etc.), YOU MUST ALWAYS CALL \`create_execution_plan\` FIRST!
-139:    - CRITICAL EXCEPTIONS & STRICT PROHIBITIONS:
-140:      1. Only skip \`create_execution_plan\` if the user is having casual conversation without any tool actions (e.g. "Halo", "Siapa kamu?", "Terima kasih").
-141:      2. ABSOLUTE BAN: NEVER EVER call \`create_execution_plan\` if you are responding to a prompt starting with \`[SYSTEM_STEPPER]\`! In stepper mode, calling \`create_execution_plan\` is a CRITICAL ERROR. You MUST call the required action tool directly.
-142:    - FOR SINGLE-TOOL REQUESTS (e.g. "buatkan event jam 3 lari sore" or "apa sih MBG itu?"):
-143:      - You MUST call \`create_execution_plan\` with exactly 2 steps:
-144:        - Step 1: \`create_calendar_event\` or \`web_search\` (Target Tool: target tool name)
-145:        - Step 2 (+1): \`final_response\` (Target Tool: \`final_response\`)
-146:    - FOR MULTI-TOOL REQUESTS (e.g. "ambil aplikasi launcher lalu kirim email ke X"):
-147:      - You MUST call \`create_execution_plan\` with N+1 steps (where N is number of tool actions):
-148:        - Step 1: \`list_applications\` (Target Tool: \`list_applications\`)
-149:        - Step 2: \`send_email\` (Target Tool: \`send_email\`)
-150:        - Step 3 (+1): \`final_response\` (Target Tool: \`final_response\`)
-151:    - DO NOT CREATE A STEP FOR ASKING DELETION CONFIRMATION! \`execution_plan\` steps MUST only be direct tool actions or \`final_response\`. If deletion confirmation is needed, ask for confirmation BEFORE generating \`create_execution_plan\`!
-152:    - CRITICAL: When calling \`create_execution_plan\`, YOU MUST STOP IMMEDIATELY. Do NOT call any other tool or generate action text in the same turn!
-153:    - STEPPER INSTRUCTIONS: When you receive a step prompt starting with \`[SYSTEM_STEPPER]\` (e.g. \`[SYSTEM_STEPPER] Langkah X dari Y: ... (MUST use tool: Z)\`), DO NOT CALL \`create_execution_plan\`! Execute ONLY the specified target tool (e.g. \`list_applications\`, \`send_email\`, \`web_search\`) for that step directly! Read outputs of previous steps from chat history to extract any needed titles, IDs, or text. Do NOT re-run tools from previous steps!
+6. CONVERSATIONAL RESPONSE DYNAMICS (CONCISE BY DEFAULT vs DETAILED ON REQUEST):
+   - DEFAULT MODE (SHORT & CRISP FOR TTS VOICE):
+     - By default, after executing any tool, keep the final conversational response concise, warm, and natural in 1-3 fluid sentences directly answering the user.
+     - Avoid long rambling paragraphs or repetitive raw URLs when not asked.
+   - DETAILED EXPLANATION MODE (WHEN EXPLICITLY REQUESTED BY USER):
+     - IF AND ONLY IF the user explicitly asks for a detailed explanation, deep dive, comprehensive breakdown, thorough guide, or step-by-step tutorial (e.g. "jelaskan secara detail", "jelaskan dengan lengkap", "beri penjelasan mendalam", "jelaskan secara rinci", "explain in detail", "jabarkan konsepnya secara komprehensif", etc.):
+     - THEN provide a rich, comprehensive, beautifully structured in-depth explanation with formatted headings, formulas, key concepts, bulleted breakdowns, and practical examples while maintaining clean markdown formatting!
+   - CASUAL / STANDARD INQUIRIES:
+     - When the user does NOT ask for detail, keep the response short, elegant, concise, and helpful.
 
-   - FINAL CONVERSATIONAL SYNTHESIS STEP: For the final step (\`target_tool: 'final_response'\`), DO NOT call any tools! Respond in 1-2 short, fluid, conversational sentences directly answering the user's question (ideal for TTS voice reading). Do NOT use bullet points, list items, raw URLs, report headers, or meta-phrases.
+7. MANDATORY PLAN-AND-EXECUTE ARCHITECTURE FOR ALL TOOL REQUESTS:
+   - MANDATORY EXECUTION PLAN RULE: Whenever the initial user prompt requires calling ANY tool (even just 1 tool like \`create_calendar_event\`, \`create_task\`, \`web_search\`, \`send_email\`, \`add_to_watchlist\`, \`list_tasks\`, \`list_applications\`, etc.), YOU MUST ALWAYS CALL \`create_execution_plan\` FIRST!
+   - CRITICAL EXCEPTIONS & STRICT PROHIBITIONS:
+     1. Only skip \`create_execution_plan\` if the user is having casual conversation without any tool actions (e.g. "Halo", "Siapa kamu?", "Terima kasih").
+     2. ABSOLUTE BAN: NEVER EVER call \`create_execution_plan\` if you are responding to a prompt starting with \`[SYSTEM_STEPPER]\`! In stepper mode, calling \`create_execution_plan\` is a CRITICAL ERROR. You MUST call the required action tool directly.
+   - FOR SINGLE-TOOL REQUESTS (e.g. "buatkan event jam 3 lari sore" or "apa sih MBG itu?"):
+     - You MUST call \`create_execution_plan\` with exactly 2 steps:
+       - Step 1: \`create_calendar_event\` or \`web_search\` (Target Tool: target tool name)
+       - Step 2 (+1): \`final_response\` (Target Tool: \`final_response\`)
+   - FOR MULTI-TOOL REQUESTS (e.g. "ambil aplikasi launcher lalu kirim email ke X"):
+     - You MUST call \`create_execution_plan\` with N+1 steps (where N is number of tool actions):
+       - Step 1: \`list_applications\` (Target Tool: \`list_applications\`)
+       - Step 2: \`send_email\` (Target Tool: \`send_email\`)
+       - Step 3 (+1): \`final_response\` (Target Tool: \`final_response\`)
+   - DO NOT CREATE A STEP FOR ASKING DELETION CONFIRMATION! \`execution_plan\` steps MUST only be direct tool actions or \`final_response\`. If deletion confirmation is needed, ask for confirmation BEFORE generating \`create_execution_plan\`!
+   - CRITICAL: When calling \`create_execution_plan\`, YOU MUST STOP IMMEDIATELY. Do NOT call any other tool or generate action text in the same turn!
+   - STEPPER INSTRUCTIONS: When you receive a step prompt starting with \`[SYSTEM_STEPPER]\` (e.g. \`[SYSTEM_STEPPER] Langkah X dari Y: ... (MUST use tool: Z)\`), DO NOT CALL \`create_execution_plan\`! Execute ONLY the specified target tool (e.g. \`list_applications\`, \`send_email\`, \`web_search\`) for that step directly! Read outputs of previous steps from chat history to extract any needed titles, IDs, or text. Do NOT re-run tools from previous steps!
+
+   - FINAL CONVERSATIONAL SYNTHESIS STEP: For the final step (\`target_tool: 'final_response'\`), DO NOT call any tools!
+     - If the user asked for a detailed explanation ("jelaskan secara detail / lengkap / rinci / mendalam"), provide a comprehensive, well-structured, in-depth answer.
+     - Otherwise, respond in 1-3 short, fluid, conversational sentences directly answering the user's question.
 
 8. TOOL SELECTION PRIORITY & WEB SEARCH FALLBACK HIERARCHY:
    - PRIMARY PRIORITY: ALWAYS use specific dedicated domain tools FIRST whenever a matching tool exists in Personal OS:
@@ -174,81 +189,149 @@ RULES:
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Scrape web search results using DuckDuckGo HTML endpoint (free, no API key required) */
-async function searchDuckDuckGo(query: string, limit = 5) {
+// Decode Bing tracking URL
+function decodeBingUrl(rawUrl: string): string {
+  try {
+    const unescaped = rawUrl.replace(/&amp;/g, "&");
+    if (unescaped.includes("&u=") || unescaped.includes("?u=")) {
+      const match = unescaped.match(/[?&]u=([^&]+)/);
+      if (match && match[1]) {
+        let b64 = match[1];
+        if (b64.startsWith("a1")) b64 = b64.slice(2);
+        b64 = b64.replace(/-/g, "+").replace(/_/g, "/");
+        while (b64.length % 4 !== 0) b64 += "=";
+        const decoded = Buffer.from(b64, "base64").toString("utf-8");
+        if (decoded.startsWith("http")) return decoded;
+      }
+    }
+  } catch {}
+  return rawUrl;
+}
+
+// Decode DuckDuckGo tracking URL
+function decodeDdgUrl(rawUrl: string): string {
+  if (rawUrl.includes("uddg=")) {
+    const match = rawUrl.match(/uddg=([^&]+)/);
+    if (match && match[1]) return decodeURIComponent(match[1]);
+  }
+  if (rawUrl.startsWith("//")) return "https:" + rawUrl;
+  return rawUrl;
+}
+
+/** Robust Multi-Engine Web Search (DuckDuckGo + Bing Fallback + Wikipedia Knowledge API) */
+async function searchWebMultiEngine(query: string, limit = 5): Promise<{ title: string; url: string; snippet: string }[]> {
+  const results: { title: string; url: string; snippet: string }[] = [];
+  const cleanQ = query.trim();
+  if (!cleanQ) return [];
+
+  // ── Engine 1: DuckDuckGo HTML ──────────────────────────────────────────────
   try {
     const res = await fetch("https://html.duckduckgo.com/html/", {
       method: "POST",
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Content-Type": "application/x-www-form-urlencoded",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
       },
-      body: new URLSearchParams({ q: query, b: "" }).toString(),
+      body: new URLSearchParams({ q: cleanQ, b: "" }).toString(),
     });
 
-    if (!res.ok) {
-      throw new Error(`HTTP error ${res.status}`);
-    }
+    if (res.ok) {
+      const html = await res.text();
+      if (!html.includes("anomaly-modal")) {
+        const blocks = html.split(/class="[^"]*result(?:__body|_links)[^"]*"/i);
+        for (let i = 1; i < blocks.length && results.length < limit; i++) {
+          const block = blocks[i];
+          const titleMatch = block.match(/<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+          if (!titleMatch) continue;
 
-    const html = await res.text();
-    const results: { title: string; url: string; snippet: string }[] = [];
+          const rawUrl = decodeDdgUrl(titleMatch[1]);
+          if (rawUrl.includes("duckduckgo.com/y.js") || rawUrl.includes("ad_provider")) continue;
 
-    // Match result blocks in DuckDuckGo HTML structure
-    const resultBlockRegex = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
+          const rawTitle = titleMatch[2];
+          const snippetMatch = block.match(/<[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/[^>]+>/i);
+          const rawSnippet = snippetMatch ? snippetMatch[1] : "";
 
-    let match;
-    while ((match = resultBlockRegex.exec(html)) !== null && results.length < limit) {
-      let rawUrl = match[1];
-      const rawTitle = match[2];
-      const rawSnippet = match[3];
+          const title = rawTitle.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+          const snippet = rawSnippet.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
 
-      // Decode DDG redirected URL (uddg=...)
-      if (rawUrl.includes("uddg=")) {
-        const uddgMatch = rawUrl.match(/uddg=([^&]+)/);
-        if (uddgMatch && uddgMatch[1]) {
-          rawUrl = decodeURIComponent(uddgMatch[1]);
-        }
-      } else if (rawUrl.startsWith("//")) {
-        rawUrl = "https:" + rawUrl;
-      }
-
-      // Clean HTML tags from title and snippet
-      const cleanTitle = rawTitle.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
-      const cleanSnippet = rawSnippet.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
-
-      if (cleanTitle && rawUrl.startsWith("http")) {
-        results.push({
-          title: cleanTitle,
-          url: rawUrl,
-          snippet: cleanSnippet,
-        });
-      }
-    }
-
-    // Fallback: If result__a regex didn't match, parse result__url links
-    if (results.length === 0) {
-      const altRegex = /<a[^>]*class="result__url"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
-      let altMatch;
-      while ((altMatch = altRegex.exec(html)) !== null && results.length < limit) {
-        let rawUrl = altMatch[1];
-        if (rawUrl.includes("uddg=")) {
-          const uddgMatch = rawUrl.match(/uddg=([^&]+)/);
-          if (uddgMatch && uddgMatch[1]) rawUrl = decodeURIComponent(uddgMatch[1]);
-        }
-        const text = altMatch[2].replace(/<[^>]+>/g, "").trim();
-        if (rawUrl.startsWith("http")) {
-          results.push({ title: text || rawUrl, url: rawUrl, snippet: "Web search result" });
+          if (title && rawUrl.startsWith("http") && !results.some((r) => r.url === rawUrl)) {
+            results.push({ title, url: rawUrl, snippet: snippet || "Web search result" });
+          }
         }
       }
     }
-
-    return results;
   } catch (e: any) {
     console.error("[DDG Search Error]:", e?.message || e);
-    return [];
   }
+
+  // ── Engine 2: Bing Search (Fallback if DDG returns < limit) ────────────────
+  if (results.length < limit) {
+    try {
+      const bingRes = await fetch(`https://www.bing.com/search?q=${encodeURIComponent(cleanQ)}&setlang=id&count=10`, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+        },
+      });
+
+      if (bingRes.ok) {
+        const bingHtml = await bingRes.text();
+        const blocks = bingHtml.split(/<li[^>]*class="b_algo"[^>]*>/i);
+
+        for (let i = 1; i < blocks.length && results.length < limit; i++) {
+          const block = blocks[i].split(/<\/li>/i)[0];
+          const h2Match = block.match(/<h2[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<\/h2>/i);
+          if (!h2Match) continue;
+
+          let rawUrl = decodeBingUrl(h2Match[1]);
+          if (rawUrl.includes("bing.com/aclick") || rawUrl.includes("ad_domain")) continue;
+
+          const title = h2Match[2].replace(/<[^>]+>/g, "").replace(/&#\d+;/g, "").replace(/&[a-z]+;/g, " ").replace(/\s+/g, " ").trim();
+          const snippetMatch = block.match(/<p[^>]*>([\s\S]*?)<\/p>/i) || block.match(/<div[^>]*class="b_caption"[^>]*>([\s\S]*?)<\/div>/i);
+          const snippet = (snippetMatch ? snippetMatch[1] : "").replace(/<[^>]+>/g, "").replace(/&#\d+;/g, "").replace(/&[a-z]+;/g, " ").replace(/\s+/g, " ").trim();
+
+          if (title && rawUrl.startsWith("http") && !results.some((r) => r.url === rawUrl)) {
+            results.push({ title, url: rawUrl, snippet: snippet || "Web search result" });
+          }
+        }
+      }
+    } catch (e: any) {
+      console.error("[Bing Search Error]:", e?.message || e);
+    }
+  }
+
+  // ── Engine 3: Wikipedia Knowledge API (Supplemental encyclopedic context) ───
+  if (results.length < 2) {
+    try {
+      const wikiRes = await fetch(
+        `https://id.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQ)}&format=json&utf8=1`
+      );
+      if (wikiRes.ok) {
+        const wikiData = await wikiRes.json();
+        const wikiItems = wikiData?.query?.search || [];
+        for (const item of wikiItems) {
+          if (results.length >= limit) break;
+          const title = item.title;
+          const url = `https://id.wikipedia.org/wiki/${encodeURIComponent(title.replace(/\s+/g, "_"))}`;
+          const snippet = item.snippet.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+          if (!results.some((r) => r.url === url)) {
+            results.push({
+              title: `Wikipedia: ${title}`,
+              url,
+              snippet,
+            });
+          }
+        }
+      }
+    } catch (e: any) {
+      console.error("[Wiki Search Error]:", e?.message || e);
+    }
+  }
+
+  return results.slice(0, limit);
 }
 
 
@@ -2105,6 +2188,404 @@ export async function POST(req: Request) {
         },
       }),
 
+      // ── PROJECT HUB & ROADMAP INTELLIGENCE ──────────────────────────────
+      get_project_details: makeTool({
+        description: "Fetches full details of a specific project including Gantt roadmap phases, progress %, task breakdown by phase, and linked documents/links.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            projectId: { type: "number", description: "Project ID (optional if projectName provided)" },
+            projectName: { type: "string", description: "Project name keyword to search" },
+          },
+          required: [],
+        }),
+        execute: async (args: any) => {
+          try {
+            const pid = args?.projectId ? Number(args.projectId) : null;
+            const pName = args?.projectName ? String(args.projectName).trim() : "";
+
+            let targetProject = null;
+            if (pid) {
+              const [found] = await db.select().from(projects).where(eq(projects.id, pid)).limit(1);
+              targetProject = found;
+            } else if (pName) {
+              const [found] = await db.select().from(projects).where(like(projects.name, `%${pName}%`)).limit(1);
+              targetProject = found;
+            }
+
+            if (!targetProject) {
+              return {
+                success: false,
+                message: `Project not found with query "${pName || pid}". Use list_all_projects_hub to see available projects.`,
+                pageUrl: "/projects",
+              };
+            }
+
+            // Fetch phases, tasks, and assets
+            const pPhases = await db
+              .select()
+              .from(projectPhases)
+              .where(eq(projectPhases.projectId, targetProject.id))
+              .orderBy(projectPhases.orderIndex, projectPhases.startDate);
+
+            const pTasks = await db
+              .select()
+              .from(tasks)
+              .where(eq(tasks.projectId, targetProject.id));
+
+            const pAssets = await db
+              .select()
+              .from(assets)
+              .where(eq(assets.projectId, targetProject.id));
+
+            const totalTasks = pTasks.length;
+            const doneTasks = pTasks.filter((t) => t.status === "done").length;
+            const overallProgress = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
+
+            const docs = pAssets.filter((a) => a.type !== "link");
+            const links = pAssets.filter((a) => a.type === "link");
+
+            // Format phase breakdown
+            const phasesSummary = pPhases.map((phase, idx) => {
+              const phaseTasks = pTasks.filter((t) => t.phaseId === phase.id);
+              const phaseDone = phaseTasks.filter((t) => t.status === "done").length;
+              const depPhase = phase.dependsOnPhaseId ? pPhases.find((p) => p.id === phase.dependsOnPhaseId) : null;
+              
+              const taskList = phaseTasks.length
+                ? phaseTasks.map((t) => `    - [${t.status.toUpperCase()}] ${t.title} (${t.priority})`).join("\n")
+                : "    - _(No tasks assigned)_";
+
+              return `**${idx + 1}. ${phase.title}** [${phase.status}] (${phase.startDate} → ${phase.endDate})\n` +
+                `  • Progress: **${phase.progress}%** (${phaseDone}/${phaseTasks.length} tasks done)\n` +
+                (depPhase ? `  • Depends on: **${depPhase.title}**\n` : "") +
+                `  • Tasks:\n${taskList}`;
+            }).join("\n\n");
+
+            const msg = `📊 **[${targetProject.name}](/projects/${targetProject.id})** — Status: **${targetProject.status}**\n` +
+              `• **Timeline**: ${targetProject.startDate || "—"} → ${targetProject.targetDate || "—"}\n` +
+              `• **Overall Completion**: **${overallProgress}%** (${doneTasks}/${totalTasks} total tasks completed)\n` +
+              `• **Assets**: ${docs.length} Documents • ${links.length} Links\n\n` +
+              `🗓️ **Gantt Roadmap Phases** (${pPhases.length}):\n\n` +
+              (phasesSummary || "_No phases registered in this project roadmap._");
+
+            return {
+              success: true,
+              project: targetProject,
+              phasesCount: pPhases.length,
+              totalTasks,
+              completedTasks: doneTasks,
+              overallProgress,
+              message: msg,
+              pageUrl: `/projects/${targetProject.id}`,
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to get project details: ${e.message}`, pageUrl: "/projects" };
+          }
+        },
+      }),
+
+      list_all_projects_hub: makeTool({
+        description: "Lists all projects registered in Project Hub with their Gantt phase counts, completion rates, and target dates.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {},
+        }),
+        execute: async () => {
+          try {
+            const allProjects = await db.select().from(projects).orderBy(desc(projects.createdAt));
+            const allPhases = await db.select().from(projectPhases);
+            const allTasks = await db.select().from(tasks);
+            const allAssets = await db.select().from(assets);
+
+            if (!allProjects.length) {
+              return {
+                success: true,
+                count: 0,
+                message: "No projects found in [Project Hub](/projects).",
+                pageUrl: "/projects",
+              };
+            }
+
+            const list = allProjects.map((p) => {
+              const pPhases = allPhases.filter((ph) => ph.projectId === p.id);
+              const pTasks = allTasks.filter((t) => t.projectId === p.id);
+              const pAssets = allAssets.filter((a) => a.projectId === p.id);
+              const doneTasks = pTasks.filter((t) => t.status === "done").length;
+              const progress = pTasks.length > 0 ? Math.round((doneTasks / pTasks.length) * 100) : 0;
+
+              return `• **[${p.name}](/projects/${p.id})** [${p.status}]\n` +
+                `  - Target: ${p.targetDate || "No target date"} | Progress: **${progress}%** (${doneTasks}/${pTasks.length} tasks)\n` +
+                `  - Roadmap: ${pPhases.length} phases | Assets: ${pAssets.length} linked`;
+            }).join("\n\n");
+
+            return {
+              success: true,
+              count: allProjects.length,
+              message: `🚀 **Active Projects in Project Hub** (${allProjects.length}):\n\n${list}`,
+              pageUrl: "/projects",
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to list projects: ${e.message}`, pageUrl: "/projects" };
+          }
+        },
+      }),
+
+      create_phase_tasks: makeTool({
+        description: "Creates one or more technical Kanban tasks assigned directly to a specific phase of a project.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            projectName: { type: "string", description: "Name keyword of the project" },
+            projectId: { type: "number", description: "ID of the project (optional if projectName provided)" },
+            phaseTitle: { type: "string", description: "Title keyword of the target phase (e.g. 'Develop', 'Testing')" },
+            phaseId: { type: "number", description: "ID of the target phase (optional if phaseTitle provided)" },
+            tasks: {
+              type: "array",
+              description: "List of tasks to create",
+              items: {
+                type: "object",
+                properties: {
+                  title: { type: "string", description: "Task title" },
+                  description: { type: "string", description: "Task description (optional)" },
+                  priority: { type: "string", enum: ["low", "medium", "high"], description: "Priority level" },
+                },
+                required: ["title"],
+              },
+            },
+          },
+          required: ["tasks"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const pid = args?.projectId ? Number(args.projectId) : null;
+            const pName = args?.projectName ? String(args.projectName).trim() : "";
+            const phId = args?.phaseId ? Number(args.phaseId) : null;
+            const phTitle = args?.phaseTitle ? String(args.phaseTitle).trim() : "";
+            const taskItems = Array.isArray(args?.tasks) ? args.tasks : [];
+
+            if (!taskItems.length) {
+              return { success: false, message: "No tasks provided in tasks array." };
+            }
+
+            let targetProject = null;
+            if (pid) {
+              const [found] = await db.select().from(projects).where(eq(projects.id, pid)).limit(1);
+              targetProject = found;
+            } else if (pName) {
+              const [found] = await db.select().from(projects).where(like(projects.name, `%${pName}%`)).limit(1);
+              targetProject = found;
+            }
+
+            if (!targetProject) {
+              return { success: false, message: `Project "${pName || pid}" not found.` };
+            }
+
+            // Find target phase if provided
+            let targetPhase = null;
+            if (phId) {
+              const [found] = await db.select().from(projectPhases).where(and(eq(projectPhases.id, phId), eq(projectPhases.projectId, targetProject.id))).limit(1);
+              targetPhase = found;
+            } else if (phTitle) {
+              const [found] = await db.select().from(projectPhases).where(and(like(projectPhases.title, `%${phTitle}%`), eq(projectPhases.projectId, targetProject.id))).limit(1);
+              targetPhase = found;
+            }
+
+            const createdTitles: string[] = [];
+            for (const item of taskItems) {
+              const title = String(item.title || "").trim();
+              if (!title) continue;
+              const desc = item.description ? String(item.description).trim() : null;
+              const prio = item.priority || "medium";
+
+              await db.insert(tasks).values({
+                projectId: targetProject.id,
+                phaseId: targetPhase?.id || null,
+                title,
+                description: desc,
+                priority: prio,
+                status: "todo",
+              });
+              createdTitles.push(title);
+            }
+
+            await syncProjectAutoStatusInDb(targetProject.id);
+
+            revalidatePath(`/projects/${targetProject.id}`);
+            revalidatePath("/projects");
+            revalidatePath("/tasks");
+            revalidatePath("/");
+
+            const targetPhaseText = targetPhase ? ` to phase **${targetPhase.title}**` : "";
+            const taskBullets = createdTitles.map((t) => `• ${t}`).join("\n");
+
+            return {
+              success: true,
+              count: createdTitles.length,
+              message: `✓ Created ${createdTitles.length} tasks in **[${targetProject.name}](/projects/${targetProject.id})**${targetPhaseText}:\n\n${taskBullets}`,
+              pageUrl: `/projects/${targetProject.id}`,
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to create phase tasks: ${e.message}` };
+          }
+        },
+      }),
+
+      add_project_link: makeTool({
+        description: "Attaches a reference link (e.g. Figma, GitHub, PRD, docs) directly to a project or specific roadmap phase.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            projectName: { type: "string", description: "Name keyword of the project" },
+            projectId: { type: "number", description: "ID of the project (optional if projectName provided)" },
+            title: { type: "string", description: "Link title / label (e.g. 'Figma Design System', 'API Documentation')" },
+            url: { type: "string", description: "URL address (http/https)" },
+            phaseTitle: { type: "string", description: "Title keyword of the phase to attach to (optional)" },
+            phaseId: { type: "number", description: "ID of the phase to attach to (optional)" },
+            docStatus: { type: "string", enum: ["DRAFT", "FINAL"], description: "Document status (default: FINAL)" },
+          },
+          required: ["title", "url"],
+        }),
+        execute: async (args: any) => {
+          try {
+            const pid = args?.projectId ? Number(args.projectId) : null;
+            const pName = args?.projectName ? String(args.projectName).trim() : "";
+            const phId = args?.phaseId ? Number(args.phaseId) : null;
+            const phTitle = args?.phaseTitle ? String(args.phaseTitle).trim() : "";
+            const title = String(args?.title || "").trim();
+            const url = String(args?.url || "").trim();
+            const docStatus = args?.docStatus || "FINAL";
+
+            if (!title || !url) {
+              return { success: false, message: "Title and URL are required." };
+            }
+
+            let targetProject = null;
+            if (pid) {
+              const [found] = await db.select().from(projects).where(eq(projects.id, pid)).limit(1);
+              targetProject = found;
+            } else if (pName) {
+              const [found] = await db.select().from(projects).where(like(projects.name, `%${pName}%`)).limit(1);
+              targetProject = found;
+            }
+
+            if (!targetProject) {
+              return { success: false, message: `Project "${pName || pid}" not found.` };
+            }
+
+            let targetPhase = null;
+            if (phId) {
+              const [found] = await db.select().from(projectPhases).where(and(eq(projectPhases.id, phId), eq(projectPhases.projectId, targetProject.id))).limit(1);
+              targetPhase = found;
+            } else if (phTitle) {
+              const [found] = await db.select().from(projectPhases).where(and(like(projectPhases.title, `%${phTitle}%`), eq(projectPhases.projectId, targetProject.id))).limit(1);
+              targetPhase = found;
+            }
+
+            await db.insert(assets).values({
+              title,
+              type: "link",
+              urlOrPath: url,
+              projectId: targetProject.id,
+              phaseId: targetPhase?.id || null,
+              docStatus,
+            });
+
+            revalidatePath(`/projects/${targetProject.id}`);
+            revalidatePath("/projects");
+            revalidatePath("/drive");
+
+            const phaseText = targetPhase ? ` to phase **${targetPhase.title}**` : "";
+
+            return {
+              success: true,
+              message: `✓ Saved link **[${title}](${url})** in **[${targetProject.name}](/projects/${targetProject.id})**${phaseText}.`,
+              pageUrl: `/projects/${targetProject.id}`,
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to add project link: ${e.message}` };
+          }
+        },
+      }),
+
+      update_phase_schedule: makeTool({
+        description: "Updates or reschedules a phase's start date, end date, status, or progress in the Gantt timeline.",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            projectName: { type: "string", description: "Name keyword of the project" },
+            projectId: { type: "number", description: "ID of the project (optional if projectName provided)" },
+            phaseTitle: { type: "string", description: "Title keyword of the phase" },
+            phaseId: { type: "number", description: "ID of the phase" },
+            startDate: { type: "string", description: "New start date (YYYY-MM-DD)" },
+            endDate: { type: "string", description: "New end date (YYYY-MM-DD)" },
+            status: { type: "string", enum: ["PLANNED", "IN_PROGRESS", "DONE", "BLOCKED"], description: "New phase status" },
+            progress: { type: "number", description: "Completion percentage (0 to 100)" },
+          },
+          required: [],
+        }),
+        execute: async (args: any) => {
+          try {
+            const pid = args?.projectId ? Number(args.projectId) : null;
+            const pName = args?.projectName ? String(args.projectName).trim() : "";
+            const phId = args?.phaseId ? Number(args.phaseId) : null;
+            const phTitle = args?.phaseTitle ? String(args.phaseTitle).trim() : "";
+
+            let targetPhase = null;
+            if (phId) {
+              const [found] = await db.select().from(projectPhases).where(eq(projectPhases.id, phId)).limit(1);
+              targetPhase = found;
+            } else if (phTitle) {
+              if (pid) {
+                const [found] = await db.select().from(projectPhases).where(and(like(projectPhases.title, `%${phTitle}%`), eq(projectPhases.projectId, pid))).limit(1);
+                targetPhase = found;
+              } else if (pName) {
+                const [proj] = await db.select().from(projects).where(like(projects.name, `%${pName}%`)).limit(1);
+                if (proj) {
+                  const [found] = await db.select().from(projectPhases).where(and(like(projectPhases.title, `%${phTitle}%`), eq(projectPhases.projectId, proj.id))).limit(1);
+                  targetPhase = found;
+                }
+              } else {
+                const [found] = await db.select().from(projectPhases).where(like(projectPhases.title, `%${phTitle}%`)).limit(1);
+                targetPhase = found;
+              }
+            }
+
+            if (!targetPhase) {
+              return { success: false, message: `Phase "${phTitle || phId}" not found.` };
+            }
+
+            const updateData: Record<string, unknown> = {};
+            if (args.startDate) updateData.startDate = args.startDate;
+            if (args.endDate) {
+              const finalStart = args.startDate || targetPhase.startDate;
+              if (args.endDate < finalStart) {
+                updateData.endDate = finalStart;
+              } else {
+                updateData.endDate = args.endDate;
+              }
+            }
+            if (args.status) updateData.status = args.status;
+            if (args.progress !== undefined) updateData.progress = Math.max(0, Math.min(100, Number(args.progress)));
+
+            await db.update(projectPhases).set(updateData as any).where(eq(projectPhases.id, targetPhase.id));
+            await syncProjectAutoStatusInDb(targetPhase.projectId);
+
+            revalidatePath(`/projects/${targetPhase.projectId}`);
+            revalidatePath("/projects");
+            revalidatePath("/");
+
+            return {
+              success: true,
+              message: `✓ Updated phase **${targetPhase.title}** schedule & status in **[Project Hub](/projects/${targetPhase.projectId})**.`,
+              pageUrl: `/projects/${targetPhase.projectId}`,
+              data: sanitizeData(updateData),
+            };
+          } catch (e: any) {
+            return { success: false, message: `Failed to update phase schedule: ${e.message}` };
+          }
+        },
+      }),
+
       // ── APP LAUNCHER ─────────────────────────────────────────────────────
       list_applications: makeTool({
         description: "Lists registered applications and web shortcuts in App Launcher. Use when user says 'show apps', 'list applications', 'app shortcuts', 'show launchpad'.",
@@ -2982,7 +3463,7 @@ export async function POST(req: Request) {
 
       // ── WEB SEARCH ──────────────────────────────────────────────────────────────
       web_search: makeTool({
-        description: "Searches the web via DuckDuckGo for live facts, current events, technical documentation, tutorial links, or web references. MUST be called when user asks about external web information not in local system.",
+        description: "Searches the web via Multi-Engine Web Intelligence (DuckDuckGo, Bing, Wikipedia) for live facts, current events, technical documentation, tutorial links, formulas, or web references. MUST be called when user asks about external web information not in local system.",
         inputSchema: jsonSchema({
           type: "object",
           properties: {
@@ -2997,7 +3478,7 @@ export async function POST(req: Request) {
             const limit = Number(args?.limit) || 5;
             if (!query) return { success: false, message: "Query search tidak boleh kosong." };
 
-            const results = await searchDuckDuckGo(query, limit);
+            const results = await searchWebMultiEngine(query, limit);
             if (results.length === 0) {
               return { success: true, message: `Pencarian web untuk "${query}" tidak menemukan hasil relevan.` };
             }

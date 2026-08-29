@@ -136,6 +136,38 @@ export const OMNI_AI_SKILLS_REGISTRY: RegisteredAISkill[] = [
     examplePrompt: "Hapus project 'Demo App'",
   },
 
+  // ── PROJECT HUB & ROADMAP INTELLIGENCE ──────────────────────────────
+  {
+    name: "get_project_details",
+    module: "Project Hub & Roadmap",
+    description: "Fetches full details of a project including Gantt timeline phases, progress %, task breakdown, and linked documents/links.",
+    examplePrompt: "Tampilkan detail dan roadmap project Personal OS",
+  },
+  {
+    name: "list_all_projects_hub",
+    module: "Project Hub & Roadmap",
+    description: "Lists all active projects in Project Hub with Gantt phase counts, completion rate, and target dates.",
+    examplePrompt: "Bagaimana status seluruh project saya di Project Hub saat ini?",
+  },
+  {
+    name: "create_phase_tasks",
+    module: "Project Hub & Roadmap",
+    description: "Creates one or more technical Kanban tasks assigned directly to a specific project roadmap phase.",
+    examplePrompt: "Buat 3 task untuk fase 'Develop' di project Personal OS",
+  },
+  {
+    name: "add_project_link",
+    module: "Project Hub & Roadmap",
+    description: "Attaches a reference link (e.g. Figma, GitHub, PRD, docs) directly to a project or specific roadmap phase.",
+    examplePrompt: "Simpan link https://github.com/Danar1111/personal-os ke fase 'Develop' di project Personal OS",
+  },
+  {
+    name: "update_phase_schedule",
+    module: "Project Hub & Roadmap",
+    description: "Updates or reschedules a phase's start date, end date, status, or progress % in the Gantt timeline.",
+    examplePrompt: "Ubah tanggal selesai fase 'Develop' project Personal OS jadi 2026-09-15",
+  },
+
   // ── ASSET VAULT & BOOKMARKS ──────────────────────────────────────────
   {
     name: "list_assets",
