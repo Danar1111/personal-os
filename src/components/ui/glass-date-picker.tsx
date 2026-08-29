@@ -148,11 +148,13 @@ export function GlassDatePicker({
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const daysInPrevMonth = new Date(viewYear, viewMonth, 0).getDate();
 
-  const handleSelectDate = (day: number) => {
-    const mm = String(viewMonth + 1).padStart(2, "0");
+  const handleSelectDate = (year: number, month: number, day: number) => {
+    const mm = String(month + 1).padStart(2, "0");
     const dd = String(day).padStart(2, "0");
-    const dateStr = `${viewYear}-${mm}-${dd}`;
+    const dateStr = `${year}-${mm}-${dd}`;
     onChange(dateStr);
+    setViewYear(year);
+    setViewMonth(month);
     setIsOpen(false);
   };
 
@@ -265,18 +267,36 @@ export function GlassDatePicker({
         ))}
       </div>
 
-      {/* Month Day Grid */}
+      {/* Month Day Grid (Fixed 42 slots / 6 rows so height never shifts when changing months) */}
       <div className="grid grid-cols-7 gap-1">
-        {/* Prev month days */}
+        {/* Prev month trailing days */}
         {Array.from({ length: firstDayIndex }).map((_, i) => {
           const day = daysInPrevMonth - firstDayIndex + i + 1;
+          const prevYear = viewMonth === 0 ? viewYear - 1 : viewYear;
+          const prevMonthNum = viewMonth === 0 ? 11 : viewMonth - 1;
+          const dateStr = `${prevYear}-${String(prevMonthNum + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+          const isSelected = rawDateOnly === dateStr;
+          const isPastMin = minDate && dateStr < minDate;
+          const isPastMax = maxDate && dateStr > maxDate;
+          const isDisabled = Boolean(isPastMin || isPastMax);
+
           return (
-            <div
+            <button
               key={`prev-${day}`}
-              className="h-7 flex items-center justify-center text-[10px] text-slate-600 select-none"
+              type="button"
+              disabled={isDisabled}
+              onClick={() => handleSelectDate(prevYear, prevMonthNum, day)}
+              className={cn(
+                "h-7 rounded-xl text-xs flex items-center justify-center font-mono transition-all select-none cursor-pointer",
+                isDisabled
+                  ? "opacity-20 cursor-not-allowed text-slate-700"
+                  : isSelected
+                  ? currentTheme.selected
+                  : "text-slate-600 hover:text-slate-300 hover:bg-white/5"
+              )}
             >
               {day}
-            </div>
+            </button>
           );
         })}
 
@@ -301,13 +321,44 @@ export function GlassDatePicker({
               key={`curr-${day}`}
               type="button"
               disabled={isDisabled}
-              onClick={() => handleSelectDate(day)}
+              onClick={() => handleSelectDate(viewYear, viewMonth, day)}
               className={cn(
-                "h-7 rounded-xl text-xs flex items-center justify-center font-mono transition-all cursor-pointer select-none",
+                "h-7 rounded-xl text-xs flex items-center justify-center font-mono transition-all cursor-pointer select-none font-medium",
                 isDisabled && "opacity-20 cursor-not-allowed",
                 !isDisabled && !isSelected && "hover:bg-white/10 text-slate-200",
                 isToday && !isSelected && currentTheme.today,
                 isSelected && currentTheme.selected
+              )}
+            >
+              {day}
+            </button>
+          );
+        })}
+
+        {/* Next month leading days (Fixed to guarantee 42 slots / 6 rows so height never shifts) */}
+        {Array.from({ length: Math.max(0, 42 - (firstDayIndex + daysInMonth)) }).map((_, i) => {
+          const day = i + 1;
+          const nextYear = viewMonth === 11 ? viewYear + 1 : viewYear;
+          const nextMonthNum = viewMonth === 11 ? 0 : viewMonth + 1;
+          const dateStr = `${nextYear}-${String(nextMonthNum + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+          const isSelected = rawDateOnly === dateStr;
+          const isPastMin = minDate && dateStr < minDate;
+          const isPastMax = maxDate && dateStr > maxDate;
+          const isDisabled = Boolean(isPastMin || isPastMax);
+
+          return (
+            <button
+              key={`next-${day}`}
+              type="button"
+              disabled={isDisabled}
+              onClick={() => handleSelectDate(nextYear, nextMonthNum, day)}
+              className={cn(
+                "h-7 rounded-xl text-xs flex items-center justify-center font-mono transition-all select-none cursor-pointer",
+                isDisabled
+                  ? "opacity-20 cursor-not-allowed text-slate-700"
+                  : isSelected
+                  ? currentTheme.selected
+                  : "text-slate-600 hover:text-slate-300 hover:bg-white/5"
               )}
             >
               {day}
