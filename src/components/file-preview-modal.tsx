@@ -20,6 +20,7 @@ import {
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 export interface PreviewableFile {
   title: string;
@@ -30,6 +31,8 @@ export interface PreviewableFile {
   size?: string | number;
   googleFileId?: string;
   webViewLink?: string;
+  docVersion?: string | null;
+  docStatus?: string | null;
 }
 
 interface FilePreviewModalProps {
@@ -106,13 +109,36 @@ export function FilePreviewModal({ file, isOpen, onClose }: FilePreviewModalProp
               <DialogTitle className="text-sm font-bold text-white truncate max-w-lg">
                 {file.title}
               </DialogTitle>
-              <div className="flex items-center gap-2 text-[10px] text-slate-400">
+              <div className="flex items-center gap-2 text-[10px] text-slate-400 flex-wrap">
                 <Badge
                   variant="outline"
                   className="text-[9px] uppercase border-white/10 bg-white/[0.04] text-slate-300 px-1.5 py-0"
                 >
                   {file.source === "google" ? "Google Drive" : "Local Storage"}
                 </Badge>
+                {file.docVersion && (
+                  <Badge
+                    variant="outline"
+                    className="text-[9px] uppercase border-indigo-500/30 bg-indigo-500/10 text-indigo-300 font-mono font-bold px-1.5 py-0"
+                  >
+                    {file.docVersion}
+                  </Badge>
+                )}
+                {file.docStatus && (
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "text-[9px] uppercase font-mono font-bold px-1.5 py-0",
+                      file.docStatus === "FINAL" || file.docStatus === "APPROVED"
+                        ? "border-emerald-500/30 text-emerald-300 bg-emerald-500/10"
+                        : file.docStatus === "IN_REVIEW" || file.docStatus === "REVIEW"
+                        ? "border-amber-500/30 text-amber-300 bg-amber-500/10"
+                        : "border-blue-500/30 text-blue-300 bg-blue-500/10"
+                    )}
+                  >
+                    {file.docStatus.replace("_", " ")}
+                  </Badge>
+                )}
                 {ext && <span className="uppercase font-semibold text-slate-400">• .{ext}</span>}
               </div>
             </div>

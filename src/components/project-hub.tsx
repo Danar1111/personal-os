@@ -916,17 +916,38 @@ function SortablePhaseCard({
                       return (
                         <div
                           key={doc.id}
-                          className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 transition-colors group/pdoc"
+                          className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 transition-colors group/pdoc gap-2"
                         >
                           <div
                             onClick={() => openAssetPreview(doc)}
-                            className={cn("flex items-center gap-2 min-w-0 flex-1", isPreviewable && "cursor-pointer hover:text-indigo-300")}
+                            className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer hover:text-indigo-300 transition-colors"
                           >
                             <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                            <span className="truncate text-white text-[11px] font-medium">{doc.title}</span>
+                            <span className="truncate text-white text-[11px] font-medium group-hover/pdoc:text-indigo-300 transition-colors">
+                              {doc.title}
+                            </span>
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
-                            <span className="text-[10px] text-slate-500">{formatBytes(doc.sizeBytes)}</span>
+                            {doc.docVersion && (
+                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-indigo-500/10 text-indigo-300 border border-indigo-500/25 font-bold">
+                                {doc.docVersion}
+                              </span>
+                            )}
+                            {doc.docStatus && (
+                              <span
+                                className={cn(
+                                  "text-[9px] font-mono px-1.5 py-0.5 rounded-md border font-bold uppercase",
+                                  doc.docStatus === "FINAL" || doc.docStatus === "APPROVED"
+                                    ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+                                    : doc.docStatus === "IN_REVIEW" || doc.docStatus === "REVIEW"
+                                    ? "bg-amber-500/10 text-amber-300 border-amber-500/30"
+                                    : "bg-blue-500/10 text-blue-300 border-blue-500/30"
+                                )}
+                              >
+                                {doc.docStatus.replace("_", " ")}
+                              </span>
+                            )}
+                            <span className="text-[10px] text-slate-500 font-mono">{formatBytes(doc.sizeBytes)}</span>
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1824,6 +1845,8 @@ export function ProjectHub({
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadMode, setUploadMode] = useState<"local_only" | "auto_sync" | "drive_only">("local_only");
   const [uploadPhaseIds, setUploadPhaseIds] = useState<number[]>([]);
+  const [uploadDocVersion, setUploadDocVersion] = useState("v1.0");
+  const [uploadDocStatus, setUploadDocStatus] = useState("DRAFT");
   const [isDragging, setIsDragging] = useState(false);
   const [isSubmittingUpload, setIsSubmittingUpload] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -1918,6 +1941,8 @@ export function ProjectHub({
       webViewLink: asset.gdriveId
         ? `https://drive.google.com/file/d/${asset.gdriveId}/preview`
         : undefined,
+      docVersion: (asset as any).docVersion || "v1.0",
+      docStatus: (asset as any).docStatus || "DRAFT",
     });
     setIsPreviewOpen(true);
   };
@@ -1925,6 +1950,8 @@ export function ProjectHub({
   const handleOpenUploadModal = (prefillPhaseIds?: number[] | number | null) => {
     setUploadFiles([]);
     setUploadMode("local_only");
+    setUploadDocVersion("v1.0");
+    setUploadDocStatus("DRAFT");
     if (Array.isArray(prefillPhaseIds)) {
       setUploadPhaseIds(prefillPhaseIds);
     } else if (typeof prefillPhaseIds === "number") {
@@ -1960,6 +1987,9 @@ export function ProjectHub({
 
     setIsSubmittingUpload(true);
     const filesToUpload = [...uploadFiles];
+    const targetDocVersion = uploadDocVersion.trim() || "v1.0";
+    const targetDocStatus = uploadDocStatus.trim() || "DRAFT";
+
     setIsUploadDocModalOpen(false);
     setUploadFiles([]);
 
@@ -1984,8 +2014,8 @@ export function ProjectHub({
               syncStatus: "CLOUD_ONLY",
               projectId: project.id,
               phaseId: uploadPhaseIds[0] || null,
-              docVersion: "v1.0",
-              docStatus: "DRAFT",
+              docVersion: targetDocVersion,
+              docStatus: targetDocStatus,
             });
 
             if (uploadPhaseIds.length > 0) {
@@ -1993,6 +2023,8 @@ export function ProjectHub({
                 projectId: project.id,
                 assetIds: [created.id],
                 phaseIds: uploadPhaseIds,
+                docVersion: targetDocVersion,
+                docStatus: targetDocStatus,
               });
             }
 
@@ -2009,8 +2041,8 @@ export function ProjectHub({
               projectId: project.id,
               phaseId: uploadPhaseIds[0] || null,
               phaseIds: uploadPhaseIds,
-              docVersion: "v1.0",
-              docStatus: "DRAFT",
+              docVersion: targetDocVersion,
+              docStatus: targetDocStatus,
               createdAt: new Date(),
             };
             createdAssets.push(assetObj);
@@ -2082,8 +2114,8 @@ export function ProjectHub({
             syncStatus: "LOCAL_UNSYNCED",
             projectId: project.id,
             phaseId: uploadPhaseIds[0] || null,
-            docVersion: "v1.0",
-            docStatus: "DRAFT",
+            docVersion: targetDocVersion,
+            docStatus: targetDocStatus,
           });
 
           if (uploadPhaseIds.length > 0) {
@@ -2091,6 +2123,8 @@ export function ProjectHub({
               projectId: project.id,
               assetIds: [created.id],
               phaseIds: uploadPhaseIds,
+              docVersion: targetDocVersion,
+              docStatus: targetDocStatus,
             });
           }
 
@@ -2107,8 +2141,8 @@ export function ProjectHub({
             projectId: project.id,
             phaseId: uploadPhaseIds[0] || null,
             phaseIds: uploadPhaseIds,
-            docVersion: "v1.0",
-            docStatus: "DRAFT",
+            docVersion: targetDocVersion,
+            docStatus: targetDocStatus,
             createdAt: new Date(),
           };
           createdAssets.push(assetObj);
@@ -3086,13 +3120,15 @@ export function ProjectHub({
                                 <Badge
                                   variant="outline"
                                   className={cn(
-                                    "text-[9px] font-mono px-1.5 py-0",
-                                    asset.docStatus === "FINAL"
-                                      ? "border-emerald-500/40 text-emerald-400 bg-emerald-500/10"
-                                      : "border-amber-500/40 text-amber-300 bg-amber-500/10"
+                                    "text-[9px] font-mono px-1.5 py-0 uppercase font-bold",
+                                    asset.docStatus === "FINAL" || asset.docStatus === "APPROVED"
+                                      ? "border-emerald-500/40 text-emerald-300 bg-emerald-500/10"
+                                      : asset.docStatus === "IN_REVIEW" || asset.docStatus === "REVIEW"
+                                      ? "border-amber-500/40 text-amber-300 bg-amber-500/10"
+                                      : "border-blue-500/40 text-blue-300 bg-blue-500/10"
                                   )}
                                 >
-                                  {asset.docStatus}
+                                  {asset.docStatus.replace("_", " ")}
                                 </Badge>
                               )}
                             </div>
@@ -3577,8 +3613,14 @@ export function ProjectHub({
                       <SelectItem value="DRAFT" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer hover:bg-white/10">
                         DRAFT
                       </SelectItem>
+                      <SelectItem value="IN_REVIEW" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer hover:bg-white/10">
+                        IN REVIEW
+                      </SelectItem>
                       <SelectItem value="FINAL" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer hover:bg-white/10">
                         FINAL
+                      </SelectItem>
+                      <SelectItem value="APPROVED" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer hover:bg-white/10">
+                        APPROVED
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -4728,6 +4770,45 @@ export function ProjectHub({
                   )}
                 </div>
               )}
+
+              {/* Version & Status */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Doc Version</label>
+                  <Input
+                    placeholder="e.g. v1.0, v2.1"
+                    value={uploadDocVersion}
+                    onChange={(e) => setUploadDocVersion(e.target.value)}
+                    className="bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-300">Doc Status</label>
+                  <Select
+                    value={uploadDocStatus}
+                    onValueChange={(val: any) => setUploadDocStatus(val || "DRAFT")}
+                  >
+                    <SelectTrigger className="w-full bg-white/[0.04] border-white/15 text-xs text-white rounded-2xl h-11 px-4 font-mono focus:border-indigo-500">
+                      <span>{uploadDocStatus}</span>
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#14141e] border-white/15 text-slate-100 rounded-2xl p-1.5 font-mono">
+                      <SelectItem value="DRAFT" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer hover:bg-white/10">
+                        DRAFT
+                      </SelectItem>
+                      <SelectItem value="IN_REVIEW" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer hover:bg-white/10">
+                        IN REVIEW
+                      </SelectItem>
+                      <SelectItem value="FINAL" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer hover:bg-white/10">
+                        FINAL
+                      </SelectItem>
+                      <SelectItem value="APPROVED" className="px-3.5 py-2 text-xs font-mono rounded-xl cursor-pointer hover:bg-white/10">
+                        APPROVED
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
 
               {uploadError && (
                 <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-mono">

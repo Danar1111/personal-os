@@ -992,7 +992,7 @@ export function UniversalDriveClient({
       {/* Tabs Layout */}
       <Tabs defaultValue="local" className="space-y-4" onValueChange={setActiveTab}>
         {/* COMPACT COMMAND BAR (Tabs + Search + Target Folder + Controls) */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-3 px-4 rounded-3xl bg-white/[0.02] border border-white/10 shadow-xl backdrop-blur-xl">
+        <div className="relative z-30 flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-3 px-4 rounded-3xl bg-white/[0.02] border border-white/10 shadow-xl backdrop-blur-xl">
           {/* Left: Tab Triggers */}
           <TabsList className="bg-white/[0.03] border-white/10 p-1 rounded-2xl shrink-0">
             <TabsTrigger
@@ -1053,7 +1053,7 @@ export function UniversalDriveClient({
           {/* Right: Destination Folder Picker & View Controls */}
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
             {/* Searchable Google Drive Destination Folder Dropdown */}
-            <div className="relative" ref={folderPickerRef}>
+            <div className="relative z-40" ref={folderPickerRef}>
               <Button
                 variant="outline"
                 size="sm"
@@ -1075,7 +1075,7 @@ export function UniversalDriveClient({
               </Button>
 
               {folderPickerOpen && (
-                <div className="absolute right-0 top-11 w-88 p-2.5 bg-[#12121c] border border-white/15 text-white rounded-2xl shadow-2xl font-mono text-xs z-50 backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-100">
+                <div className="absolute right-0 top-11 w-88 p-2.5 bg-[#12121c] border border-white/20 text-white rounded-2xl shadow-2xl font-mono text-xs z-[100] backdrop-blur-2xl ring-1 ring-white/10 animate-in fade-in zoom-in-95 duration-100">
                   <div className="p-1 space-y-2">
                     <div className="text-[11px] font-bold text-slate-300 flex items-center justify-between">
                       <span>Sync Target Folder:</span>
@@ -1421,12 +1421,12 @@ export function UniversalDriveClient({
                               backgroundSize: "12px 12px",
                             }}
                           />
-                          <div className="transform group-hover:scale-110 transition-transform duration-300 relative z-10">
+                          <div className="flex flex-col items-center group-hover:opacity-0 group-hover:scale-90 transition-all duration-200 relative z-10">
                             {getRichFileIcon(ext, undefined, undefined, "w-11 h-11 rounded-2xl shadow-lg", "w-5 h-5")}
+                            <span className="mt-2 text-[10px] uppercase font-mono font-bold tracking-wider px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-slate-300">
+                              .{ext}
+                            </span>
                           </div>
-                          <span className="mt-2 text-[10px] uppercase font-mono font-bold tracking-wider px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-slate-300 relative z-10">
-                            .{ext}
-                          </span>
                           <div className="absolute inset-0 bg-gradient-to-t from-[#12111e]/80 via-transparent to-transparent pointer-events-none" />
                         </div>
                       )}
@@ -1473,9 +1473,9 @@ export function UniversalDriveClient({
                       </div>
 
                       {/* Hover Eye Overlay Indicator */}
-                      <div className="absolute inset-0 bg-indigo-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                        <div className="px-2.5 py-1 rounded-xl bg-black/80 backdrop-blur-md border border-white/20 text-white text-[10px] font-mono flex items-center gap-1.5 shadow-2xl">
-                          <Eye className="w-3 h-3 text-indigo-400" />
+                      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-all duration-200 flex items-center justify-center pointer-events-none z-20">
+                        <div className="px-3 py-1.5 rounded-xl bg-black/90 backdrop-blur-md border border-white/20 text-white text-[10px] font-mono font-semibold flex items-center gap-1.5 shadow-2xl scale-95 group-hover:scale-100 transition-transform">
+                          <Eye className="w-3.5 h-3.5 text-indigo-400" />
                           <span>Click to Preview</span>
                         </div>
                       </div>
@@ -1884,12 +1884,12 @@ export function UniversalDriveClient({
                               backgroundSize: "12px 12px",
                             }}
                           />
-                          <div className="transform group-hover:scale-110 transition-transform duration-300 relative z-10">
+                          <div className="flex flex-col items-center group-hover:opacity-0 group-hover:scale-90 transition-all duration-200 relative z-10">
                             {getRichFileIcon(ext, file.mimeType, file.iconLink, "w-11 h-11 rounded-2xl shadow-lg", "w-5 h-5")}
+                            <span className="mt-2 text-[10px] uppercase font-mono font-bold tracking-wider px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-slate-300">
+                              .{ext}
+                            </span>
                           </div>
-                          <span className="mt-2 text-[10px] uppercase font-mono font-bold tracking-wider px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-slate-300 relative z-10">
-                            .{ext}
-                          </span>
                           <div className="absolute inset-0 bg-gradient-to-t from-[#12111e]/80 via-transparent to-transparent pointer-events-none" />
                         </div>
                       )}
@@ -1906,9 +1906,9 @@ export function UniversalDriveClient({
                       </div>
 
                       {/* Hover Eye Overlay Indicator */}
-                      <div className="absolute inset-0 bg-blue-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                        <div className="px-2.5 py-1 rounded-xl bg-black/80 backdrop-blur-md border border-white/20 text-white text-[10px] font-mono flex items-center gap-1.5 shadow-2xl">
-                          <Eye className="w-3 h-3 text-blue-400" />
+                      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-all duration-200 flex items-center justify-center pointer-events-none z-20">
+                        <div className="px-3 py-1.5 rounded-xl bg-black/90 backdrop-blur-md border border-white/20 text-white text-[10px] font-mono font-semibold flex items-center gap-1.5 shadow-2xl scale-95 group-hover:scale-100 transition-transform">
+                          <Eye className="w-3.5 h-3.5 text-blue-400" />
                           <span>Click to Preview</span>
                         </div>
                       </div>
