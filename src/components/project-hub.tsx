@@ -625,7 +625,8 @@ function SortablePhaseCard({
 
   const isReallyExpanded = isExpanded && !isDragging;
 
-  // Sort tasks in phase: in_progress first, then todo, then done last
+  // Sort tasks in phase: in_progress first, then todo, then done last.
+  // Within the same status, sort by nearest due date ascending (earliest deadline first, tasks without deadline at the end).
   const sortedPhaseTasks = useMemo(() => {
     const order: Record<string, number> = {
       in_progress: 1,
@@ -636,6 +637,14 @@ function SortablePhaseCard({
       const ordA = order[a.status] || 99;
       const ordB = order[b.status] || 99;
       if (ordA !== ordB) return ordA - ordB;
+
+      // Secondary sort: nearest due date first
+      if (a.dueDate && b.dueDate) {
+        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+      }
+      if (a.dueDate && !b.dueDate) return -1;
+      if (!a.dueDate && b.dueDate) return 1;
+
       return b.id - a.id;
     });
   }, [phaseTasks]);
@@ -829,7 +838,7 @@ function SortablePhaseCard({
                       <div
                         key={t.id}
                         onClick={() => openViewTaskModal(t)}
-                        className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 cursor-pointer transition-colors group/taskitem"
+                        className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 cursor-pointer transition-colors group/taskitem gap-2"
                       >
                         <div className="flex items-center gap-2 min-w-0 flex-1">
                           <span
@@ -838,7 +847,7 @@ function SortablePhaseCard({
                               t.status === "done"
                                 ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]"
                                 : t.status === "in_progress"
-                                ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]"
+                                ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)] animate-pulse"
                                 : "bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.5)]"
                             )}
                           />
@@ -846,19 +855,34 @@ function SortablePhaseCard({
                             {t.title}
                           </span>
                         </div>
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            "text-[9px] uppercase font-mono font-bold shrink-0 ml-2",
-                            t.status === "done"
-                              ? "border-emerald-500/30 text-emerald-300 bg-emerald-500/10"
-                              : t.status === "in_progress"
-                              ? "border-amber-500/30 text-amber-300 bg-amber-500/10"
-                              : "border-blue-500/30 text-blue-300 bg-blue-500/10"
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {t.dueDate && (
+                            <span
+                              className="text-[9px] font-mono text-amber-300/90 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-md flex items-center gap-1 font-semibold"
+                              title={`Deadline: ${new Date(t.dueDate).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}`}
+                            >
+                              <CalendarIcon className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+                              <span>
+                                {new Date(t.dueDate).toLocaleDateString([], { month: "short", day: "numeric" })}
+                              </span>
+                            </span>
                           )}
-                        >
-                          {t.status.replace("_", " ")}
-                        </Badge>
+
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "text-[9px] uppercase font-mono font-bold shrink-0",
+                              t.status === "done"
+                                ? "border-emerald-500/30 text-emerald-300 bg-emerald-500/10"
+                                : t.status === "in_progress"
+                                ? "border-amber-500/30 text-amber-300 bg-amber-500/10"
+                                : "border-blue-500/30 text-blue-300 bg-blue-500/10"
+                            )}
+                          >
+                            {t.status.replace("_", " ")}
+                          </Badge>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -4991,19 +5015,35 @@ export function ProjectHub({
                             <span>{formatBytes(asset.sizeBytes)}</span>
                             <span>•</span>
                             <span>{formatDate(asset.createdAt)}</span>
-                            {isAlreadyInProject && (() => {
-                              const existingDoc = documentList.find((d) => d.id === asset.id);
-                              const pIds: number[] = (existingDoc as any)?.phaseIds || (existingDoc?.phaseId ? [existingDoc.phaseId] : []);
-                              const phaseNames = pIds.map((id) => phases.find((p) => p.id === id)?.title).filter(Boolean);
-                              return (
-                                <Badge variant="outline" className="text-[9px] border-purple-500/40 text-purple-300 bg-purple-500/10 px-1.5 py-0 font-mono">
-                                  {phaseNames.length > 0 ? `Attached in: ${phaseNames.join(", ")}` : "Attached (General Doc)"}
-                                </Badge>
-                              );
-                            })()}
                           </div>
                         </div>
                       </div>
+
+                      {/* Right-aligned Attached Badge */}
+                      {isAlreadyInProject && (() => {
+                        const existingDoc = documentList.find((d) => d.id === asset.id);
+                        const pIds: number[] = (existingDoc as any)?.phaseIds || (existingDoc?.phaseId ? [existingDoc.phaseId] : []);
+                        const phaseNames = pIds.map((id) => phases.find((p) => p.id === id)?.title).filter(Boolean);
+                        if (phaseNames.length === 0) {
+                          return (
+                            <Badge variant="outline" className="text-[9px] border-purple-500/40 text-purple-300 bg-purple-500/10 px-2 py-0.5 font-mono shrink-0">
+                              Attached (General Doc)
+                            </Badge>
+                          );
+                        }
+                        const fullTooltip = `Attached in: ${phaseNames.join(", ")}`;
+                        return (
+                          <Badge
+                            variant="outline"
+                            title={fullTooltip}
+                            className="text-[9px] border-purple-500/40 text-purple-300 bg-purple-500/10 px-2 py-0.5 font-mono max-w-[220px] truncate shrink-0 inline-block shadow-sm"
+                          >
+                            {phaseNames.length === 1
+                              ? `Attached: ${phaseNames[0]}`
+                              : `Attached: ${phaseNames[0]} (+${phaseNames.length - 1} more)`}
+                          </Badge>
+                        );
+                      })()}
                     </div>
                   );
                 })
@@ -5195,22 +5235,38 @@ export function ProjectHub({
                         <div className="min-w-0 flex-1">
                           <p className="text-xs font-medium text-white truncate">{link.title}</p>
                           <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
-                            <span className="text-indigo-400 truncate max-w-[150px]">{domain}</span>
+                            <span className="text-indigo-400 truncate max-w-[140px]">{domain}</span>
                             <span>•</span>
-                            <span className="truncate max-w-[200px] text-slate-500">{link.urlOrPath}</span>
-                            {isAlreadyInProject && (() => {
-                              const existingLink = linkList.find((l) => l.id === link.id);
-                              const pIds: number[] = (existingLink as any)?.phaseIds || (existingLink?.phaseId ? [existingLink.phaseId] : []);
-                              const phaseNames = pIds.map((id) => phases.find((p) => p.id === id)?.title).filter(Boolean);
-                              return (
-                                <Badge variant="outline" className="text-[9px] border-purple-500/40 text-purple-300 bg-purple-500/10 px-1.5 py-0 font-mono">
-                                  {phaseNames.length > 0 ? `Attached in: ${phaseNames.join(", ")}` : "Attached (General Link)"}
-                                </Badge>
-                              );
-                            })()}
+                            <span className="truncate max-w-[180px] text-slate-500">{link.urlOrPath}</span>
                           </div>
                         </div>
                       </div>
+
+                      {/* Right-aligned Attached Badge */}
+                      {isAlreadyInProject && (() => {
+                        const existingLink = linkList.find((l) => l.id === link.id);
+                        const pIds: number[] = (existingLink as any)?.phaseIds || (existingLink?.phaseId ? [existingLink.phaseId] : []);
+                        const phaseNames = pIds.map((id) => phases.find((p) => p.id === id)?.title).filter(Boolean);
+                        if (phaseNames.length === 0) {
+                          return (
+                            <Badge variant="outline" className="text-[9px] border-purple-500/40 text-purple-300 bg-purple-500/10 px-2 py-0.5 font-mono shrink-0">
+                              Attached (General Link)
+                            </Badge>
+                          );
+                        }
+                        const fullTooltip = `Attached in: ${phaseNames.join(", ")}`;
+                        return (
+                          <Badge
+                            variant="outline"
+                            title={fullTooltip}
+                            className="text-[9px] border-purple-500/40 text-purple-300 bg-purple-500/10 px-2 py-0.5 font-mono max-w-[220px] truncate shrink-0 inline-block shadow-sm"
+                          >
+                            {phaseNames.length === 1
+                              ? `Attached: ${phaseNames[0]}`
+                              : `Attached: ${phaseNames[0]} (+${phaseNames.length - 1} more)`}
+                          </Badge>
+                        );
+                      })()}
                     </div>
                   );
                 })
