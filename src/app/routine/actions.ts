@@ -50,191 +50,142 @@ export async function getDayProfileForDateAction(dateStr: string): Promise<DayPr
 }
 
 /**
+ * Helper to get active timeblocks for a date without carryovers.
+ * Combines virtual master routines and DB custom overrides/instances.
+ * Zero database writes!
+ */
+export async function getActiveSlotsForDate(dateStr: string) {
+  const dayProfile = getDayProfileForDate(dateStr);
+
+  const masterRoutines = await db
+    .select()
+    .from(dailyRoutineMaster)
+    .where(eq(dailyRoutineMaster.dayProfile, dayProfile))
+    .orderBy(asc(dailyRoutineMaster.startTime));
+
+  const existingInstances = await db
+    .select({
+      id: dailyTimeblockInstances.id,
+      date: dailyTimeblockInstances.date,
+      startTime: dailyTimeblockInstances.startTime,
+      endTime: dailyTimeblockInstances.endTime,
+      title: dailyTimeblockInstances.title,
+      category: dailyTimeblockInstances.category,
+      status: dailyTimeblockInstances.status,
+      taskId: dailyTimeblockInstances.taskId,
+      notes: dailyTimeblockInstances.notes,
+      orderIndex: dailyTimeblockInstances.orderIndex,
+      createdAt: dailyTimeblockInstances.createdAt,
+      masterRoutineId: dailyTimeblockInstances.masterRoutineId,
+      taskTitle: tasks.title,
+      projectName: projects.name,
+    })
+    .from(dailyTimeblockInstances)
+    .leftJoin(tasks, eq(dailyTimeblockInstances.taskId, tasks.id))
+    .leftJoin(projects, eq(tasks.projectId, projects.id))
+    .where(eq(dailyTimeblockInstances.date, dateStr))
+    .orderBy(asc(dailyTimeblockInstances.startTime));
+
+  const matchedInstanceIds = new Set<number>();
+  const activeSlots: any[] = [];
+
+  for (const m of masterRoutines) {
+    const override = existingInstances.find((inst) => {
+      if (matchedInstanceIds.has(inst.id)) return false;
+      if (inst.masterRoutineId === m.id) return true;
+      if (
+        !inst.masterRoutineId &&
+        inst.startTime === m.startTime &&
+        inst.endTime === m.endTime &&
+        inst.title.trim().toLowerCase() === m.title.trim().toLowerCase() &&
+        inst.category === m.category
+      ) {
+        return true;
+      }
+      return false;
+    });
+
+    if (override) {
+      matchedInstanceIds.add(override.id);
+      // If marked DELETED, suppress this master routine slot for this day!
+      if (override.status !== "DELETED") {
+        activeSlots.push({
+          ...override,
+          isCustom: true,
+          masterRoutineId: m.id,
+        });
+      }
+    } else {
+      // Untouched virtual master routine slot (0 DB clutter!)
+      activeSlots.push({
+        id: -m.id,
+        date: dateStr,
+        startTime: m.startTime,
+        endTime: m.endTime,
+        title: m.title,
+        category: m.category,
+        status: "PLANNED",
+        taskId: null,
+        notes: null,
+        orderIndex: m.orderIndex,
+        createdAt: new Date(),
+        taskTitle: null,
+        projectName: null,
+        isCustom: false,
+        masterRoutineId: m.id,
+      });
+    }
+  }
+
+  // Include purely custom slots added by user that are not linked to master
+  for (const inst of existingInstances) {
+    if (!matchedInstanceIds.has(inst.id) && inst.status !== "DELETED") {
+      activeSlots.push({
+        ...inst,
+        isCustom: true,
+      });
+    }
+  }
+
+  return { activeSlots, masterRoutines, dayProfile };
+}
+
+/**
  * Fetch timeblocks for a date.
+ * Combines virtual baseline from dailyRoutineMaster with custom dailyTimeblockInstances.
  * Automatically handles seamless cross-day carryover from yesterday's overnight tasks!
- * If no instances exist yet for that date, AUTOMATICALLY generates them from dailyRoutineMaster.
+ * ZERO database rows are created when viewing dates.
  */
 export async function getRoutineForDateAction(dateStr: string) {
   try {
-    let dayBlocks: any[] = [];
-    let isAuto = false;
-    const dayProfile = getDayProfileForDate(dateStr);
+    const { activeSlots: todaySlots, masterRoutines, dayProfile } =
+      await getActiveSlotsForDate(dateStr);
 
-    // Fetch master routines for this dayProfile
-    const masterRoutines = await db
-      .select()
-      .from(dailyRoutineMaster)
-      .where(eq(dailyRoutineMaster.dayProfile, dayProfile))
-      .orderBy(asc(dailyRoutineMaster.startTime));
-
-    // 1. Check existing instances for this date
-    const existing = await db
-      .select({
-        id: dailyTimeblockInstances.id,
-        date: dailyTimeblockInstances.date,
-        startTime: dailyTimeblockInstances.startTime,
-        endTime: dailyTimeblockInstances.endTime,
-        title: dailyTimeblockInstances.title,
-        category: dailyTimeblockInstances.category,
-        status: dailyTimeblockInstances.status,
-        taskId: dailyTimeblockInstances.taskId,
-        notes: dailyTimeblockInstances.notes,
-        orderIndex: dailyTimeblockInstances.orderIndex,
-        createdAt: dailyTimeblockInstances.createdAt,
-        taskTitle: tasks.title,
-        projectName: projects.name,
-      })
-      .from(dailyTimeblockInstances)
-      .leftJoin(tasks, eq(dailyTimeblockInstances.taskId, tasks.id))
-      .leftJoin(projects, eq(tasks.projectId, projects.id))
-      .where(eq(dailyTimeblockInstances.date, dateStr))
-      .orderBy(asc(dailyTimeblockInstances.startTime));
-
-    if (existing.length > 0) {
-      dayBlocks = existing;
-    } else {
-      // 2. If none exist for this date, automatically instantiate from dailyRoutineMaster
-      if (masterRoutines.length > 0) {
-        const inserts = masterRoutines.map((m) => ({
-          date: dateStr,
-          startTime: m.startTime,
-          endTime: m.endTime,
-          title: m.title,
-          category: m.category,
-          status: "PLANNED",
-          orderIndex: m.orderIndex,
-        }));
-
-        for (const item of inserts) {
-          await db.insert(dailyTimeblockInstances).values(item);
-        }
-
-        // Re-fetch with joins
-        dayBlocks = await db
-          .select({
-            id: dailyTimeblockInstances.id,
-            date: dailyTimeblockInstances.date,
-            startTime: dailyTimeblockInstances.startTime,
-            endTime: dailyTimeblockInstances.endTime,
-            title: dailyTimeblockInstances.title,
-            category: dailyTimeblockInstances.category,
-            status: dailyTimeblockInstances.status,
-            taskId: dailyTimeblockInstances.taskId,
-            notes: dailyTimeblockInstances.notes,
-            orderIndex: dailyTimeblockInstances.orderIndex,
-            createdAt: dailyTimeblockInstances.createdAt,
-            taskTitle: tasks.title,
-            projectName: projects.name,
-          })
-          .from(dailyTimeblockInstances)
-          .leftJoin(tasks, eq(dailyTimeblockInstances.taskId, tasks.id))
-          .leftJoin(projects, eq(tasks.projectId, projects.id))
-          .where(eq(dailyTimeblockInstances.date, dateStr))
-          .orderBy(asc(dailyTimeblockInstances.startTime));
-
-        isAuto = true;
-      }
-    }
-
-    // 3. Query Yesterday (dateStr - 1 day) for overnight tasks crossing into today!
+    // Query Yesterday (dateStr - 1 day) for overnight tasks crossing into today!
     const yesterdayStr = getShiftedDate(dateStr, -1);
-    const yesterdayInstances = await db
-      .select({
-        id: dailyTimeblockInstances.id,
-        date: dailyTimeblockInstances.date,
-        startTime: dailyTimeblockInstances.startTime,
-        endTime: dailyTimeblockInstances.endTime,
-        title: dailyTimeblockInstances.title,
-        category: dailyTimeblockInstances.category,
-        status: dailyTimeblockInstances.status,
-        taskId: dailyTimeblockInstances.taskId,
-        notes: dailyTimeblockInstances.notes,
-        orderIndex: dailyTimeblockInstances.orderIndex,
-        createdAt: dailyTimeblockInstances.createdAt,
-        taskTitle: tasks.title,
-        projectName: projects.name,
-      })
-      .from(dailyTimeblockInstances)
-      .leftJoin(tasks, eq(dailyTimeblockInstances.taskId, tasks.id))
-      .leftJoin(projects, eq(tasks.projectId, projects.id))
-      .where(eq(dailyTimeblockInstances.date, yesterdayStr));
+    const { activeSlots: yesterdaySlots } =
+      await getActiveSlotsForDate(yesterdayStr);
 
     const carryOvers: any[] = [];
-
-    if (yesterdayInstances.length > 0) {
-      yesterdayInstances.forEach((yTask) => {
-        const s = timeToMinutes(yTask.startTime);
-        const e = timeToMinutes(yTask.endTime);
-        if (s > e && e > 0) {
-          carryOvers.push({
-            ...yTask,
-            date: dateStr,
-            startTime: "00:00",
-            endTime: yTask.endTime,
-            isCarryOverFromYesterday: true,
-            originalStartTime: yTask.startTime,
-            originalDate: yesterdayStr,
-          });
-        }
-      });
-    } else {
-      // If yesterday has no saved instances, check yesterday's master routine profile
-      const yesterdayProfile = getDayProfileForDate(yesterdayStr);
-      const yesterdayMasters = await db
-        .select()
-        .from(dailyRoutineMaster)
-        .where(eq(dailyRoutineMaster.dayProfile, yesterdayProfile));
-
-      yesterdayMasters.forEach((m) => {
-        const s = timeToMinutes(m.startTime);
-        const e = timeToMinutes(m.endTime);
-        if (s > e && e > 0) {
-          carryOvers.push({
-            id: -m.id,
-            date: dateStr,
-            startTime: "00:00",
-            endTime: m.endTime,
-            title: m.title,
-            category: m.category,
-            status: "PLANNED",
-            taskId: null,
-            notes: null,
-            orderIndex: -1,
-            createdAt: new Date(),
-            taskTitle: null,
-            projectName: null,
-            isCarryOverFromYesterday: true,
-            originalStartTime: m.startTime,
-            originalDate: yesterdayStr,
-          });
-        }
-      });
+    for (const ySlot of yesterdaySlots) {
+      const s = timeToMinutes(ySlot.startTime);
+      const e = timeToMinutes(ySlot.endTime);
+      if (s > e && e > 0) {
+        carryOvers.push({
+          ...ySlot,
+          date: dateStr,
+          startTime: "00:00",
+          endTime: ySlot.endTime,
+          isCarryOverFromYesterday: true,
+          originalStartTime: ySlot.startTime,
+          originalDate: yesterdayStr,
+          isCustom: false,
+        });
+      }
     }
 
-    // Tag each block as custom or master
-    const remainingMaster = [...masterRoutines];
-    const taggedDayBlocks = dayBlocks.map((block) => {
-      const matchIdx = remainingMaster.findIndex(
-        (m) =>
-          m.startTime === block.startTime &&
-          m.endTime === block.endTime &&
-          m.title.trim().toLowerCase() === block.title.trim().toLowerCase() &&
-          m.category === block.category &&
-          !block.taskId &&
-          (!block.notes || block.notes.trim() === "")
-      );
-      if (matchIdx !== -1) {
-        remainingMaster.splice(matchIdx, 1);
-        return { ...block, isCustom: false };
-      }
-      return { ...block, isCustom: true };
-    });
-
-    // Carryovers belong to yesterday, so they are not custom to today
-    const taggedCarryOvers = carryOvers.map((c) => ({ ...c, isCustom: false }));
-
     // Combine carryovers at 00:00 with today's blocks
-    const combinedBlocks = [...taggedCarryOvers, ...taggedDayBlocks].sort((a, b) => {
+    const combinedBlocks = [...carryOvers, ...todaySlots].sort((a, b) => {
       const diff = timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
       if (diff !== 0) return diff;
       return a.isCarryOverFromYesterday ? -1 : 1;
@@ -246,7 +197,7 @@ export async function getRoutineForDateAction(dateStr: string) {
       dayProfile,
       timeblocks: combinedBlocks,
       masterRoutines,
-      isAutoGenerated: isAuto,
+      isAutoGenerated: false,
     };
   } catch (error: any) {
     console.error("[getRoutineForDateAction Error]:", error);
@@ -256,7 +207,7 @@ export async function getRoutineForDateAction(dateStr: string) {
 
 /**
  * Check if an overnight task (e.g. 23:00 - 00:30) collides with tomorrow's schedule (00:00 - endTime)
- * Checks both tomorrow's custom instances and tomorrow's master template profile!
+ * Checks against tomorrow's active schedule (virtual master routines + tomorrow's custom instances)!
  */
 export async function checkNextDayTimeConflictAction(
   dateStr: string,
@@ -274,36 +225,11 @@ export async function checkNextDayTimeConflictAction(
     }
 
     const tomorrowStr = getShiftedDate(dateStr, 1);
-    const tomorrowDayProfile = getDayProfileForDate(tomorrowStr);
-
-    // 1. Fetch tomorrow's actual instances
-    const tomorrowInstances = await db
-      .select({
-        id: dailyTimeblockInstances.id,
-        startTime: dailyTimeblockInstances.startTime,
-        endTime: dailyTimeblockInstances.endTime,
-        title: dailyTimeblockInstances.title,
-      })
-      .from(dailyTimeblockInstances)
-      .where(eq(dailyTimeblockInstances.date, tomorrowStr));
-
-    const slotsToCheck =
-      tomorrowInstances.length > 0
-        ? tomorrowInstances
-        : (
-            await db
-              .select({
-                id: dailyRoutineMaster.id,
-                startTime: dailyRoutineMaster.startTime,
-                endTime: dailyRoutineMaster.endTime,
-                title: dailyRoutineMaster.title,
-              })
-              .from(dailyRoutineMaster)
-              .where(eq(dailyRoutineMaster.dayProfile, tomorrowDayProfile))
-          );
+    const { activeSlots: tomorrowActiveSlots } =
+      await getActiveSlotsForDate(tomorrowStr);
 
     // Carryover interval on tomorrow: [0, e] (00:00 to endTime)
-    for (const slot of slotsToCheck) {
+    for (const slot of tomorrowActiveSlots) {
       if (currentId && slot.id === currentId) continue;
       const slotStart = timeToMinutes(slot.startTime);
       const slotEnd = timeToMinutes(slot.endTime);
@@ -473,31 +399,69 @@ export async function deleteTimeblockAction(id: number) {
   }
 }
 
-/** Reset day to master routine */
+/** Suppress/hide a master routine slot for a specific date (marked DELETED in DB) */
+export async function suppressMasterRoutineSlotAction(
+  dateStr: string,
+  masterRoutineId: number
+) {
+  try {
+    const [master] = await db
+      .select()
+      .from(dailyRoutineMaster)
+      .where(eq(dailyRoutineMaster.id, masterRoutineId))
+      .limit(1);
+
+    if (!master) {
+      return { success: false, error: "Master routine slot not found" };
+    }
+
+    const existing = await db
+      .select()
+      .from(dailyTimeblockInstances)
+      .where(
+        and(
+          eq(dailyTimeblockInstances.date, dateStr),
+          eq(dailyTimeblockInstances.masterRoutineId, masterRoutineId)
+        )
+      )
+      .limit(1);
+
+    if (existing.length > 0) {
+      await db
+        .update(dailyTimeblockInstances)
+        .set({ status: "DELETED" })
+        .where(eq(dailyTimeblockInstances.id, existing[0].id));
+    } else {
+      await db.insert(dailyTimeblockInstances).values({
+        date: dateStr,
+        startTime: master.startTime,
+        endTime: master.endTime,
+        title: master.title,
+        category: master.category,
+        status: "DELETED",
+        orderIndex: master.orderIndex,
+        masterRoutineId,
+      });
+    }
+
+    revalidatePath("/routine");
+    return { success: true };
+  } catch (error: any) {
+    console.error("[suppressMasterRoutineSlotAction Error]:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Reset day to master routine.
+ * Simply deletes all custom instances and suppressions for this date!
+ * Zero database rows are reinserted.
+ */
 export async function resetDayToMasterRoutineAction(dateStr: string) {
   try {
     await db
       .delete(dailyTimeblockInstances)
       .where(eq(dailyTimeblockInstances.date, dateStr));
-
-    const dayProfile = getDayProfileForDate(dateStr);
-    const masterRoutines = await db
-      .select()
-      .from(dailyRoutineMaster)
-      .where(eq(dailyRoutineMaster.dayProfile, dayProfile))
-      .orderBy(asc(dailyRoutineMaster.startTime));
-
-    for (const m of masterRoutines) {
-      await db.insert(dailyTimeblockInstances).values({
-        date: dateStr,
-        startTime: m.startTime,
-        endTime: m.endTime,
-        title: m.title,
-        category: m.category,
-        status: "PLANNED",
-        orderIndex: m.orderIndex,
-      });
-    }
 
     revalidatePath("/routine");
     return { success: true };
@@ -542,7 +506,7 @@ export async function getDailyHabitsForDateAction(dateStr: string) {
   }
 }
 
-/** Toggle a daily habit */
+/** Toggle a daily habit (Zero-waste: unchecking deletes row from DB) */
 export async function toggleDailyHabitAction(
   habitId: number,
   dateStr: string,
@@ -560,20 +524,27 @@ export async function toggleDailyHabitAction(
       );
 
     if (existing.length > 0) {
-      await db
-        .update(dailyHabitLogs)
-        .set({
-          isCompleted,
-          completedAt: isCompleted ? new Date() : null,
-        })
-        .where(eq(dailyHabitLogs.id, existing[0].id));
+      if (!isCompleted) {
+        // Zero-waste: delete the row when unchecked!
+        await db.delete(dailyHabitLogs).where(eq(dailyHabitLogs.id, existing[0].id));
+      } else {
+        await db
+          .update(dailyHabitLogs)
+          .set({
+            isCompleted: true,
+            completedAt: new Date(),
+          })
+          .where(eq(dailyHabitLogs.id, existing[0].id));
+      }
     } else {
-      await db.insert(dailyHabitLogs).values({
-        habitId,
-        date: dateStr,
-        isCompleted,
-        completedAt: isCompleted ? new Date() : null,
-      });
+      if (isCompleted) {
+        await db.insert(dailyHabitLogs).values({
+          habitId,
+          date: dateStr,
+          isCompleted: true,
+          completedAt: new Date(),
+        });
+      }
     }
 
     revalidatePath("/routine");
@@ -597,6 +568,34 @@ export async function addDailyHabitAction(title: string) {
     return { success: true };
   } catch (error: any) {
     console.error("[addDailyHabitAction Error]:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/** Update a daily habit (title, icon, sortOrder) */
+export async function updateDailyHabitAction(
+  habitId: number,
+  data: { title?: string; icon?: string; sortOrder?: number; isActive?: boolean }
+) {
+  try {
+    await db.update(dailyHabits).set(data).where(eq(dailyHabits.id, habitId));
+    revalidatePath("/routine");
+    return { success: true };
+  } catch (error: any) {
+    console.error("[updateDailyHabitAction Error]:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/** Delete a daily habit and its history */
+export async function deleteDailyHabitAction(habitId: number) {
+  try {
+    await db.delete(dailyHabitLogs).where(eq(dailyHabitLogs.habitId, habitId));
+    await db.delete(dailyHabits).where(eq(dailyHabits.id, habitId));
+    revalidatePath("/routine");
+    return { success: true };
+  } catch (error: any) {
+    console.error("[deleteDailyHabitAction Error]:", error);
     return { success: false, error: error.message };
   }
 }

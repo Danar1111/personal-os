@@ -57,10 +57,13 @@ import {
   updateTimeblockAction,
   createTimeblockAction,
   deleteTimeblockAction,
+  suppressMasterRoutineSlotAction,
   resetDayToMasterRoutineAction,
   getDailyHabitsForDateAction,
   toggleDailyHabitAction,
   addDailyHabitAction,
+  updateDailyHabitAction,
+  deleteDailyHabitAction,
   getActiveKanbanTasksAction,
   getActivitySuggestionsAction,
   getMasterRoutinesAction,
@@ -88,6 +91,7 @@ interface TimeblockItem {
   originalStartTime?: string;
   originalDate?: string;
   isCustom?: boolean;
+  masterRoutineId?: number | null;
 }
 
 interface HabitItem {
@@ -735,6 +739,9 @@ export function DailyRoutineTracker() {
 
   const [newHabitTitle, setNewHabitTitle] = useState("");
   const [isAddingHabit, setIsAddingHabit] = useState(false);
+  const [editingHabitId, setEditingHabitId] = useState<number | null>(null);
+  const [editingHabitTitle, setEditingHabitTitle] = useState("");
+  const [habitToDelete, setHabitToDelete] = useState<HabitItem | null>(null);
 
   // Activity title suggestions (Projects from ProjectHub & Skills from Skill Matrix)
   const [projectSuggestions, setProjectSuggestions] = useState<
@@ -1788,6 +1795,35 @@ export function DailyRoutineTracker() {
     }
   };
 
+  const handleStartEditHabit = (habit: HabitItem) => {
+    setEditingHabitId(habit.id);
+    setEditingHabitTitle(habit.title);
+  };
+
+  const handleSaveHabitEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingHabitId || !editingHabitTitle.trim()) return;
+    const res = await updateDailyHabitAction(editingHabitId, {
+      title: editingHabitTitle.trim(),
+    });
+    if (res.success) {
+      setEditingHabitId(null);
+      setEditingHabitTitle("");
+      const habitsRes = await getDailyHabitsForDateAction(selectedDate);
+      if (habitsRes.success) setHabits(habitsRes.habits as HabitItem[]);
+    }
+  };
+
+  const handleConfirmDeleteHabit = async () => {
+    if (!habitToDelete) return;
+    const res = await deleteDailyHabitAction(habitToDelete.id);
+    if (res.success) {
+      setHabitToDelete(null);
+      const habitsRes = await getDailyHabitsForDateAction(selectedDate);
+      if (habitsRes.success) setHabits(habitsRes.habits as HabitItem[]);
+    }
+  };
+
   // Slot CRUD
   const handleSaveSlot = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1798,7 +1834,8 @@ export function DailyRoutineTracker() {
       return;
     }
 
-    if (editingSlot.id) {
+    if (editingSlot.id && editingSlot.id > 0) {
+      // Existing row in DB: update it
       await updateTimeblockAction(editingSlot.id, {
         startTime: editingSlot.startTime,
         endTime: editingSlot.endTime,
@@ -1806,7 +1843,21 @@ export function DailyRoutineTracker() {
         category: editingSlot.category || "ROUTINE",
         notes: editingSlot.notes || null,
       });
+    } else if (editingSlot.id && editingSlot.id < 0) {
+      // Virtual master slot: create override row with masterRoutineId
+      await createTimeblockAction({
+        date: selectedDate,
+        startTime: editingSlot.startTime,
+        endTime: editingSlot.endTime,
+        title: editingSlot.title,
+        category: editingSlot.category || "ROUTINE",
+        notes: editingSlot.notes || null,
+        orderIndex: editingSlot.orderIndex ?? timeblocks.length,
+        masterRoutineId: Math.abs(editingSlot.id),
+        status: "PLANNED",
+      });
     } else {
+      // Completely new custom slot
       await createTimeblockAction({
         date: selectedDate,
         startTime: editingSlot.startTime,
@@ -1815,6 +1866,7 @@ export function DailyRoutineTracker() {
         category: editingSlot.category || "ROUTINE",
         notes: editingSlot.notes || null,
         orderIndex: timeblocks.length,
+        status: "PLANNED",
       });
     }
 
@@ -1825,7 +1877,13 @@ export function DailyRoutineTracker() {
 
   const handleConfirmDeleteSlot = async () => {
     if (!slotToDelete?.id) return;
-    await deleteTimeblockAction(slotToDelete.id);
+    if (slotToDelete.id < 0) {
+      // Virtual master routine slot - suppress it for today
+      await suppressMasterRoutineSlotAction(selectedDate, Math.abs(slotToDelete.id));
+    } else {
+      // Custom instance - delete it (if it had masterRoutineId, master slot will naturally reappear!)
+      await deleteTimeblockAction(slotToDelete.id);
+    }
     setSlotToDelete(null);
     setIsSlotModalOpen(false);
     setEditingSlot(null);
@@ -1842,15 +1900,33 @@ export function DailyRoutineTracker() {
   // Attach Kanban Task
   const handleAttachTask = async (task: KanbanTaskItem) => {
     if (!targetSlotForTask) return;
-    await updateTimeblockAction(targetSlotForTask.id, { taskId: task.id });
+    if (targetSlotForTask.id < 0) {
+      // Virtual master slot: create override row with taskId
+      await createTimeblockAction({
+        date: selectedDate,
+        startTime: targetSlotForTask.startTime,
+        endTime: targetSlotForTask.endTime,
+        title: targetSlotForTask.title,
+        category: targetSlotForTask.category || "ROUTINE",
+        notes: targetSlotForTask.notes || null,
+        taskId: task.id,
+        orderIndex: targetSlotForTask.orderIndex >= 0 ? targetSlotForTask.orderIndex : 0,
+        masterRoutineId: Math.abs(targetSlotForTask.id),
+        status: "PLANNED",
+      });
+    } else {
+      await updateTimeblockAction(targetSlotForTask.id, { taskId: task.id });
+    }
     setIsKanbanDrawerOpen(false);
     setTargetSlotForTask(null);
     loadData(selectedDate);
   };
 
   const handleDetachTask = async (slotId: number) => {
-    await updateTimeblockAction(slotId, { taskId: null });
-    loadData(selectedDate);
+    if (slotId > 0) {
+      await updateTimeblockAction(slotId, { taskId: null });
+      loadData(selectedDate);
+    }
   };
 
   // Master Routines Modal
@@ -2093,28 +2169,86 @@ export function DailyRoutineTracker() {
             </span>
           </span>
 
-          {habits.map((h) => (
-            <button
-              key={h.id}
-              type="button"
-              onClick={() => handleToggleHabit(h)}
-              className={cn(
-                "px-2.5 py-0.5 rounded-lg text-[11px] font-mono flex items-center gap-1.5 transition-all shrink-0 cursor-pointer border",
-                h.isCompleted
-                  ? "bg-emerald-500/15 border-emerald-500/35 text-emerald-300 font-semibold shadow-sm"
-                  : "bg-white/[0.03] border-white/10 text-slate-400 hover:text-white hover:bg-white/[0.07]"
-              )}
-            >
-              {h.isCompleted ? (
-                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-              ) : (
-                <Circle className="w-3 h-3 text-slate-500" />
-              )}
-              <span className={cn(h.isCompleted && "line-through opacity-80")}>
-                {h.title}
-              </span>
-            </button>
-          ))}
+          {habits.map((h) =>
+            editingHabitId === h.id ? (
+              <form
+                key={h.id}
+                onSubmit={handleSaveHabitEdit}
+                className="flex items-center gap-1 shrink-0 bg-white/10 px-2 py-0.5 rounded-lg border border-purple-500/40 shadow-inner"
+              >
+                <Input
+                  autoFocus
+                  value={editingHabitTitle}
+                  onChange={(e) => setEditingHabitTitle(e.target.value)}
+                  className="h-5 w-28 px-1.5 text-[11px] bg-black/40 border-white/20 text-white rounded font-mono"
+                />
+                <button
+                  type="submit"
+                  className="px-1.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-mono cursor-pointer"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingHabitId(null)}
+                  className="p-0.5 text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </form>
+            ) : (
+              <div
+                key={h.id}
+                className={cn(
+                  "group relative px-2.5 py-0.5 rounded-lg text-[11px] font-mono flex items-center gap-1.5 transition-all shrink-0 border",
+                  h.isCompleted
+                    ? "bg-emerald-500/15 border-emerald-500/35 text-emerald-300 font-semibold shadow-sm"
+                    : "bg-white/[0.03] border-white/10 text-slate-400 hover:text-white hover:bg-white/[0.07]"
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => handleToggleHabit(h)}
+                  className="flex items-center gap-1.5 cursor-pointer"
+                >
+                  {h.isCompleted ? (
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                  ) : (
+                    <Circle className="w-3 h-3 text-slate-500 shrink-0" />
+                  )}
+                  <span className={cn(h.isCompleted && "line-through opacity-80")}>
+                    {h.title}
+                  </span>
+                </button>
+
+                {/* Inline Edit & Delete on hover */}
+                <div className="hidden group-hover:flex items-center gap-1 ml-1 pl-1 border-l border-white/15">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleStartEditHabit(h);
+                    }}
+                    className="p-0.5 text-slate-400 hover:text-sky-300 transition-colors cursor-pointer"
+                    title="Edit Habit"
+                  >
+                    <Edit3 className="w-2.5 h-2.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setHabitToDelete(h);
+                    }}
+                    className="p-0.5 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+                    title="Delete Habit"
+                  >
+                    <Trash2 className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              </div>
+            )
+          )}
 
           {/* Quick Add Habit Button */}
           {isAddingHabit ? (
@@ -2327,16 +2461,57 @@ export function DailyRoutineTracker() {
             <span>Loading 24-Hour Routine...</span>
           </div>
         ) : timeblocks.length === 0 ? (
-          <div className="h-full rounded-2xl bg-white/[0.015] border border-white/10 flex flex-col items-center justify-center space-y-3 text-slate-400 font-mono text-xs text-center p-6">
-            <Clock className="w-8 h-8 text-slate-600" />
-            <p>No routine slots scheduled for this date.</p>
-            <Button
-              size="sm"
-              onClick={handleConfirmResetToMaster}
-              className="bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-mono text-xs cursor-pointer"
-            >
-              Generate Default Protocol
-            </Button>
+          <div className="h-full rounded-2xl bg-white/[0.015] border border-white/10 flex flex-col items-center justify-center space-y-3.5 text-slate-400 font-mono text-xs text-center p-6">
+            {masterRoutines.length === 0 ? (
+              <>
+                <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/25 flex items-center justify-center shadow-inner">
+                  <Settings className="w-6 h-6 text-purple-400" />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-bold text-white">No Master Protocol Configured</p>
+                  <p className="text-slate-400 max-w-sm text-[11.5px] leading-relaxed">
+                    There are no recurring routine templates set for the <strong className="text-purple-300 font-bold">{dayProfile}</strong> profile yet.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={handleOpenMasterModal}
+                  className="bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-mono text-xs cursor-pointer flex items-center gap-2 shadow-lg shadow-purple-600/30 px-4 py-2 mt-1"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>Configure Master Protocol</span>
+                </Button>
+              </>
+            ) : (
+              <>
+                <Clock className="w-8 h-8 text-slate-600" />
+                <div className="space-y-1">
+                  <p className="text-sm font-bold text-white">No Routine Slots for This Date</p>
+                  <p className="text-slate-400 max-w-sm text-[11.5px] leading-relaxed">
+                    Schedule is currently clear. You can apply the default <strong className="text-purple-300 font-bold">{dayProfile}</strong> protocol or customize manually.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 mt-1 flex-wrap justify-center">
+                  <Button
+                    size="sm"
+                    onClick={handleConfirmResetToMaster}
+                    className="bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-mono text-xs cursor-pointer flex items-center gap-1.5 shadow-lg shadow-purple-600/30 px-4 py-2"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Apply Default Protocol ({masterRoutines.length} Slots)</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleOpenMasterModal}
+                    className="border-white/10 hover:bg-white/5 text-slate-300 rounded-xl font-mono text-xs cursor-pointer flex items-center gap-1.5 px-3 py-2"
+                  >
+                    <Settings className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Edit Template</span>
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         ) : viewMode === "TIMELINE_SPAN" ? (
           /* ─────────────────────────────────────────────────────────────── */
@@ -4057,11 +4232,33 @@ export function DailyRoutineTracker() {
           </div>
 
           <div>
-            <h3 className="text-base font-bold text-white tracking-wide uppercase">DELETE ROUTINE SLOT</h3>
+            <h3 className="text-base font-bold text-white tracking-wide uppercase">
+              {slotToDelete && slotToDelete.id > 0 && slotToDelete.masterRoutineId
+                ? "RESTORE MASTER TEMPLATE"
+                : slotToDelete && slotToDelete.id < 0
+                ? "REMOVE ROUTINE SLOT"
+                : "DELETE CUSTOM SLOT"}
+            </h3>
             <p className="text-xs text-slate-300 mt-2 leading-relaxed font-sans">
-              Are you sure you want to delete slot <span className="text-rose-300 font-bold">&quot;{slotToDelete?.title}&quot;</span> ({slotToDelete?.startTime} - {slotToDelete?.endTime})?
+              {slotToDelete && slotToDelete.id > 0 && slotToDelete.masterRoutineId ? (
+                <>
+                  Slot <span className="text-rose-300 font-bold">&quot;{slotToDelete?.title}&quot;</span> has custom changes. Deleting it will restore the default master template for this slot.
+                </>
+              ) : slotToDelete && slotToDelete.id < 0 ? (
+                <>
+                  Are you sure you want to remove <span className="text-rose-300 font-bold">&quot;{slotToDelete?.title}&quot;</span> from today&apos;s routine? (You can restore all default slots anytime by clicking &quot;Reset&quot;).
+                </>
+              ) : (
+                <>
+                  Are you sure you want to delete slot <span className="text-rose-300 font-bold">&quot;{slotToDelete?.title}&quot;</span> ({slotToDelete?.startTime} - {slotToDelete?.endTime})?
+                </>
+              )}
             </p>
-            <p className="text-[10px] text-slate-500 mt-1">This action cannot be undone.</p>
+            <p className="text-[10px] text-slate-500 mt-1">
+              {slotToDelete && slotToDelete.id > 0 && slotToDelete.masterRoutineId
+                ? "The original master routine template will be restored."
+                : "This action will affect today's schedule."}
+            </p>
           </div>
 
           <div className="flex items-center gap-3 pt-2">
@@ -4078,7 +4275,42 @@ export function DailyRoutineTracker() {
               onClick={handleConfirmDeleteSlot}
               className="flex-1 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl h-11 text-xs font-mono font-bold shadow-lg shadow-rose-600/40 cursor-pointer"
             >
-              Delete Slot
+              {slotToDelete && slotToDelete.id > 0 && slotToDelete.masterRoutineId ? "Restore Master" : "Delete Slot"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Standard App Confirmation Modal: Delete Daily Habit */}
+      <Dialog open={!!habitToDelete} onOpenChange={(open) => !open && setHabitToDelete(null)}>
+        <DialogContent showCloseButton={false} className="bg-[#16131c] border-rose-500/30 text-slate-100 rounded-3xl max-w-sm p-5 shadow-2xl backdrop-blur-2xl font-mono text-center space-y-3">
+          <div className="mx-auto w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400">
+            <AlertTriangle className="w-6 h-6 animate-pulse" />
+          </div>
+
+          <div>
+            <h3 className="text-sm font-bold text-white tracking-wide uppercase">DELETE HABIT</h3>
+            <p className="text-xs text-slate-300 mt-2 leading-relaxed font-sans">
+              Are you sure you want to delete habit <span className="text-rose-300 font-bold">&quot;{habitToDelete?.title}&quot;</span>?
+            </p>
+            <p className="text-[10px] text-slate-500 mt-1">This will permanently remove this habit and all its logged history.</p>
+          </div>
+
+          <div className="flex items-center gap-2.5 pt-1">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setHabitToDelete(null)}
+              className="flex-1 border-white/15 text-slate-300 hover:bg-white/10 rounded-xl h-9 text-xs font-mono cursor-pointer"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmDeleteHabit}
+              className="flex-1 bg-rose-600 hover:bg-rose-500 text-white rounded-xl h-9 text-xs font-mono font-bold shadow-lg shadow-rose-600/40 cursor-pointer"
+            >
+              Delete Habit
             </Button>
           </div>
         </DialogContent>
@@ -4272,7 +4504,13 @@ export function DailyRoutineTracker() {
       </Dialog>
 
       {/* Modal C: Manage Master Routines (Weekday, Friday, Weekend) */}
-      <Dialog open={isMasterModalOpen} onOpenChange={setIsMasterModalOpen}>
+      <Dialog
+        open={isMasterModalOpen}
+        onOpenChange={(open) => {
+          setIsMasterModalOpen(open);
+          if (!open) loadData(selectedDate);
+        }}
+      >
         <DialogContent
           showCloseButton={false}
           className="bg-[#14141e] border-white/15 text-slate-100 rounded-3xl max-w-xl max-h-[88vh] p-6 font-mono shadow-2xl backdrop-blur-2xl flex flex-col"
@@ -4284,7 +4522,10 @@ export function DailyRoutineTracker() {
             </DialogTitle>
             <button
               type="button"
-              onClick={() => setIsMasterModalOpen(false)}
+              onClick={() => {
+                setIsMasterModalOpen(false);
+                loadData(selectedDate);
+              }}
               className="p-1.5 rounded-xl bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-colors border border-white/10 cursor-pointer"
             >
               <X className="w-4 h-4" />
@@ -4431,7 +4672,10 @@ export function DailyRoutineTracker() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => setIsMasterModalOpen(false)}
+              onClick={() => {
+                setIsMasterModalOpen(false);
+                loadData(selectedDate);
+              }}
               className="w-full border-white/15 text-slate-300 hover:bg-white/10 rounded-2xl h-11 text-xs font-mono cursor-pointer"
             >
               Close

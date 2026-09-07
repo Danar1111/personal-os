@@ -321,12 +321,13 @@ export const dailyRoutineMaster = mysqlTable('daily_routine_master', {
 
 export const dailyTimeblockInstances = mysqlTable('daily_timeblock_instances', {
   id: int('id').autoincrement().primaryKey(),
+  masterRoutineId: int('master_routine_id').references(() => dailyRoutineMaster.id, { onDelete: 'set null' }),
   date: varchar('date', { length: 10 }).notNull(), // 'YYYY-MM-DD'
   startTime: varchar('start_time', { length: 10 }).notNull(),
   endTime: varchar('end_time', { length: 10 }).notNull(),
   title: varchar('title', { length: 255 }).notNull(),
   category: varchar('category', { length: 50 }).notNull().default('ROUTINE'),
-  status: varchar('status', { length: 50 }).notNull().default('PLANNED'), // 'PLANNED' | 'IN_PROGRESS' | 'DONE' | 'SKIPPED'
+  status: varchar('status', { length: 50 }).notNull().default('PLANNED'), // 'PLANNED' | 'IN_PROGRESS' | 'DONE' | 'SKIPPED' | 'DELETED'
   taskId: int('task_id').references(() => tasks.id, { onDelete: 'set null' }),
   notes: text('notes'),
   orderIndex: int('order_index').notNull().default(0),
