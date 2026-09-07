@@ -28,6 +28,7 @@ import {
   Mail,
   Music,
   Target,
+  Clock,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -39,6 +40,7 @@ const PAGE_ITEMS = [
   { id: "page-overview", group: "Pages & Apps", title: "Overview Dashboard", subtitle: "Main Bento Dashboard", url: "/", icon: LayoutDashboard },
   { id: "page-spotify", group: "Pages & Apps", title: "Spotify Music Player & Synced Lyrics", subtitle: "Real-time Now Playing, Synced Lyrics & Controls (Ctrl+M)", url: "#spotify", icon: Music },
   { id: "page-projects", group: "Pages & Apps", title: "Project & Strategy Hub", subtitle: "Macro-level Command Center & Roadmaps", url: "/projects", icon: Target },
+  { id: "page-routine", group: "Pages & Apps", title: "Daily Routine & Day Tracker", subtitle: "24H Timestamp Schedule & Daily Habit Protocols", url: "/routine", icon: Clock },
   { id: "page-tasks", group: "Pages & Apps", title: "Task Omni-Kanban", subtitle: "Project & Task Management", url: "/tasks", icon: CheckSquare },
 
   { id: "page-skills", group: "Pages & Apps", title: "Skill Matrix", subtitle: "Learning & Progress Tracking", url: "/skills", icon: Brain },

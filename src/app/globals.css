@@ -141,3 +141,158 @@
   scrollbar-width: thin;
   scrollbar-color: rgba(99, 102, 241, 0.35) rgba(10, 10, 11, 0.6);
 }
+
+/* Hide scrollbar for Chrome, Safari, Opera and Firefox when requested */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ─── 24-Hour Routine Tracker Entrance & Stagger Animations ─── */
+@keyframes wheel-spin-entrance {
+  0% {
+    opacity: 0;
+    transform: scale(0.92) rotate(-24deg);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.01) rotate(2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes panel-card-slide-left {
+  0% {
+    opacity: 0;
+    transform: translateX(-14px) translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+  }
+}
+
+@keyframes panel-card-slide-right {
+  0% {
+    opacity: 0;
+    transform: translateX(14px) translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+  }
+}
+
+@keyframes cockpit-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.75);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes timeline-col-slide-up {
+  0% {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes timeline-card-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.94) translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes ribbon-sweep {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes connectors-fade-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes connector-line-fade {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes connector-line-pop {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.animate-wheel-spin {
+  animation: wheel-spin-entrance 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: center center;
+}
+
+.animate-card-slide-left {
+  animation: panel-card-slide-left 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-card-slide-right {
+  animation: panel-card-slide-right 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-cockpit-reveal {
+  animation: cockpit-pop 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both;
+}
+
+.animate-col-slide-up {
+  animation: timeline-col-slide-up 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-timeline-card {
+  animation: timeline-card-pop 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-ribbon-reveal {
+  animation: ribbon-sweep 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-connectors-reveal {
+  animation: connectors-fade-in 0.5s ease-out both;
+}

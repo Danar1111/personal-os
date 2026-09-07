@@ -31,6 +31,7 @@ import { DailyBriefingWidget } from "@/components/dashboard/DailyBriefingWidget"
 import { TaskKanbanWidget } from "@/components/dashboard/TaskKanbanWidget";
 import { MovieRecommendationWidget } from "@/components/dashboard/MovieRecommendationWidget";
 import { AppLauncherWidget } from "@/components/dashboard/AppLauncherWidget";
+import { MotivationalQuoteWidget } from "@/components/motivational-quote-widget";
 import { getTrendingMovies } from "@/app/watchlist/actions";
 import { computeProjectAutoStatus } from "@/lib/project-status-engine";
 
@@ -252,8 +253,8 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-16">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-5">
-        <div>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-white/10 pb-5">
+        <div className="shrink-0">
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white flex items-center gap-3 font-mono">
             <Zap className="w-7 h-7 text-purple-400 animate-pulse" />
             <span>COMMAND CENTER OVERVIEW</span>
@@ -263,10 +264,8 @@ export default async function DashboardPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="border-purple-500/30 text-purple-300 bg-purple-500/10 font-mono text-xs py-1.5 px-3">
-            SYSTEM ACTIVE
-          </Badge>
+        <div className="flex items-center justify-start lg:justify-end min-w-0 flex-1">
+          <MotivationalQuoteWidget />
         </div>
       </div>
 

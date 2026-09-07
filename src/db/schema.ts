@@ -306,9 +306,62 @@ export const notifications = mysqlTable('notifications', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
+// ── DAILY ROUTINE & 24H DAY TRACKER TABLES ──────────────────────────────────
+export const dailyRoutineMaster = mysqlTable('daily_routine_master', {
+  id: int('id').autoincrement().primaryKey(),
+  dayProfile: varchar('day_profile', { length: 50 }).notNull().default('WEEKDAY'), // 'WEEKDAY' | 'FRIDAY' | 'WEEKEND'
+  startTime: varchar('start_time', { length: 10 }).notNull(), // 'HH:mm'
+  endTime: varchar('end_time', { length: 10 }).notNull(),   // 'HH:mm'
+  title: varchar('title', { length: 255 }).notNull(),
+  category: varchar('category', { length: 50 }).notNull().default('ROUTINE'), // 'DEEP_WORK' | 'MEETING' | 'HEALTH' | 'PRAYER' | 'BUSINESS' | 'ROUTINE'
+  color: varchar('color', { length: 50 }),
+  orderIndex: int('order_index').notNull().default(0),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const dailyTimeblockInstances = mysqlTable('daily_timeblock_instances', {
+  id: int('id').autoincrement().primaryKey(),
+  date: varchar('date', { length: 10 }).notNull(), // 'YYYY-MM-DD'
+  startTime: varchar('start_time', { length: 10 }).notNull(),
+  endTime: varchar('end_time', { length: 10 }).notNull(),
+  title: varchar('title', { length: 255 }).notNull(),
+  category: varchar('category', { length: 50 }).notNull().default('ROUTINE'),
+  status: varchar('status', { length: 50 }).notNull().default('PLANNED'), // 'PLANNED' | 'IN_PROGRESS' | 'DONE' | 'SKIPPED'
+  taskId: int('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+  notes: text('notes'),
+  orderIndex: int('order_index').notNull().default(0),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const dailyHabits = mysqlTable('daily_habits', {
+  id: int('id').autoincrement().primaryKey(),
+  title: varchar('title', { length: 255 }).notNull(),
+  icon: varchar('icon', { length: 50 }).default('CheckCircle2'),
+  sortOrder: int('sort_order').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const dailyHabitLogs = mysqlTable('daily_habit_logs', {
+  id: int('id').autoincrement().primaryKey(),
+  habitId: int('habit_id').notNull().references(() => dailyHabits.id, { onDelete: 'cascade' }),
+  date: varchar('date', { length: 10 }).notNull(), // 'YYYY-MM-DD'
+  isCompleted: boolean('is_completed').notNull().default(false),
+  completedAt: timestamp('completed_at'),
+});
+
 export type EmailTemplate = typeof emailTemplates.$inferSelect;
 export type NewEmailTemplate = typeof emailTemplates.$inferInsert;
 export type Notification = typeof notifications.$inferSelect;
 export type NewNotification = typeof notifications.$inferInsert;
 export type ProjectAssetLink = typeof projectAssetLinks.$inferSelect;
 export type NewProjectAssetLink = typeof projectAssetLinks.$inferInsert;
+
+export type DailyRoutineMaster = typeof dailyRoutineMaster.$inferSelect;
+export type NewDailyRoutineMaster = typeof dailyRoutineMaster.$inferInsert;
+export type DailyTimeblockInstance = typeof dailyTimeblockInstances.$inferSelect;
+export type NewDailyTimeblockInstance = typeof dailyTimeblockInstances.$inferInsert;
+export type DailyHabit = typeof dailyHabits.$inferSelect;
+export type NewDailyHabit = typeof dailyHabits.$inferInsert;
+export type DailyHabitLog = typeof dailyHabitLogs.$inferSelect;
+export type NewDailyHabitLog = typeof dailyHabitLogs.$inferInsert;
