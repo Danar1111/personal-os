@@ -104,12 +104,14 @@ export default function RootLayout({
         {/* Main Content Hub */}
         <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden" suppressHydrationWarning>
           {/* Top Bar Header */}
-          <header className="h-16 border-b border-white/10 glass-panel px-6 flex items-center justify-between shrink-0 z-20">
-            {/* Command Search */}
-            <SearchTrigger />
+          <header className="h-16 border-b border-white/10 glass-panel px-6 flex items-center justify-between shrink-0 z-20 gap-4">
+            {/* Command Search & Live Routine */}
+            <div className="flex-1 min-w-0 flex items-center">
+              <SearchTrigger />
+            </div>
 
             {/* System Status Indicators */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 sm:gap-4 shrink-0">
               <OmniAiTrigger />
 
               <DbStatusBadge />

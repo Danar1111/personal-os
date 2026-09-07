@@ -888,6 +888,9 @@ export function DailyRoutineTracker() {
       if (kanbanRes.success) {
         setKanbanTasks(kanbanRes.tasks as KanbanTaskItem[]);
       }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("routine-updated"));
+      }
     } catch (err) {
       console.error("[loadData Error]:", err);
     } finally {

@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Search, Command, Music } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { HeaderRoutineWidget } from "@/components/header-routine-widget";
 
 export function SearchTrigger() {
   const handleOpenSearch = () => {
@@ -15,28 +15,26 @@ export function SearchTrigger() {
   };
 
   return (
-    <div className="flex items-center gap-2.5">
-      <div
+    <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 max-w-full">
+      {/* Compact Quick Command Search Trigger Button */}
+      <button
         onClick={handleOpenSearch}
-        className="flex items-center gap-3 w-72 sm:w-80 md:w-96 relative cursor-pointer group"
+        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 hover:border-white/20 text-xs font-mono text-slate-400 hover:text-slate-200 transition-all cursor-pointer group shrink-0"
+        title="Search pages, notes, tasks (Ctrl+K)"
       >
-        <div className="relative w-full">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-hover:text-white transition-colors" />
-          <Input
-            readOnly
-            placeholder="Search pages, notes, tasks... (Ctrl+K)"
-            className="pl-9 pr-12 bg-white/[0.04] border-white/10 text-xs text-slate-200 placeholder:text-slate-400 rounded-xl cursor-pointer group-hover:border-indigo-500/50 group-hover:bg-white/[0.06] transition-all font-mono"
-          />
-          <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-mono text-slate-400 bg-white/5 border border-white/10 rounded group-hover:text-white group-hover:border-white/20 transition-colors">
-            <Command className="w-2.5 h-2.5 inline mr-0.5" />K
-          </kbd>
-        </div>
-      </div>
+        <Search className="w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-colors" />
+        <span className="hidden sm:inline text-[11px] text-slate-400 group-hover:text-slate-300 font-medium">
+          Search
+        </span>
+        <kbd className="px-1.5 py-0.5 text-[9px] font-mono text-slate-400 bg-white/5 border border-white/10 rounded group-hover:text-white group-hover:border-white/20 transition-colors flex items-center">
+          <Command className="w-2.5 h-2.5 mr-0.5" />K
+        </kbd>
+      </button>
 
       {/* Quick Spotify Track Search Button */}
       <button
         onClick={handleOpenSpotifySearch}
-        className="hidden md:flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/40 text-emerald-400 text-xs font-mono transition-all cursor-pointer shadow-sm group"
+        className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/40 text-emerald-400 text-xs font-mono transition-all cursor-pointer shadow-sm group shrink-0"
         title="Search Spotify Tracks & Instant Play (Alt+S)"
       >
         <Music className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
@@ -45,6 +43,9 @@ export function SearchTrigger() {
           Alt+S
         </kbd>
       </button>
+
+      {/* Live Routine & Time Indicator with Next Routine Custom Tooltip */}
+      <HeaderRoutineWidget />
     </div>
   );
 }
