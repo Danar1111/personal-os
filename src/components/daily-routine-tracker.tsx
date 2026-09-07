@@ -675,6 +675,7 @@ export function DailyRoutineTracker() {
   const leftCardEls = useRef<Map<number, HTMLDivElement>>(new Map());
   const rightCardEls = useRef<Map<number, HTMLDivElement>>(new Map());
   const scrollAnimRef = useRef<number | null>(null);
+  const measureRef = useRef<() => void>(() => {});
   const [clockBadgeRect, setClockBadgeRect] = useState<{
     x: number;
     y: number;
@@ -690,12 +691,25 @@ export function DailyRoutineTracker() {
       color: string;
       side: "left" | "right";
       isActive: boolean;
-      isHovered: boolean;
       animDelay: number;
     }>
   >([]);
   // Entrance animation trigger key (increments to replay animations even when clicking current date)
   const [animKey, setAnimKey] = useState(0);
+  const [hasIntroFinished, setHasIntroFinished] = useState(false);
+  const hoveredSlotIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    hoveredSlotIdRef.current = hoveredSlotId;
+  }, [hoveredSlotId]);
+
+  useEffect(() => {
+    setHasIntroFinished(false);
+    const timer = setTimeout(() => {
+      setHasIntroFinished(true);
+    }, 1800);
+    return () => clearTimeout(timer);
+  }, [selectedDate, animKey]);
 
   // Custom tooltips state (Wheel free/unscheduled slot & Top ribbon bar)
   const [wheelFreeTooltip, setWheelFreeTooltip] = useState<{
@@ -1323,14 +1337,26 @@ export function DailyRoutineTracker() {
     const gridRect = grid.getBoundingClientRect();
     const svgRect = svgEl.getBoundingClientRect();
 
-    // Measure clock badge position relative to grid
+    const currentHoverId = hoveredSlotIdRef.current;
+
+    // Measure clock badge position relative to grid (skip state updates if unchanged)
     if (clockBadgeRef.current) {
       const cRect = clockBadgeRef.current.getBoundingClientRect();
-      setClockBadgeRect({
-        x: cRect.left - gridRect.left,
-        y: cRect.top - gridRect.top,
-        width: cRect.width,
-        height: cRect.height,
+      const nextX = cRect.left - gridRect.left;
+      const nextY = cRect.top - gridRect.top;
+      const nextW = cRect.width;
+      const nextH = cRect.height;
+      setClockBadgeRect((prev) => {
+        if (
+          prev &&
+          Math.abs(prev.x - nextX) < 1 &&
+          Math.abs(prev.y - nextY) < 1 &&
+          Math.abs(prev.width - nextW) < 1 &&
+          Math.abs(prev.height - nextH) < 1
+        ) {
+          return prev;
+        }
+        return { x: nextX, y: nextY, width: nextW, height: nextH };
       });
     }
 
@@ -1403,7 +1429,6 @@ export function DailyRoutineTracker() {
       y2: number;
       color: string;
       isActive: boolean;
-      isHovered: boolean;
     }> = [];
 
     leftCardEls.current.forEach((el, id) => {
@@ -1411,7 +1436,8 @@ export function DailyRoutineTracker() {
       if (!rect.width) return;
 
       // Visibility filter: if card is scrolled out of the scrollable container, skip it
-      if (leftContainerRect) {
+      // (Exempt the currently hovered card, which is being auto-scrolled into view and must stay connected)
+      if (leftContainerRect && id !== currentHoverId) {
         if (rect.bottom < leftContainerRect.top + 8 || rect.top > leftContainerRect.bottom - 8) {
           return;
         }
@@ -1448,7 +1474,6 @@ export function DailyRoutineTracker() {
         y2: rim.y,
         color: cfg.color,
         isActive,
-        isHovered: hoveredSlotId === id,
       });
     });
 
@@ -1461,7 +1486,6 @@ export function DailyRoutineTracker() {
       y2: number;
       color: string;
       isActive: boolean;
-      isHovered: boolean;
     }> = [];
 
     rightCardEls.current.forEach((el, id) => {
@@ -1469,7 +1493,8 @@ export function DailyRoutineTracker() {
       if (!rect.width) return;
 
       // Visibility filter: if card is scrolled out of the scrollable container, skip it
-      if (rightContainerRect) {
+      // (Exempt the currently hovered card, which is being auto-scrolled into view and must stay connected)
+      if (rightContainerRect && id !== currentHoverId) {
         if (rect.bottom < rightContainerRect.top + 8 || rect.top > rightContainerRect.bottom - 8) {
           return;
         }
@@ -1505,7 +1530,6 @@ export function DailyRoutineTracker() {
         y2: rim.y,
         color: cfg.color,
         isActive,
-        isHovered: hoveredSlotId === id,
       });
     });
 
@@ -1595,7 +1619,9 @@ export function DailyRoutineTracker() {
     }
 
     setConnectorLines(lines);
-  }, [morningPanelSlots, nightPanelSlots, hoveredSlotId, getSlotTimingState]);
+  }, [morningPanelSlots, nightPanelSlots, getSlotTimingState]);
+
+  measureRef.current = measure;
 
   useLayoutEffect(() => {
     measure();
@@ -1617,7 +1643,12 @@ export function DailyRoutineTracker() {
   // Auto-scroll the hidden side card into view when a wedge on the 24H wheel is hovered
   const handleWheelWedgeHover = useCallback(
     (slotId: number) => {
+      const prevHovered = hoveredSlotIdRef.current;
+      hoveredSlotIdRef.current = slotId;
       setHoveredSlotId(slotId);
+      if (prevHovered === slotId) {
+        return;
+      }
 
       // Check target cards in left and/or right panel (cross-boundary tasks can have both)
       const targets = [
@@ -1652,7 +1683,7 @@ export function DailyRoutineTracker() {
 
         const startTime = performance.now();
         const tick = () => {
-          measure();
+          measureRef.current();
           if (performance.now() - startTime < 450) {
             scrollAnimRef.current = requestAnimationFrame(tick);
           } else {
@@ -1662,7 +1693,7 @@ export function DailyRoutineTracker() {
         scrollAnimRef.current = requestAnimationFrame(tick);
       }
     },
-    [measure]
+    []
   );
 
   useEffect(() => {
@@ -3045,7 +3076,8 @@ export function DailyRoutineTracker() {
                         }}
                         style={{ animationDelay: `${100 + Math.min(idx * 45, 450)}ms` }}
                         className={cn(
-                          "p-2.5 rounded-xl border transition-all cursor-pointer text-xs font-mono group relative animate-card-slide-left",
+                          "p-2.5 rounded-xl border transition-all cursor-pointer text-xs font-mono group relative",
+                          !hasIntroFinished && "animate-card-slide-left",
                           item.isContinuation && "border-dashed",
                           isNow
                             ? "bg-purple-950/60 border-purple-400 ring-2 ring-purple-400/40 shadow-[0_0_15px_rgba(168,85,247,0.3)]"
@@ -3146,6 +3178,11 @@ export function DailyRoutineTracker() {
                     key={`wheel-svg-${selectedDate}-${animKey}`}
                     ref={wheelSvgRef}
                     viewBox="0 0 440 440"
+                    onMouseLeave={() => {
+                      hoveredSlotIdRef.current = null;
+                      setHoveredSlotId(null);
+                      setWheelFreeTooltip(null);
+                    }}
                     className="w-full h-full select-none drop-shadow-2xl animate-wheel-spin"
                   >
                     <defs>
@@ -3271,6 +3308,8 @@ export function DailyRoutineTracker() {
                               : "hover:opacity-100 hover:fill-white/70 hover:stroke-white"
                           )}
                           onMouseEnter={(e) => {
+                            hoveredSlotIdRef.current = null;
+                            setHoveredSlotId(null);
                             setWheelFreeTooltip({
                               x: e.clientX,
                               y: e.clientY,
@@ -3349,7 +3388,19 @@ export function DailyRoutineTracker() {
                       );
 
                       return (
-                        <g key={`block-${block.id}`}>
+                        <g
+                          key={`block-${block.id}`}
+                          className="cursor-pointer"
+                          onMouseEnter={() => handleWheelWedgeHover(block.id)}
+                          onMouseLeave={() => {
+                            hoveredSlotIdRef.current = null;
+                            setHoveredSlotId(null);
+                          }}
+                          onClick={() => {
+                            setEditingSlot(block);
+                            setIsSlotModalOpen(true);
+                          }}
+                        >
                           {segments.map((seg, segIdx) => {
                             const startAngle = (seg.startMin / 1440) * 360;
                             const endAngle = (seg.endMin / 1440) * 360;
@@ -3382,7 +3433,6 @@ export function DailyRoutineTracker() {
                                 strokeOpacity={segStrokeOpacity}
                                 strokeWidth={srcType !== "STANDARD" || isHovered || isNow ? "2" : "1"}
                                 className={cn(
-                                  "cursor-pointer",
                                   heightProgress === 1 && "transition-colors duration-200",
                                   isNow
                                     ? "opacity-100 filter drop-shadow-[0_0_12px_currentColor]"
@@ -3390,12 +3440,6 @@ export function DailyRoutineTracker() {
                                     ? "opacity-100 filter drop-shadow-[0_0_8px_rgba(255,255,255,0.25)]"
                                     : "hover:opacity-100"
                                 )}
-                                onMouseEnter={() => handleWheelWedgeHover(block.id)}
-                                onMouseLeave={() => setHoveredSlotId(null)}
-                                onClick={() => {
-                                  setEditingSlot(block);
-                                  setIsSlotModalOpen(true);
-                                }}
                               />
                             );
                           })}
@@ -3634,7 +3678,8 @@ export function DailyRoutineTracker() {
                         }}
                         style={{ animationDelay: `${120 + Math.min(idx * 45, 450)}ms` }}
                         className={cn(
-                          "p-2.5 rounded-xl border transition-all cursor-pointer text-xs font-mono group relative animate-card-slide-right",
+                          "p-2.5 rounded-xl border transition-all cursor-pointer text-xs font-mono group relative",
+                          !hasIntroFinished && "animate-card-slide-right",
                           item.isContinuation && "border-dashed",
                           item.hasConflictWithToday
                             ? "bg-rose-950/30 border-rose-500/50 hover:border-rose-400/80 shadow-[0_0_12px_rgba(244,63,94,0.2)]"
@@ -3751,12 +3796,16 @@ export function DailyRoutineTracker() {
 
               <g mask={clockBadgeRect ? "url(#exclude-clock-badge)" : undefined}>
                 {connectorLines.map((line) => {
-                  const hi = line.isActive || line.isHovered;
+                  const isHovered = (hoveredSlotId ?? hoveredSlotIdRef.current) === line.id;
+                  const hi = line.isActive || isHovered;
                   return (
                     <g
                       key={`cl-${selectedDate}-${animKey}-${line.side}-${line.id}`}
                       style={{
-                        animation: `connector-line-fade 0.25s ease-out ${line.animDelay}ms both`,
+                        animation:
+                          hasIntroFinished || hi
+                            ? "none"
+                            : `connector-line-fade 0.25s ease-out ${line.animDelay}ms both`,
                       }}
                       className="transition-opacity duration-300"
                     >
@@ -3770,7 +3819,7 @@ export function DailyRoutineTracker() {
                         strokeLinejoin="round"
                         strokeLinecap="round"
                         opacity={hi ? 1 : 0.55}
-                        className={hi ? "drop-shadow-[0_0_6px_currentColor] animate-pulse" : ""}
+                        className={hi ? "drop-shadow-[0_0_6px_currentColor]" : ""}
                       />
                       {/* Dot at card edge (x1/y1) */}
                       <circle
