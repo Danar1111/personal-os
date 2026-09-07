@@ -743,6 +743,17 @@ export function DailyRoutineTracker() {
   const [editingHabitTitle, setEditingHabitTitle] = useState("");
   const [habitToDelete, setHabitToDelete] = useState<HabitItem | null>(null);
 
+  // Action Submission & Pending Guards (Prevents rapid double-clicks & double submissions)
+  const isSubmittingRef = useRef(false);
+  const [isSavingSlot, setIsSavingSlot] = useState(false);
+  const [isDeletingSlot, setIsDeletingSlot] = useState(false);
+  const [isResettingDay, setIsResettingDay] = useState(false);
+  const [isSavingMasterSlot, setIsSavingMasterSlot] = useState(false);
+  const [isDeletingMasterSlot, setIsDeletingMasterSlot] = useState(false);
+  const [isSavingHabit, setIsSavingHabit] = useState(false);
+  const [isUpdatingHabit, setIsUpdatingHabit] = useState(false);
+  const [isDeletingHabit, setIsDeletingHabit] = useState(false);
+
   // Activity title suggestions (Projects from ProjectHub & Skills from Skill Matrix)
   const [projectSuggestions, setProjectSuggestions] = useState<
     Array<{ id: number; name: string; status: string }>
@@ -1785,13 +1796,20 @@ export function DailyRoutineTracker() {
 
   const handleAddHabit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newHabitTitle.trim()) return;
-    const res = await addDailyHabitAction(newHabitTitle);
-    if (res.success) {
-      setNewHabitTitle("");
-      setIsAddingHabit(false);
-      const habitsRes = await getDailyHabitsForDateAction(selectedDate);
-      if (habitsRes.success) setHabits(habitsRes.habits as HabitItem[]);
+    if (!newHabitTitle.trim() || isSavingHabit || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSavingHabit(true);
+    try {
+      const res = await addDailyHabitAction(newHabitTitle);
+      if (res.success) {
+        setNewHabitTitle("");
+        setIsAddingHabit(false);
+        const habitsRes = await getDailyHabitsForDateAction(selectedDate);
+        if (habitsRes.success) setHabits(habitsRes.habits as HabitItem[]);
+      }
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSavingHabit(false);
     }
   };
 
@@ -1802,130 +1820,181 @@ export function DailyRoutineTracker() {
 
   const handleSaveHabitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingHabitId || !editingHabitTitle.trim()) return;
-    const res = await updateDailyHabitAction(editingHabitId, {
-      title: editingHabitTitle.trim(),
-    });
-    if (res.success) {
-      setEditingHabitId(null);
-      setEditingHabitTitle("");
-      const habitsRes = await getDailyHabitsForDateAction(selectedDate);
-      if (habitsRes.success) setHabits(habitsRes.habits as HabitItem[]);
+    if (!editingHabitId || !editingHabitTitle.trim() || isUpdatingHabit || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsUpdatingHabit(true);
+    try {
+      const res = await updateDailyHabitAction(editingHabitId, {
+        title: editingHabitTitle.trim(),
+      });
+      if (res.success) {
+        setEditingHabitId(null);
+        setEditingHabitTitle("");
+        const habitsRes = await getDailyHabitsForDateAction(selectedDate);
+        if (habitsRes.success) setHabits(habitsRes.habits as HabitItem[]);
+      }
+    } finally {
+      isSubmittingRef.current = false;
+      setIsUpdatingHabit(false);
     }
   };
 
   const handleConfirmDeleteHabit = async () => {
-    if (!habitToDelete) return;
-    const res = await deleteDailyHabitAction(habitToDelete.id);
-    if (res.success) {
-      setHabitToDelete(null);
-      const habitsRes = await getDailyHabitsForDateAction(selectedDate);
-      if (habitsRes.success) setHabits(habitsRes.habits as HabitItem[]);
+    if (!habitToDelete || isDeletingHabit || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsDeletingHabit(true);
+    try {
+      const res = await deleteDailyHabitAction(habitToDelete.id);
+      if (res.success) {
+        setHabitToDelete(null);
+        const habitsRes = await getDailyHabitsForDateAction(selectedDate);
+        if (habitsRes.success) setHabits(habitsRes.habits as HabitItem[]);
+      }
+    } finally {
+      isSubmittingRef.current = false;
+      setIsDeletingHabit(false);
     }
   };
 
   // Slot CRUD
   const handleSaveSlot = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingSlot?.title || !editingSlot?.startTime || !editingSlot?.endTime) {
+    if (
+      !editingSlot?.title ||
+      !editingSlot?.startTime ||
+      !editingSlot?.endTime ||
+      isSavingSlot ||
+      isSubmittingRef.current
+    ) {
       return;
     }
     if (slotConflict.hasConflict || nextDayConflict.hasConflict || editingSlot.isCarryOverFromYesterday) {
       return;
     }
 
-    if (editingSlot.id && editingSlot.id > 0) {
-      // Existing row in DB: update it
-      await updateTimeblockAction(editingSlot.id, {
-        startTime: editingSlot.startTime,
-        endTime: editingSlot.endTime,
-        title: editingSlot.title,
-        category: editingSlot.category || "ROUTINE",
-        notes: editingSlot.notes || null,
-      });
-    } else if (editingSlot.id && editingSlot.id < 0) {
-      // Virtual master slot: create override row with masterRoutineId
-      await createTimeblockAction({
-        date: selectedDate,
-        startTime: editingSlot.startTime,
-        endTime: editingSlot.endTime,
-        title: editingSlot.title,
-        category: editingSlot.category || "ROUTINE",
-        notes: editingSlot.notes || null,
-        orderIndex: editingSlot.orderIndex ?? timeblocks.length,
-        masterRoutineId: Math.abs(editingSlot.id),
-        status: "PLANNED",
-      });
-    } else {
-      // Completely new custom slot
-      await createTimeblockAction({
-        date: selectedDate,
-        startTime: editingSlot.startTime,
-        endTime: editingSlot.endTime,
-        title: editingSlot.title,
-        category: editingSlot.category || "ROUTINE",
-        notes: editingSlot.notes || null,
-        orderIndex: timeblocks.length,
-        status: "PLANNED",
-      });
-    }
+    isSubmittingRef.current = true;
+    setIsSavingSlot(true);
+    try {
+      if (editingSlot.id && editingSlot.id > 0) {
+        // Existing row in DB: update it
+        await updateTimeblockAction(editingSlot.id, {
+          startTime: editingSlot.startTime,
+          endTime: editingSlot.endTime,
+          title: editingSlot.title,
+          category: editingSlot.category || "ROUTINE",
+          notes: editingSlot.notes || null,
+        });
+      } else if (editingSlot.id && editingSlot.id < 0) {
+        // Virtual master slot: create override row with masterRoutineId
+        await createTimeblockAction({
+          date: selectedDate,
+          startTime: editingSlot.startTime,
+          endTime: editingSlot.endTime,
+          title: editingSlot.title,
+          category: editingSlot.category || "ROUTINE",
+          notes: editingSlot.notes || null,
+          orderIndex: editingSlot.orderIndex ?? timeblocks.length,
+          masterRoutineId: Math.abs(editingSlot.id),
+          status: "PLANNED",
+        });
+      } else {
+        // Completely new custom slot
+        await createTimeblockAction({
+          date: selectedDate,
+          startTime: editingSlot.startTime,
+          endTime: editingSlot.endTime,
+          title: editingSlot.title,
+          category: editingSlot.category || "ROUTINE",
+          notes: editingSlot.notes || null,
+          orderIndex: timeblocks.length,
+          status: "PLANNED",
+        });
+      }
 
-    setIsSlotModalOpen(false);
-    setEditingSlot(null);
-    loadData(selectedDate);
+      setIsSlotModalOpen(false);
+      setEditingSlot(null);
+      await loadData(selectedDate);
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSavingSlot(false);
+    }
   };
 
   const handleConfirmDeleteSlot = async () => {
-    if (!slotToDelete?.id) return;
-    if (slotToDelete.id < 0) {
-      // Virtual master routine slot - suppress it for today
-      await suppressMasterRoutineSlotAction(selectedDate, Math.abs(slotToDelete.id));
-    } else {
-      // Custom instance - delete it (if it had masterRoutineId, master slot will naturally reappear!)
-      await deleteTimeblockAction(slotToDelete.id);
+    if (!slotToDelete?.id || isDeletingSlot || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsDeletingSlot(true);
+    try {
+      if (slotToDelete.id < 0) {
+        // Virtual master routine slot - suppress it for today
+        await suppressMasterRoutineSlotAction(selectedDate, Math.abs(slotToDelete.id));
+      } else {
+        // Custom instance - delete it (if it had masterRoutineId, master slot will naturally reappear!)
+        await deleteTimeblockAction(slotToDelete.id);
+      }
+      setSlotToDelete(null);
+      setIsSlotModalOpen(false);
+      setEditingSlot(null);
+      await loadData(selectedDate);
+    } finally {
+      isSubmittingRef.current = false;
+      setIsDeletingSlot(false);
     }
-    setSlotToDelete(null);
-    setIsSlotModalOpen(false);
-    setEditingSlot(null);
-    loadData(selectedDate);
   };
 
   const handleConfirmResetToMaster = async () => {
-    setIsResetConfirmOpen(false);
-    setIsLoading(true);
-    await resetDayToMasterRoutineAction(selectedDate);
-    loadData(selectedDate);
+    if (isResettingDay || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsResettingDay(true);
+    try {
+      await resetDayToMasterRoutineAction(selectedDate);
+      setIsResetConfirmOpen(false);
+      await loadData(selectedDate);
+    } finally {
+      isSubmittingRef.current = false;
+      setIsResettingDay(false);
+    }
   };
 
   // Attach Kanban Task
   const handleAttachTask = async (task: KanbanTaskItem) => {
-    if (!targetSlotForTask) return;
-    if (targetSlotForTask.id < 0) {
-      // Virtual master slot: create override row with taskId
-      await createTimeblockAction({
-        date: selectedDate,
-        startTime: targetSlotForTask.startTime,
-        endTime: targetSlotForTask.endTime,
-        title: targetSlotForTask.title,
-        category: targetSlotForTask.category || "ROUTINE",
-        notes: targetSlotForTask.notes || null,
-        taskId: task.id,
-        orderIndex: targetSlotForTask.orderIndex >= 0 ? targetSlotForTask.orderIndex : 0,
-        masterRoutineId: Math.abs(targetSlotForTask.id),
-        status: "PLANNED",
-      });
-    } else {
-      await updateTimeblockAction(targetSlotForTask.id, { taskId: task.id });
+    if (!targetSlotForTask || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    try {
+      if (targetSlotForTask.id < 0) {
+        // Virtual master slot: create override row with taskId
+        await createTimeblockAction({
+          date: selectedDate,
+          startTime: targetSlotForTask.startTime,
+          endTime: targetSlotForTask.endTime,
+          title: targetSlotForTask.title,
+          category: targetSlotForTask.category || "ROUTINE",
+          notes: targetSlotForTask.notes || null,
+          taskId: task.id,
+          orderIndex: targetSlotForTask.orderIndex >= 0 ? targetSlotForTask.orderIndex : 0,
+          masterRoutineId: Math.abs(targetSlotForTask.id),
+          status: "PLANNED",
+        });
+      } else {
+        await updateTimeblockAction(targetSlotForTask.id, { taskId: task.id });
+      }
+      setIsKanbanDrawerOpen(false);
+      setTargetSlotForTask(null);
+      await loadData(selectedDate);
+    } finally {
+      isSubmittingRef.current = false;
     }
-    setIsKanbanDrawerOpen(false);
-    setTargetSlotForTask(null);
-    loadData(selectedDate);
   };
 
   const handleDetachTask = async (slotId: number) => {
-    if (slotId > 0) {
-      await updateTimeblockAction(slotId, { taskId: null });
-      loadData(selectedDate);
+    if (slotId > 0 && !isSubmittingRef.current) {
+      isSubmittingRef.current = true;
+      try {
+        await updateTimeblockAction(slotId, { taskId: null });
+        await loadData(selectedDate);
+      } finally {
+        isSubmittingRef.current = false;
+      }
     }
   };
 
@@ -1946,35 +2015,47 @@ export function DailyRoutineTracker() {
     if (
       !editingMasterSlot?.title ||
       !editingMasterSlot?.startTime ||
-      !editingMasterSlot?.endTime
+      !editingMasterSlot?.endTime ||
+      isSavingMasterSlot ||
+      isSubmittingRef.current
     ) {
       return;
     }
     if (masterSlotConflict.hasConflict || masterNextDayConflict.hasConflict) {
       return;
     }
-    setIsLoading(true);
-    await saveMasterRoutineAction(editingMasterSlot.id, {
-      dayProfile: editingMasterSlot.dayProfile,
-      startTime: editingMasterSlot.startTime,
-      endTime: editingMasterSlot.endTime,
-      title: editingMasterSlot.title,
-      category: editingMasterSlot.category || "ROUTINE",
-      orderIndex: 0,
-    });
-    await loadMasterRoutines(editingMasterSlot.dayProfile);
-    setIsMasterSlotDialogOpen(false);
-    setEditingMasterSlot(null);
-    setIsLoading(false);
+    isSubmittingRef.current = true;
+    setIsSavingMasterSlot(true);
+    try {
+      await saveMasterRoutineAction(editingMasterSlot.id, {
+        dayProfile: editingMasterSlot.dayProfile,
+        startTime: editingMasterSlot.startTime,
+        endTime: editingMasterSlot.endTime,
+        title: editingMasterSlot.title,
+        category: editingMasterSlot.category || "ROUTINE",
+        orderIndex: 0,
+      });
+      await loadMasterRoutines(editingMasterSlot.dayProfile);
+      setIsMasterSlotDialogOpen(false);
+      setEditingMasterSlot(null);
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSavingMasterSlot(false);
+    }
   };
 
   const handleConfirmDeleteMasterSlot = async () => {
-    if (!masterSlotToDelete?.id) return;
-    setIsLoading(true);
-    await deleteMasterRoutineAction(masterSlotToDelete.id);
-    await loadMasterRoutines(masterProfileTab);
-    setMasterSlotToDelete(null);
-    setIsLoading(false);
+    if (!masterSlotToDelete?.id || isDeletingMasterSlot || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsDeletingMasterSlot(true);
+    try {
+      await deleteMasterRoutineAction(masterSlotToDelete.id);
+      await loadMasterRoutines(masterProfileTab);
+      setMasterSlotToDelete(null);
+    } finally {
+      isSubmittingRef.current = false;
+      setIsDeletingMasterSlot(false);
+    }
   };
 
   // Habit completion stats
@@ -2184,9 +2265,14 @@ export function DailyRoutineTracker() {
                 />
                 <button
                   type="submit"
-                  className="px-1.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-mono cursor-pointer"
+                  disabled={isUpdatingHabit}
+                  className="px-1.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-[10px] font-mono cursor-pointer flex items-center gap-1"
                 >
-                  Save
+                  {isUpdatingHabit ? (
+                    <Loader2 className="w-3 h-3 animate-spin text-emerald-200" />
+                  ) : (
+                    "Save"
+                  )}
                 </button>
                 <button
                   type="button"
@@ -2262,9 +2348,14 @@ export function DailyRoutineTracker() {
               />
               <button
                 type="submit"
-                className="p-1 px-1.5 rounded bg-emerald-600 text-white text-[10px] font-mono cursor-pointer"
+                disabled={isSavingHabit}
+                className="p-1 px-1.5 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-[10px] font-mono cursor-pointer flex items-center gap-1"
               >
-                Save
+                {isSavingHabit ? (
+                  <Loader2 className="w-3 h-3 animate-spin text-emerald-200" />
+                ) : (
+                  "Save"
+                )}
               </button>
               <button
                 type="button"
@@ -4208,15 +4299,30 @@ export function DailyRoutineTracker() {
                 </Button>
                 <Button
                   type="submit"
-                  disabled={slotConflict.hasConflict || nextDayConflict.hasConflict || !!editingSlot?.isCarryOverFromYesterday}
+                  disabled={
+                    slotConflict.hasConflict ||
+                    nextDayConflict.hasConflict ||
+                    !!editingSlot?.isCarryOverFromYesterday ||
+                    isSavingSlot
+                  }
                   className={cn(
-                    "font-mono text-xs font-bold rounded-2xl h-11 px-6 shadow-lg transition-all",
-                    slotConflict.hasConflict || nextDayConflict.hasConflict || !!editingSlot?.isCarryOverFromYesterday
+                    "font-mono text-xs font-bold rounded-2xl h-11 px-6 shadow-lg transition-all flex items-center gap-2",
+                    slotConflict.hasConflict ||
+                      nextDayConflict.hasConflict ||
+                      !!editingSlot?.isCarryOverFromYesterday ||
+                      isSavingSlot
                       ? "bg-slate-800 text-slate-500 cursor-not-allowed border border-white/5 opacity-50 shadow-none"
                       : "bg-purple-600 hover:bg-purple-500 text-white shadow-purple-600/30 cursor-pointer"
                   )}
                 >
-                  Save Slot
+                  {isSavingSlot ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-purple-200" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>Save Slot</span>
+                  )}
                 </Button>
               </div>
             </DialogFooter>
@@ -4272,10 +4378,22 @@ export function DailyRoutineTracker() {
             </Button>
             <Button
               type="button"
+              disabled={isDeletingSlot}
               onClick={handleConfirmDeleteSlot}
-              className="flex-1 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl h-11 text-xs font-mono font-bold shadow-lg shadow-rose-600/40 cursor-pointer"
+              className="flex-1 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white rounded-2xl h-11 text-xs font-mono font-bold shadow-lg shadow-rose-600/40 cursor-pointer flex items-center justify-center gap-2"
             >
-              {slotToDelete && slotToDelete.id > 0 && slotToDelete.masterRoutineId ? "Restore Master" : "Delete Slot"}
+              {isDeletingSlot ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-rose-200" />
+                  <span>Processing...</span>
+                </>
+              ) : (
+                <span>
+                  {slotToDelete && slotToDelete.id > 0 && slotToDelete.masterRoutineId
+                    ? "Restore Master"
+                    : "Delete Slot"}
+                </span>
+              )}
             </Button>
           </div>
         </DialogContent>
@@ -4307,10 +4425,18 @@ export function DailyRoutineTracker() {
             </Button>
             <Button
               type="button"
+              disabled={isDeletingHabit}
               onClick={handleConfirmDeleteHabit}
-              className="flex-1 bg-rose-600 hover:bg-rose-500 text-white rounded-xl h-9 text-xs font-mono font-bold shadow-lg shadow-rose-600/40 cursor-pointer"
+              className="flex-1 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white rounded-xl h-9 text-xs font-mono font-bold shadow-lg shadow-rose-600/40 cursor-pointer flex items-center justify-center gap-2"
             >
-              Delete Habit
+              {isDeletingHabit ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-200" />
+                  <span>Deleting...</span>
+                </>
+              ) : (
+                <span>Delete Habit</span>
+              )}
             </Button>
           </div>
         </DialogContent>
@@ -4403,12 +4529,22 @@ export function DailyRoutineTracker() {
             </Button>
             <Button
               type="button"
+              disabled={isResettingDay}
               onClick={handleConfirmResetToMaster}
-              className="flex-1 bg-purple-600 hover:bg-purple-500 text-white rounded-2xl h-11 text-xs font-mono font-bold shadow-lg shadow-purple-600/40 cursor-pointer"
+              className="flex-1 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-2xl h-11 text-xs font-mono font-bold shadow-lg shadow-purple-600/40 cursor-pointer flex items-center justify-center gap-2"
             >
-              {customSlotsToClear.length > 0
-                ? `Reset Protocol (${customSlotsToClear.length})`
-                : "Reset Protocol"}
+              {isResettingDay ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-purple-200" />
+                  <span>Resetting...</span>
+                </>
+              ) : (
+                <span>
+                  {customSlotsToClear.length > 0
+                    ? `Reset Protocol (${customSlotsToClear.length})`
+                    : "Reset Protocol"}
+                </span>
+              )}
             </Button>
           </div>
         </DialogContent>
@@ -5007,15 +5143,28 @@ export function DailyRoutineTracker() {
                 </Button>
                 <Button
                   type="submit"
-                  disabled={masterSlotConflict.hasConflict || masterNextDayConflict.hasConflict}
+                  disabled={
+                    masterSlotConflict.hasConflict ||
+                    masterNextDayConflict.hasConflict ||
+                    isSavingMasterSlot
+                  }
                   className={cn(
-                    "font-mono text-xs font-bold rounded-2xl h-11 px-6 shadow-lg transition-all",
-                    masterSlotConflict.hasConflict || masterNextDayConflict.hasConflict
+                    "font-mono text-xs font-bold rounded-2xl h-11 px-6 shadow-lg transition-all flex items-center gap-2",
+                    masterSlotConflict.hasConflict ||
+                      masterNextDayConflict.hasConflict ||
+                      isSavingMasterSlot
                       ? "bg-slate-800 text-slate-500 cursor-not-allowed border border-white/5 opacity-50 shadow-none"
                       : "bg-purple-600 hover:bg-purple-500 text-white shadow-purple-600/30 cursor-pointer"
                   )}
                 >
-                  Save Template
+                  {isSavingMasterSlot ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-purple-200" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>Save Template</span>
+                  )}
                 </Button>
               </div>
             </DialogFooter>
@@ -5061,10 +5210,18 @@ export function DailyRoutineTracker() {
             </Button>
             <Button
               type="button"
+              disabled={isDeletingMasterSlot}
               onClick={handleConfirmDeleteMasterSlot}
-              className="flex-1 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl h-11 text-xs font-mono font-bold shadow-lg shadow-rose-600/40 cursor-pointer"
+              className="flex-1 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white rounded-2xl h-11 text-xs font-mono font-bold shadow-lg shadow-rose-600/40 cursor-pointer flex items-center justify-center gap-2"
             >
-              Delete Template
+              {isDeletingMasterSlot ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-rose-200" />
+                  <span>Deleting...</span>
+                </>
+              ) : (
+                <span>Delete Template</span>
+              )}
             </Button>
           </div>
         </DialogContent>

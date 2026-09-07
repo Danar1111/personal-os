@@ -375,9 +375,28 @@ export async function updateTimeblockAction(
   }
 }
 
-/** Create a new custom timeblock instance */
+/** Create a new custom timeblock instance (with idempotency check) */
 export async function createTimeblockAction(data: NewDailyTimeblockInstance) {
   try {
+    // Guard against duplicate submission:
+    if (data.date && data.startTime && data.endTime) {
+      const existing = await db
+        .select({ id: dailyTimeblockInstances.id })
+        .from(dailyTimeblockInstances)
+        .where(
+          and(
+            eq(dailyTimeblockInstances.date, data.date),
+            eq(dailyTimeblockInstances.startTime, data.startTime),
+            eq(dailyTimeblockInstances.endTime, data.endTime)
+          )
+        )
+        .limit(1);
+
+      if (existing.length > 0) {
+        return { success: true, id: existing[0].id, duplicateIgnored: true };
+      }
+    }
+
     const [result] = await db.insert(dailyTimeblockInstances).values(data);
     revalidatePath("/routine");
     return { success: true, id: (result as any)?.insertId };
@@ -555,17 +574,30 @@ export async function toggleDailyHabitAction(
   }
 }
 
-/** Quick add a daily habit */
+/** Quick add a daily habit (with duplicate check) */
 export async function addDailyHabitAction(title: string) {
   try {
-    await db.insert(dailyHabits).values({
-      title: title.trim(),
+    const trimmed = title.trim();
+    if (!trimmed) return { success: false, error: "Title required" };
+
+    const existing = await db
+      .select({ id: dailyHabits.id })
+      .from(dailyHabits)
+      .where(and(eq(dailyHabits.title, trimmed), eq(dailyHabits.isActive, true)))
+      .limit(1);
+
+    if (existing.length > 0) {
+      return { success: true, id: existing[0].id, duplicateIgnored: true };
+    }
+
+    const [result] = await db.insert(dailyHabits).values({
+      title: trimmed,
       icon: "CheckCircle2",
       sortOrder: 99,
       isActive: true,
     });
     revalidatePath("/routine");
-    return { success: true };
+    return { success: true, id: (result as any)?.insertId };
   } catch (error: any) {
     console.error("[addDailyHabitAction Error]:", error);
     return { success: false, error: error.message };
@@ -662,7 +694,6 @@ export async function getActivitySuggestionsAction() {
   }
 }
 
-
 /** Fetch master routines for management modal */
 export async function getMasterRoutinesAction(profile: DayProfileType) {
   try {
@@ -677,7 +708,7 @@ export async function getMasterRoutinesAction(profile: DayProfileType) {
   }
 }
 
-/** Save/Update master routine */
+/** Save/Update master routine (with backend duplicate guard) */
 export async function saveMasterRoutineAction(
   id: number | null,
   data: Partial<NewDailyRoutineMaster>
@@ -689,7 +720,28 @@ export async function saveMasterRoutineAction(
         .set(data)
         .where(eq(dailyRoutineMaster.id, id));
     } else {
-      await db.insert(dailyRoutineMaster).values(data as NewDailyRoutineMaster);
+      // Guard against concurrent double-click insertions
+      if (data.dayProfile && data.startTime && data.endTime) {
+        const existing = await db
+          .select({ id: dailyRoutineMaster.id })
+          .from(dailyRoutineMaster)
+          .where(
+            and(
+              eq(dailyRoutineMaster.dayProfile, data.dayProfile),
+              eq(dailyRoutineMaster.startTime, data.startTime),
+              eq(dailyRoutineMaster.endTime, data.endTime)
+            )
+          )
+          .limit(1);
+
+        if (existing.length > 0) {
+          return { success: true, id: existing[0].id, duplicateIgnored: true };
+        }
+      }
+
+      const [result] = await db.insert(dailyRoutineMaster).values(data as NewDailyRoutineMaster);
+      revalidatePath("/routine");
+      return { success: true, id: (result as any)?.insertId };
     }
     revalidatePath("/routine");
     return { success: true };
